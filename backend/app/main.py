@@ -524,6 +524,11 @@ def _build_stop_hook_settings() -> str:
     _hook_callback_base_url(), que decide entre o listener de loopback e o
     fallback em runtime. Montar a cada spawn, em vez de congelar no import,
     mantém o comando alinhado com a configuração corrente do canal.
+
+    -k: aceita cert autoassinado/CN mismatch quando _hook_callback_base_url()
+    devolve https (só acontece via override HOOK_CALLBACK_BASE_URL — o
+    listener de loopback em si é sempre http://127.0.0.1). Sem custo quando a
+    URL é http: curl ignora -k nesse caso.
     """
     stop_url = f"{_hook_callback_base_url()}/api/hooks/stop"
     return json.dumps({
@@ -534,7 +539,7 @@ def _build_stop_hook_settings() -> str:
                         {
                             "type": "command",
                             "command": (
-                                f"curl -s -m 3 -X POST {stop_url} "
+                                f"curl -sk -m 3 -X POST {stop_url} "
                                 "-H 'Content-Type: application/json' -d @- >/dev/null 2>&1"
                             ),
                         }

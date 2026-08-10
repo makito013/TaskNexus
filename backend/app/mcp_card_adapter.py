@@ -35,20 +35,29 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import sys
 import urllib.error
 import urllib.request
 
-# Sobrescrevíveis via env var para permitir testar contra um http.server
-# efêmero local, sem precisar levantar o backend real em localhost:8000 —
-# mesmo esquema de ESCRITORIO_HOOK_URL em mcp_task_adapter.py, só que aqui são
-# duas URLs (uma por tool) em vez de uma.
+# Sobrescrevíveis via env var — o backend (main.py, _build_mcp_config_json)
+# injeta as URLs corretas com base na porta/esquema reais do deploy. O
+# fallback localhost:8000 existe só para rodar o adapter manualmente em dev
+# (sem deploy.ps1), e é intencionalmente diferente da porta de produção para
+# falhar cedo se as env vars não estiverem configuradas.
 HOOK_CREATE_URL = os.environ.get(
     "ESCRITORIO_HOOK_CREATE_URL", "http://localhost:8000/api/hooks/cards/create"
 )
 HOOK_MOVE_URL = os.environ.get(
     "ESCRITORIO_HOOK_MOVE_URL", "http://localhost:8000/api/hooks/cards/move"
 )
+
+# Contexto SSL que não valida certificado — seguro aqui porque a conexão é
+# estritamente loopback (127.0.0.1). Necessário quando o deploy usa TLS: o
+# cert é emitido para o hostname do Tailscale, não para 127.0.0.1.
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 _CONNECTIVITY_ERROR_TEXT = (
     "Não foi possível conectar ao backend do Escritório para processar esta ação."
@@ -155,7 +164,8 @@ def _post_json(url: str, body: dict):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        ctx = _SSL_CTX if url.startswith("https://") else None
+        with urllib.request.urlopen(req, timeout=3, context=ctx) as resp:
             raw = resp.read()
         return json.loads(raw)
     except Exception:
