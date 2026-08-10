@@ -382,7 +382,7 @@ def test_build_agent_cmd_still_injects_hooks_for_custom_claude_cmd():
     """The Stop-hook --settings and --mcp-config injection must still happen
     for a custom-cmd claude agent — only the base executable/leading args
     change, everything _build_pty_cmd appends stays the same."""
-    from app.main import _build_agent_cmd, _STOP_HOOK_SETTINGS
+    from app.main import _build_agent_cmd, _build_stop_hook_settings
     from app.models import Agent
 
     claude_work_agent = Agent(
@@ -395,7 +395,7 @@ def test_build_agent_cmd_still_injects_hooks_for_custom_claude_cmd():
     assert "--resume" in resumed
     assert "sid-1" in resumed
     assert "--settings" in resumed
-    assert _STOP_HOOK_SETTINGS in resumed
+    assert _build_stop_hook_settings() in resumed
     assert "--mcp-config" in resumed
 
 

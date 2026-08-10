@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import json
+import socket
 import sys
 import time
 import uuid
 import asyncio
-from contextlib import asynccontextmanager
+import uvicorn
+from contextlib import asynccontextmanager, contextmanager
 from fastapi import (
     FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
     Query, UploadFile, File,
@@ -73,6 +75,29 @@ BOARD_UPLOADS_ROOT = os.getenv(
     "BOARD_UPLOADS_ROOT",
     os.path.join(os.path.dirname(__file__), "..", "board_uploads"),
 )
+
+# --- Canal de callback dos hooks (Fase 0) -----------------------------------
+#
+# O hook `Stop` do Claude Code e os adaptadores MCP falam com ESTE backend por
+# HTTP, e até aqui a URL era `http://localhost:8000` hardcoded. Isso só funciona
+# no fluxo de dev: em produção o deploy.ps1 sobe UMA instância uvicorn na 443
+# (ou na 80 com -NoTls), então nada escutava na 8000 e o canal de hooks estava
+# morto justamente no ambiente real — sem needs_attention, sem tarefa criada por
+# MCP, sem nada.
+#
+# A saída é um SEGUNDO listener uvicorn dentro deste mesmo processo, preso a
+# 127.0.0.1 e servindo o mesmo app: a porta do canal de hooks fica desacoplada
+# da porta pública sem expor nada a mais na rede/tailnet (hook e adaptadores
+# rodam sempre na mesma máquina que o backend).
+#
+# Ele nasce DESLIGADO e só sobe quando HOOK_LOOPBACK_PORT está setada. Ligado
+# por padrão, toda suíte que levanta o app via TestClient passaria a ocupar uma
+# porta fixa — quebrando execuções concorrentes e qualquer máquina onde essa
+# porta já esteja em uso.
+HOOK_LOOPBACK_HOST = "127.0.0.1"
+# Porta usada na URL dos hooks quando NÃO há listener de loopback configurado:
+# o fluxo de dev e o deploy.sh, em que o próprio app principal responde na 8000.
+DEFAULT_HOOK_PORT = 8000
 
 store = ConversationStore(db_path=SESSIONS_DB)
 task_store = TaskStore(db_path=SESSIONS_DB)
@@ -168,6 +193,181 @@ def _pick_projects_folder() -> str | None:
     return path or None
 
 
+def _hook_loopback_port() -> int | None:
+    """Porta do listener de loopback de hooks, ou None quando desligado.
+
+    Um valor inválido NÃO derruba o boot: vira aviso e "desligado". O backend
+    inteiro não pode deixar de subir por causa da configuração de um canal
+    auxiliar.
+    """
+    raw = os.getenv("HOOK_LOOPBACK_PORT", "").strip()
+    if not raw:
+        return None
+    try:
+        port = int(raw)
+    except ValueError:
+        print(
+            f"==> AVISO: HOOK_LOOPBACK_PORT={raw!r} não é um número inteiro — "
+            f"canal de hooks desligado.",
+            flush=True,
+        )
+        return None
+    if not 0 < port < 65536:
+        print(
+            f"==> AVISO: HOOK_LOOPBACK_PORT={port} fora da faixa 1-65535 — "
+            f"canal de hooks desligado.",
+            flush=True,
+        )
+        return None
+    return port
+
+
+def _hook_callback_base_url() -> str:
+    """URL base que o hook Stop e os adaptadores MCP usam para chamar de volta.
+
+    Aponta para o listener de loopback quando ele existe E está de fato no ar
+    (`_hook_loopback_server is not None`); senão mantém o comportamento
+    histórico (porta do app principal em dev/deploy.sh). Checar o objeto do
+    servidor, e não só a config (`_hook_loopback_port()`), importa porque o
+    pré-bind do socket (`_bind_hook_loopback_socket`) pode falhar — porta já
+    ocupada, por exemplo — sem derrubar o processo: nesse caso
+    `_hook_loopback_server` continua None mesmo com HOOK_LOOPBACK_PORT setada,
+    e apontar para essa porta entregaria aos CLIs/hooks uma URL de callback
+    morta, sem nada escutando do outro lado.
+
+    Literal `127.0.0.1` em vez de `localhost` de propósito: o listener binda só
+    IPv4, e em Windows `localhost` pode resolver para ::1 primeiro.
+
+    HOOK_CALLBACK_BASE_URL existe para o caso em que o backend está atrás de
+    outra coisa (proxy, container) e nenhuma das duas heurísticas serve — mesmo
+    padrão de override por env var que os adaptadores MCP já usam.
+    """
+    explicit = os.getenv("HOOK_CALLBACK_BASE_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    port = _hook_loopback_port() if _hook_loopback_server is not None else None
+    return f"http://{HOOK_LOOPBACK_HOST}:{port or DEFAULT_HOOK_PORT}"
+
+
+class _DetachedSignalsServer(uvicorn.Server):
+    """uvicorn.Server que NÃO mexe nos handlers de sinal do processo.
+
+    `Server.serve()` embrulha tudo em `capture_signals()`, que troca os handlers
+    de SIGINT/SIGTERM do processo pelos DESTA instância (e ainda re-emite o
+    sinal capturado ao sair). Numa segunda instância vivendo dentro do processo
+    do servidor principal isso é destrutivo: o Ctrl+C do deploy.ps1 passaria a
+    parar apenas o listener de loopback, deixando o servidor principal de pé.
+    Só o servidor principal pode controlar o ciclo de vida do processo.
+
+    Sobrescreve `capture_signals` e não `install_signal_handlers`: este último
+    não existe mais no uvicorn 0.30.6 (virou justamente este context manager),
+    então um override daquele nome seria um no-op silencioso.
+    """
+
+    @contextmanager
+    def capture_signals(self):
+        yield
+
+
+# Servidor e task do listener de loopback enquanto ele está no ar (None quando
+# desligado). Guardados no módulo porque o shutdown do lifespan precisa
+# encontrá-los para pará-lo antes dos stores.
+_hook_loopback_server: uvicorn.Server | None = None
+_hook_loopback_task: asyncio.Task | None = None
+
+
+def _bind_hook_loopback_socket(port: int) -> socket.socket | None:
+    """Pré-binda o socket do listener de hooks; devolve None se o bind falhar.
+
+    O bind é feito aqui, e não pelo uvicorn, de propósito: quando o uvicorn abre
+    o socket sozinho e o bind falha (porta ocupada, tipicamente uma instância
+    anterior ainda de pé), ele chama `sys.exit(1)` — matando o processo do
+    servidor PRINCIPAL. Entregando um socket já pronto para
+    `Server.serve(sockets=[...])`, esse ramo do uvicorn nunca é alcançado e a
+    falha vira um aviso: fica sem canal de hooks, mas com o backend no ar.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        # SO_REUSEADDR só em POSIX, onde ele apenas permite reusar uma porta em
+        # TIME_WAIT. No Windows a mesma flag permite DOIS binds simultâneos e
+        # ativos na mesma porta, o que transformaria "porta já ocupada" — o caso
+        # que este código precisa justamente detectar — em sucesso silencioso.
+        if os.name != "nt":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((HOOK_LOOPBACK_HOST, port))
+        sock.listen(128)
+    except OSError as exc:
+        sock.close()
+        print(
+            f"==> AVISO: não consegui abrir o canal de hooks em "
+            f"{HOOK_LOOPBACK_HOST}:{port} ({exc}). O backend segue no ar, mas o "
+            f"hook Stop e os adaptadores MCP não vão conseguir chamar de volta.",
+            flush=True,
+        )
+        return None
+    return sock
+
+
+async def _start_hook_loopback_listener() -> None:
+    """Sobe o listener de loopback de hooks (no-op sem HOOK_LOOPBACK_PORT).
+
+    Chamado no FIM do startup do lifespan, depois dos stores: o socket começa a
+    aceitar conexões no instante em que é criado, e um hook atendido antes do
+    `initialize()` bateria em banco não inicializado.
+    """
+    global _hook_loopback_server, _hook_loopback_task
+    port = _hook_loopback_port()
+    if port is None:
+        return
+    sock = _bind_hook_loopback_socket(port)
+    if sock is None:
+        return
+    config = uvicorn.Config(
+        app,
+        # O lifespan é do servidor principal. Rodá-lo de novo aqui
+        # reinicializaria stores e subiria um segundo listener recursivamente.
+        lifespan="off",
+        # Config.configure_logging() mexe em loggers GLOBAIS, então este bloco
+        # existe para o segundo servidor não reconfigurar o logging do primeiro:
+        # sem log_config=None ele roda dictConfig() e troca handlers/níveis dos
+        # loggers do uvicorn DEPOIS de install_benign_transfer_error_filter().
+        # Pelo mesmo motivo, nada de log_level (sobrescreveria o nível do
+        # servidor principal) nem de access_log=False (esvazia os handlers de
+        # `uvicorn.access` no processo inteiro, matando o access log do
+        # servidor principal junto — confirmado em config.py:391).
+        log_config=None,
+        # Default é None (= esperar para sempre): uma conexão presa aqui
+        # travaria o shutdown do processo inteiro.
+        timeout_graceful_shutdown=5,
+    )
+    server = _DetachedSignalsServer(config)
+    _hook_loopback_server = server
+    _hook_loopback_task = asyncio.create_task(server.serve(sockets=[sock]))
+    print(
+        f"==> Canal de hooks escutando em http://{HOOK_LOOPBACK_HOST}:{port} "
+        f"(somente loopback).",
+        flush=True,
+    )
+
+
+async def _stop_hook_loopback_listener() -> None:
+    """Encerra o listener de loopback, se estiver no ar."""
+    global _hook_loopback_server, _hook_loopback_task
+    server, task = _hook_loopback_server, _hook_loopback_task
+    _hook_loopback_server = None
+    _hook_loopback_task = None
+    if server is None or task is None:
+        return
+    server.should_exit = True
+    try:
+        await asyncio.wait_for(task, timeout=10)
+    except asyncio.TimeoutError:
+        # wait_for já cancelou a task; só registra para não parecer shutdown limpo.
+        print("==> AVISO: canal de hooks não encerrou em 10s — cancelado.", flush=True)
+    except Exception as exc:
+        print(f"==> AVISO: canal de hooks terminou com erro: {exc!r}", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await store.initialize()
@@ -178,12 +378,16 @@ async def lifespan(app: FastAPI):
     await _reload_projects_root()
     await _reload_global_agents_cache()
     _pretrust_projects()
+    await _start_hook_loopback_listener()
     # print(), não logging: --log-level warning (uso em produção, deploy.sh)
     # suprime até o banner "Uvicorn running on..." do próprio uvicorn, deixando
     # o terminal mudo do início ao fim mesmo quando tudo sobe certo — o que já
     # foi confundido uma vez com travamento. Esta linha ignora esse nível.
     print("==> Backend pronto — aceitando conexões.", flush=True)
     yield
+    # Primeiro o canal de hooks: ele serve o MESMO app, então uma requisição em
+    # voo depois do close() dos stores bateria em conexão de banco fechada.
+    await _stop_hook_loopback_listener()
     await pty_manager.shutdown()
     await store.close()
     await task_store.close()
@@ -310,23 +514,32 @@ def _resolve_agent(project_id: str, agent_id: str | None):
 # prática (a própria TUI manda ESC[?6n a cada ~200ms, resetando o timer de
 # atividade pra sempre). `-d @-` repassa o stdin do hook (JSON com session_id)
 # direto como corpo da requisição.
-_STOP_HOOK_SETTINGS = json.dumps({
-    "hooks": {
-        "Stop": [
-            {
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": (
-                            "curl -s -m 3 -X POST http://localhost:8000/api/hooks/stop "
-                            "-H 'Content-Type: application/json' -d @- >/dev/null 2>&1"
-                        ),
-                    }
-                ]
-            }
-        ]
-    }
-})
+def _build_stop_hook_settings() -> str:
+    """Monta o --settings com o hook Stop (era a constante _STOP_HOOK_SETTINGS).
+
+    Virou função porque a URL deixou de ser fixa: ela sai de
+    _hook_callback_base_url(), que decide entre o listener de loopback e o
+    fallback em runtime. Montar a cada spawn, em vez de congelar no import,
+    mantém o comando alinhado com a configuração corrente do canal.
+    """
+    stop_url = f"{_hook_callback_base_url()}/api/hooks/stop"
+    return json.dumps({
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                f"curl -s -m 3 -X POST {stop_url} "
+                                "-H 'Content-Type: application/json' -d @- >/dev/null 2>&1"
+                            ),
+                        }
+                    ]
+                }
+            ]
+        }
+    })
 
 
 # Como reconhecer, por tipo de agente, que a retomada de uma sessão FALHOU —
@@ -389,17 +602,29 @@ def _build_mcp_config_json(session_id: str) -> str:
     module_dir = os.path.dirname(os.path.abspath(__file__))
     task_adapter_path = os.path.join(module_dir, "mcp_task_adapter.py")
     card_adapter_path = os.path.join(module_dir, "mcp_card_adapter.py")
+    # As URLs de callback vão explícitas em vez de ficarem no default de cada
+    # adaptador (`http://localhost:8000/...`): esse default só acerta no fluxo
+    # de dev, e em produção o backend responde noutra porta — mesmo problema que
+    # matava o hook Stop. Cada servidor recebe apenas as URLs que ele usa.
+    base_url = _hook_callback_base_url()
     config = {
         "mcpServers": {
             "escritorio-tarefas": {
                 "command": sys.executable,
                 "args": [task_adapter_path],
-                "env": {"ESCRITORIO_CLAUDE_SESSION_ID": session_id},
+                "env": {
+                    "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
+                    "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
+                },
             },
             "escritorio-cards": {
                 "command": sys.executable,
                 "args": [card_adapter_path],
-                "env": {"ESCRITORIO_CLAUDE_SESSION_ID": session_id},
+                "env": {
+                    "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
+                    "ESCRITORIO_HOOK_CREATE_URL": f"{base_url}/api/hooks/cards/create",
+                    "ESCRITORIO_HOOK_MOVE_URL": f"{base_url}/api/hooks/cards/move",
+                },
             },
         }
     }
@@ -427,7 +652,7 @@ def _build_pty_cmd(
     before this parameter existed.
     """
     cmd = list(base_cmd or ["claude"]) + [
-        "--settings", _STOP_HOOK_SETTINGS,
+        "--settings", _build_stop_hook_settings(),
         "--mcp-config", _build_mcp_config_json(session_id),
     ]
     if resume:

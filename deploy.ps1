@@ -3,6 +3,7 @@
 # Uso: .\deploy.ps1              # HTTPS na 443 (cert do Tailscale) + 80 redirecionando
 #      .\deploy.ps1 -NoTls       # HTTP puro na 80, sem certificado
 #      .\deploy.ps1 -Port 8000   # porta única explícita, sem TLS (o modo antigo)
+#      .\deploy.ps1 -HookPort 0  # sem canal de hooks (desliga a notificação)
 #
 # Equivalente ao deploy.sh (macOS/Linux): builda o frontend e sobe o uvicorn
 # em primeiro plano, num terminal que você deixa aberto. Sem supervisão de
@@ -34,7 +35,11 @@ param(
     # Porta única explícita. Implica -NoTls (uma porta só, sem par 80/443).
     # Existe para reproduzir o comportamento antigo (--port 8000) sem editar o
     # script, e para rodar duas instâncias em paralelo durante um teste.
-    [int]$Port = 0
+    [int]$Port = 0,
+
+    # Porta do canal de hooks (listener HTTP só de loopback, dentro do processo
+    # do backend). 0 desliga o canal. Ver a seção "Canal de hooks" abaixo.
+    [int]$HookPort = 8765
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,6 +151,32 @@ if ($Port -gt 0) {
     $AppPort = 443
 }
 $Scheme = if ($NoTls) { "http" } else { "https" }
+
+# ---------------------------------------------------------------------------
+# Canal de hooks (listener de loopback, dentro do processo do backend)
+# ---------------------------------------------------------------------------
+# O hook Stop do Claude Code e os adaptadores MCP chamam o backend por HTTP em
+# 127.0.0.1. Sozinho, o app não serve para isso em produção: em 443 ele exige
+# TLS (um `curl http://` não entra) e em qualquer caso a URL do hook não tem
+# como adivinhar $AppPort. Por isso o backend sobe um SEGUNDO listener, só de
+# loopback, quando HOOK_LOOPBACK_PORT está setada — e é esta linha que liga o
+# canal no deploy real. Sem ela o hook segue mirando a 8000, onde não há
+# ninguém, que é exatamente o bug que a Fase 0 corrige.
+#
+# Colidir com $AppPort seria fatal: o listener de loopback binda ANTES do
+# servidor principal (roda no startup do lifespan), então ele ficaria com a
+# porta e o uvicorn principal morreria com "address already in use".
+if ($HookPort -gt 0 -and $HookPort -eq $AppPort) {
+    $HookPort = $HookPort + 1
+    Write-Warning "A porta do canal de hooks era a mesma do app ($AppPort). Usando $HookPort."
+}
+if ($HookPort -gt 0) {
+    $env:HOOK_LOOPBACK_PORT = "$HookPort"
+    Write-Host "==> Canal de hooks em http://127.0.0.1:${HookPort} (somente loopback)"
+} else {
+    $env:HOOK_LOOPBACK_PORT = $null
+    Write-Host "==> Canal de hooks desligado (-HookPort 0) — o hook Stop não vai notificar."
+}
 
 # ---------------------------------------------------------------------------
 # Listener de redirect na 80 (só quando o app está em 443)

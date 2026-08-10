@@ -68,6 +68,7 @@ cd frontend && npm run dev                     # porta 5173, com proxy /api e /w
 .\deploy.ps1                # Windows — HTTPS na 443 + 80 redirecionando
 .\deploy.ps1 -NoTls         # Windows — HTTP puro na 80, sem certificado
 .\deploy.ps1 -Port 8000     # Windows — porta única explícita, sem TLS
+.\deploy.ps1 -HookPort 0    # Windows — desliga o canal de hooks
 ```
 
 Builda o frontend e sobe o backend servindo tudo. `Ctrl+C` pra parar — não há
@@ -77,10 +78,12 @@ No Windows, o `deploy.ps1` espera encontrar o backend já num venv
 (`backend/.venv`) — rode `scripts\install-service.ps1` (como Administrador)
 uma vez antes, pra criar esse venv, e depois use o `deploy.ps1` normalmente
 para subir o app. No Windows, o modo padrão usa TLS real via Tailscale
-(`tailscale cert`) e inclui um redirect da porta 80. Detalhes técnicos
-completos — por que portas `< 1024` não exigem elevação no Windows, o papel
-do `netsh http show urlacl`, como o certificado é emitido — estão em
-[`docs/windows-deploy.md`](docs/windows-deploy.md).
+(`tailscale cert`) e inclui um redirect da porta 80. O `deploy.ps1` também
+sobe, por padrão, um canal de hooks em loopback na porta 8765 (`-HookPort <n>`
+troca a porta, `-HookPort 0` desliga). Detalhes técnicos completos — por que
+portas `< 1024` não exigem elevação no Windows, o papel do
+`netsh http show urlacl`, como o certificado é emitido, e como o canal de
+hooks funciona — estão em [`docs/windows-deploy.md`](docs/windows-deploy.md).
 
 ## Como rodar os testes
 

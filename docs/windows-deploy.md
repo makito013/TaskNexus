@@ -49,10 +49,28 @@ navegador sem esquema (`meuhost.tailnet.ts.net` em vez de
 `https://meuhost.tailnet.ts.net`) — sem esse listener, isso cairia em
 "connection refused" já que nada mais escuta na 80.
 
+## Canal de hooks (porta de loopback)
+
+O `claude` CLI avisa o backend de que terminou uma resposta chamando
+`POST /api/hooks/stop` — é isso que marca a sessão como "precisa de atenção".
+Os adaptadores MCP (criar tarefa, criar/mover card) funcionam do mesmo jeito.
+Todos rodam na mesma máquina que o backend e falam HTTP simples em
+`127.0.0.1`, o que não combina com o modo padrão: em 443 o app só aceita TLS.
+
+Por isso o backend sobe um segundo listener, **exclusivamente em loopback**
+(nunca na tailnet), dedicado a essas chamadas. O `deploy.ps1` liga esse
+listener na porta 8765 por padrão, via a variável de ambiente
+`HOOK_LOOPBACK_PORT`; use `-HookPort <n>` para escolher outra porta ou
+`-HookPort 0` para desligar o canal (as notificações param de funcionar).
+
+Se a porta escolhida já estiver ocupada, o backend registra um aviso e sobe
+mesmo assim, sem o canal — nenhuma falha desse listener derruba o app.
+
 ## Resumo dos modos
 
 ```powershell
 .\deploy.ps1                # HTTPS na 443 + 80 redirecionando (padrão)
 .\deploy.ps1 -NoTls          # HTTP puro na 80, sem certificado
 .\deploy.ps1 -Port 8000       # Porta única explícita, sem TLS
+.\deploy.ps1 -HookPort 9000   # Canal de hooks na 9000 (padrão: 8765)
 ```
