@@ -151,6 +151,136 @@ def test_put_projects_root_normalizes_forward_slash_path(client, tmp_path):
     assert r2.json()["projects_root_path"] == expected
 
 
+def test_get_notifications_returns_defaults_with_derived_fields(client):
+    r = client.get("/api/settings/notifications")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quiet_hours_enabled"] is False
+    assert body["quiet_hours_start"] == "22:00"
+    assert body["quiet_hours_end"] == "07:00"
+    # Derived from the server's clock, not persisted — just checks it came
+    # back and is a plausible timezone (the exact value depends on the
+    # machine running the test).
+    assert -12 * 60 <= body["server_utc_offset_minutes"] <= 14 * 60
+    # With quiet_hours_enabled = False it's never a quiet-hours window, no
+    # matter what time this test happens to run at.
+    assert body["quiet_hours_active"] is False
+
+
+def test_put_notifications_persists_and_reflects_on_next_get(client):
+    r = client.put(
+        "/api/settings/notifications",
+        json={"quiet_hours_enabled": True, "quiet_hours_start": "23:00", "quiet_hours_end": "06:30"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quiet_hours_enabled"] is True
+    assert body["quiet_hours_start"] == "23:00"
+    assert body["quiet_hours_end"] == "06:30"
+
+    r2 = client.get("/api/settings/notifications")
+    assert r2.json()["quiet_hours_start"] == "23:00"
+    assert r2.json()["quiet_hours_enabled"] is True
+
+
+def test_put_notifications_partial_update_keeps_the_other_fields(client):
+    client.put(
+        "/api/settings/notifications",
+        json={"quiet_hours_enabled": True, "quiet_hours_start": "23:00", "quiet_hours_end": "06:30"},
+    )
+    r = client.put("/api/settings/notifications", json={"quiet_hours_enabled": False})
+    assert r.status_code == 200
+    body = r.json()
+    # Turning the window off does NOT erase the configured time — that's
+    # precisely why `quiet_hours_enabled` is its own field instead of a
+    # start == end sentinel.
+    assert body == {
+        **body,
+        "quiet_hours_enabled": False,
+        "quiet_hours_start": "23:00",
+        "quiet_hours_end": "06:30",
+    }
+
+
+def test_put_notifications_rejects_invalid_time_format(client):
+    r = client.put("/api/settings/notifications", json={"quiet_hours_start": "25:00"})
+    assert r.status_code == 422
+    r2 = client.put("/api/settings/notifications", json={"quiet_hours_end": "sete horas"})
+    assert r2.status_code == 422
+
+
+def test_put_empty_notifications_body_is_a_noop(client):
+    r = client.put("/api/settings/notifications", json={})
+    assert r.status_code == 200
+    assert r.json()["quiet_hours_enabled"] is False
+    assert r.json()["quiet_hours_start"] == "22:00"
+
+
+def test_quiet_hours_active_is_computed_from_the_server_clock(client):
+    """Proves that `quiet_hours_active` comes from the pure function applied
+    to the server's clock, not from a persisted value: with the window on
+    and covering the test's instant (pinned via a patch on time.time in the
+    main module), the field has to come back True."""
+    from unittest.mock import patch
+    import app.main as main_mod
+    from app.quiet_hours import current_utc_offset_minutes
+
+    client.put(
+        "/api/settings/notifications",
+        json={"quiet_hours_enabled": True, "quiet_hours_start": "22:00", "quiet_hours_end": "07:00"},
+    )
+    # 23:30 in the server's local timezone, whatever it is.
+    offset = current_utc_offset_minutes()
+    inside_epoch = ((23 * 60 + 30) - offset) * 60
+    with patch.object(main_mod.time, "time", return_value=inside_epoch):
+        r = client.get("/api/settings/notifications")
+    assert r.json()["quiet_hours_active"] is True
+
+    outside_epoch = ((12 * 60) - offset) * 60
+    with patch.object(main_mod.time, "time", return_value=outside_epoch):
+        r2 = client.get("/api/settings/notifications")
+    assert r2.json()["quiet_hours_active"] is False
+
+
+def test_hook_stop_still_marks_needs_attention_during_quiet_hours(client):
+    """The quiet-hours window mutes SOUND and notification, never the
+    badge/title.
+
+    Gating `needs_attention` behind the Stop hook would erase the only
+    surface left when notification permission is denied — and which the PO
+    required to persist until dismissed by hand. The user would wake up with
+    no record that the chat finished. Whoever consults the quiet-hours
+    window is the DELIVERY CHANNEL (sound/Notification, in the frontend),
+    not the event record.
+
+    This test is the guard-rail for that decision: if someone wraps
+    `mark_needs_attention` in an `if not quiet_hours`, it breaks."""
+    from unittest.mock import AsyncMock, patch
+    import app.main as main_mod
+    from app.quiet_hours import current_utc_offset_minutes
+
+    # Window covering the whole day, with the server clock frozen to a fixed
+    # instant guaranteed to fall inside it — same pattern as
+    # test_quiet_hours_active_is_computed_from_the_server_clock above. With
+    # an exclusive end, "23:59" leaves the 23:59:00-23:59:59 minute outside
+    # the window; freezing the clock (instead of trusting whatever real
+    # wall-clock time this test happens to run at) removes that gap.
+    client.put(
+        "/api/settings/notifications",
+        json={"quiet_hours_enabled": True, "quiet_hours_start": "00:00", "quiet_hours_end": "23:59"},
+    )
+    offset = current_utc_offset_minutes()
+    inside_epoch = ((12 * 60) - offset) * 60  # noon local, safely inside 00:00-23:59
+
+    with patch.object(main_mod.time, "time", return_value=inside_epoch), patch.object(
+        main_mod.store, "get_session_key_by_claude_id", AsyncMock(return_value="proj::claude")
+    ), patch.object(main_mod.store, "mark_needs_attention", AsyncMock()) as mark:
+        r = client.post("/api/hooks/stop", json={"session_id": "uuid-conhecido"})
+
+    assert r.status_code == 200
+    mark.assert_awaited_once_with("proj::claude")
+
+
 def test_put_projects_root_re_pretrusts_projects_in_new_root(client, tmp_path):
     """Depois de um PUT bem-sucedido, _pretrust_projects() precisa rodar de
     novo — o frontend só recarrega o BROWSER (window.location.reload()), não

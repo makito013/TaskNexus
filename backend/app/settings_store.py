@@ -41,7 +41,19 @@ class SettingsStore:
         # (sem DEFAULT): NULL significa "sem override, usa o fallback de
         # sempre" (env var PROJECTS_ROOT / ~/projetos), preservando o
         # comportamento de instalações já existentes ao introduzir a coluna.
-        for column_def in ("projects_root_path TEXT",):
+        # quiet_hours_*: quiet-hours window for end-of-chat notifications.
+        # `quiet_hours_enabled` is its OWN boolean — the old semantics of
+        # "start == end means off" was rejected, because it made it
+        # impossible to keep a configured time saved while the window is
+        # off. Defaults of 22:00/07:00 exist only so the UI has something
+        # coherent to show the first time the toggle is turned on; with
+        # enabled = 0 they have no effect at all.
+        for column_def in (
+            "projects_root_path TEXT",
+            "quiet_hours_enabled INTEGER NOT NULL DEFAULT 0",
+            "quiet_hours_start TEXT NOT NULL DEFAULT '22:00'",
+            "quiet_hours_end TEXT NOT NULL DEFAULT '07:00'",
+        ):
             try:
                 await self._conn.execute(f"ALTER TABLE app_settings ADD COLUMN {column_def}")
             except aiosqlite.OperationalError:
@@ -88,6 +100,49 @@ class SettingsStore:
         )
         await self._conn.commit()
         return await self.get()
+
+    async def get_notifications(self) -> dict:
+        """Notification settings (quiet-hours window) — a read separate from
+        `get()` on purpose: these are different endpoint contracts
+        (/api/settings/appearance vs /api/settings/notifications) and mixing
+        the two would force every appearance consumer to load fields it
+        doesn't use."""
+        async with self._conn.execute(
+            "SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end "
+            "FROM app_settings WHERE id = 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+        return {
+            "quiet_hours_enabled": bool(row[0]),
+            "quiet_hours_start": row[1],
+            "quiet_hours_end": row[2],
+        }
+
+    async def update_notifications(
+        self,
+        quiet_hours_enabled: bool | None = None,
+        quiet_hours_start: str | None = None,
+        quiet_hours_end: str | None = None,
+    ) -> dict:
+        """Partial update, same COALESCE(?, column) pattern as `update()`
+        above. `quiet_hours_enabled` is explicitly turned into 0/1: SQLite
+        would store the Python bool as an integer anyway, but None (= "leave
+        it alone") needs to stay None, so the conversion can't be
+        unconditional."""
+        enabled_value = None if quiet_hours_enabled is None else int(quiet_hours_enabled)
+        await self._conn.execute(
+            """
+            UPDATE app_settings
+            SET quiet_hours_enabled = COALESCE(?, quiet_hours_enabled),
+                quiet_hours_start = COALESCE(?, quiet_hours_start),
+                quiet_hours_end = COALESCE(?, quiet_hours_end),
+                updated_at = ?
+            WHERE id = 1
+            """,
+            (enabled_value, quiet_hours_start, quiet_hours_end, time.time()),
+        )
+        await self._conn.commit()
+        return await self.get_notifications()
 
     async def close(self) -> None:
         if self._conn:

@@ -32,13 +32,20 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api.js';
+import { createBrowserNotifier, installUnlockOnFirstGesture } from '../services/notifier.js';
+import { decideSessionsToNotify, buildSessionNotification } from '../utils/sessionNotifications.js';
+import { isQuietNow } from '../utils/quietHours.js';
+import { NOTIFICATION_SETTINGS_CHANGED_EVENT } from '../hooks/useNotificationSettings.js';
 
 const TerminalContext = createContext(null);
 
 const POLL_INTERVAL_MS = 7000;
 const JUST_STARTED_GRACE_MS = 10000; // 10s grace after explicit startSession
 
-export function TerminalProvider({ children }) {
+/** `notifier` is injectable only for tests (a stub in place of
+ * Notification/AudioContext) — in production the default is the real
+ * browser adapter. */
+export function TerminalProvider({ children, notifier = null }) {
   // Selected agent (just UI selection, no PTY yet)
   const [activeSessionKey, setActiveSessionKey] = useState(() => {
     try { return localStorage.getItem('escritorio::active_session_key') || null; }
@@ -85,6 +92,47 @@ export function TerminalProvider({ children }) {
   // load/reload). Intentionally never reassigned afterward — this is what scopes
   // the auto-remount effect below to page-load recovery only (D-13, reverts CR-01).
   const initialSessionKeyRef = useRef(activeSessionKey);
+
+  // ─── Channel A of the end-of-chat notification (sound + Web Notification) ───
+  // Everything in refs, never in state: these values are read INSIDE the
+  // poll tick (which runs with deps `[]` on purpose, see the effect further
+  // below), and keeping them in state would recreate the 7s interval on
+  // every change.
+  const notifierRef = useRef(null);
+  if (notifierRef.current === null) {
+    notifierRef.current = notifier || createBrowserNotifier();
+  }
+  // Settings from /api/settings/notifications. null = hasn't loaded yet —
+  // isQuietNow treats it as "no quiet-hours window" (fail-open).
+  const notificationSettingsRef = useRef(null);
+  // Keys that have ALREADY notified. null = there's no baseline yet: the
+  // first tick only records the state, without firing anything (otherwise
+  // opening the page in the morning would play a sound for every chat that
+  // finished overnight).
+  const notifiedKeysRef = useRef(null);
+
+  // Unlocks audio and requests notification permission on the user's FIRST
+  // gesture — both require a gesture per browser policy (on iPad WebKit,
+  // requesting permission on page load is silently rejected).
+  useEffect(() => installUnlockOnFirstGesture(notifierRef.current), []);
+
+  // Loads the settings once and re-listens for the event emitted by the
+  // Settings screen on save — redoing the GET on every 7s tick would be a
+  // third request per cycle for data that rarely changes.
+  useEffect(() => {
+    let cancelled = false;
+    api.fetchNotificationSettings()
+      .then((data) => { if (!cancelled) notificationSettingsRef.current = data; })
+      .catch(() => { /* proceeds without a quiet-hours window — never blocks the sound over a network failure */ });
+    const handler = (event) => {
+      if (event.detail) notificationSettingsRef.current = event.detail;
+    };
+    window.addEventListener(NOTIFICATION_SETTINGS_CHANGED_EVENT, handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NOTIFICATION_SETTINGS_CHANGED_EVENT, handler);
+    };
+  }, []);
 
   // Persist selection across page reloads
   useEffect(() => {
@@ -265,8 +313,9 @@ export function TerminalProvider({ children }) {
 
       // Fase 4 (ADR-01): fonte de verdade da lista "Chats Abertos" — não
       // bloqueia o resto do tick nem desfaz o que já foi lido acima se falhar.
+      let persisted = null;
       try {
-        const persisted = await api.fetchPersistedSessions();
+        persisted = await api.fetchPersistedSessions();
         if (!cancelled) setPersistedSessions(persisted);
       } catch {
         // Network blip — keep last known state
@@ -279,6 +328,33 @@ export function TerminalProvider({ children }) {
       const focusedKey = activeSessionKeyRef.current;
       if (focusedKey && data[focusedKey]?.needs_attention) {
         ackSession(focusedKey);
+      }
+
+      // Channel A: sound + Web Notification for chats that JUST became
+      // pending. Uses persistedSessions (same source as the badge/title),
+      // and only when this round's fetch succeeded — deciding off an empty
+      // map from a network failure would reset the baseline and make
+      // everything notify again on the next tick. The decision itself is
+      // the pure function decideSessionsToNotify (TRANSITION detection:
+      // without it, the sound would repeat every 7s while needs_attention
+      // stayed true).
+      if (persisted && !cancelled) {
+        const { toNotify, nextNotifiedKeys } = decideSessionsToNotify({
+          sessions: persisted,
+          notifiedKeys: notifiedKeysRef.current,
+          focusedKey,
+          quietHoursActive: isQuietNow(notificationSettingsRef.current),
+        });
+        notifiedKeysRef.current = nextNotifiedKeys;
+        if (toNotify.length > 0) {
+          // A single sound, even when several chats finished in the same
+          // tick — the visual notification is per session (tag =
+          // session_key), the sound doesn't need to (and shouldn't) stack.
+          notifierRef.current.playSound();
+          for (const key of toNotify) {
+            notifierRef.current.notify(buildSessionNotification(key, persisted[key]));
+          }
+        }
       }
 
       // Reconciliation: unmount terminals whose PTY no longer exists on the server,

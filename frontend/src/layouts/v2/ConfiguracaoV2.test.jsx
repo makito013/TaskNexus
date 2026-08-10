@@ -4,8 +4,11 @@
 // projetos no rodapé.
 //
 // `useAgentSettings` é mockado (a tela não deve falar com /api/agents
-// direto); `api.fetchProjectsRoot` é mockado porque <ProjectsRootSetting />
-// passou a ser montado aqui e faria um fetch real no mount.
+// direto); `api.fetchProjectsRoot` and `api.fetchNotificationSettings` are
+// mocked because <ProjectsRootSetting /> and <NotificationSettings /> are
+// mounted here and would make a real fetch on mount — and, in the second
+// case, that fetch failing renders a role="alert" that would collide with
+// the error alert several tests in this file inspect.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
@@ -56,6 +59,13 @@ beforeEach(() => {
   vi.spyOn(api, 'fetchProjectsRoot').mockResolvedValue({
     projects_root_path: null,
     resolved_path: '/home/bruno/projetos',
+  });
+  vi.spyOn(api, 'fetchNotificationSettings').mockResolvedValue({
+    quiet_hours_enabled: false,
+    quiet_hours_start: '22:00',
+    quiet_hours_end: '07:00',
+    server_utc_offset_minutes: -180,
+    quiet_hours_active: false,
   });
 });
 
@@ -340,6 +350,15 @@ describe('ConfiguracaoV2 — onAgentsChanged avisa o caller depois de cada muta�
     await waitFor(() => expect(createAgent).toHaveBeenCalled());
     // sem onAgentsChanged o form ainda fecha (nenhum throw engolido no meio)
     await waitFor(() => expect(screen.getByRole('button', { name: '+ Novo agente' })).toBeTruthy());
+  });
+});
+
+describe('ConfiguracaoV2 — notification settings', () => {
+  it('renders the quiet-hours section (the Settings screen is its only entry point)', async () => {
+    hookState();
+    render(<ConfiguracaoV2 />);
+    await waitFor(() => expect(screen.getByLabelText('Silenciar em um horário fixo')).toBeTruthy());
+    expect(screen.getByLabelText('Silenciar a partir de').value).toBe('22:00');
   });
 });
 

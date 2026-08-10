@@ -267,6 +267,47 @@ class AppearanceUpdateRequest(BaseModel):
         return v
 
 
+class NotificationSettings(BaseModel):
+    """Response of GET/PUT /api/settings/notifications — end-of-chat
+    notification settings (sound + Web Notification on the open tab).
+
+    `server_utc_offset_minutes` and `quiet_hours_active` are NOT columns:
+    both are derived from the server's clock on every read. The offset
+    travels in the contract because the quiet-hours window is defined in the
+    SERVER's timezone — without it, the frontend opened from a phone in
+    another timezone (via Tailscale) would compute the window at the wrong
+    time. `quiet_hours_active` is the same decision already resolved on the
+    backend (app/quiet_hours.py), useful for the frontend to confirm that
+    the JS mirror agrees."""
+    quiet_hours_enabled: bool
+    quiet_hours_start: str
+    quiet_hours_end: str
+    server_utc_offset_minutes: int
+    quiet_hours_active: bool
+
+
+class NotificationSettingsUpdateRequest(BaseModel):
+    """Body of PUT /api/settings/notifications — partial update, same
+    contract as AppearanceUpdateRequest: an omitted/None field doesn't
+    change the persisted value."""
+    quiet_hours_enabled: bool | None = None
+    quiet_hours_start: str | None = None
+    quiet_hours_end: str | None = None
+
+    @field_validator("quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def _valid_time_of_day(cls, v: str | None) -> str | None:
+        # Reject right at the edge instead of letting it into the database:
+        # an invalid time would be treated as "never quiet" (fail-open of
+        # quiet_hours.is_within_quiet_hours), and the user would never
+        # discover that the window they configured is worthless.
+        from .quiet_hours import parse_time_of_day
+
+        if v is not None and parse_time_of_day(v) is None:
+            raise ValueError("horário deve estar no formato HH:MM (24h)")
+        return v
+
+
 class ProjectsRootSettings(BaseModel):
     """Resposta de GET/PUT /api/settings/projects-root. `projects_root_path`
     é o valor cru persistido (None = sem override); `resolved_path` é o

@@ -30,6 +30,7 @@ from app.attachments import list_attachments, save_attachments, delete_attachmen
 from app.logging_filters import install_benign_transfer_error_filter
 from app.pty_manager import PTYManager
 from app.session_provisioner import provision_session_id
+from app.quiet_hours import current_utc_offset_minutes, is_within_quiet_hours
 from app.models import (
     InitFrame,
     ResizeFrame,
@@ -50,6 +51,8 @@ from app.models import (
     HookCardMoveRequest,
     AppearanceSettings,
     AppearanceUpdateRequest,
+    NotificationSettings,
+    NotificationSettingsUpdateRequest,
     ProjectsRootSettings,
     ProjectsRootUpdateRequest,
     AttachmentUploadResult,
@@ -861,6 +864,42 @@ async def update_appearance_settings(body: AppearanceUpdateRequest):
         layout_version=body.layout_version, theme_mode=body.theme_mode
     )
     return AppearanceSettings(**updated)
+
+
+async def _notification_settings_response() -> NotificationSettings:
+    """Builds the /api/settings/notifications response: the 3 persisted
+    columns + the 2 fields derived from the server's clock (UTC offset and
+    the quiet-hours decision already resolved by the pure function). The
+    derived fields are recomputed on every response — persisting the offset
+    would make the window drift by one hour during daylight saving time."""
+    settings = await settings_store.get_notifications()
+    offset_minutes = current_utc_offset_minutes()
+    return NotificationSettings(
+        **settings,
+        server_utc_offset_minutes=offset_minutes,
+        quiet_hours_active=is_within_quiet_hours(
+            enabled=settings["quiet_hours_enabled"],
+            start=settings["quiet_hours_start"],
+            end=settings["quiet_hours_end"],
+            now_epoch_seconds=time.time(),
+            utc_offset_minutes=offset_minutes,
+        ),
+    )
+
+
+@app.get("/api/settings/notifications", response_model=NotificationSettings)
+async def get_notification_settings():
+    return await _notification_settings_response()
+
+
+@app.put("/api/settings/notifications", response_model=NotificationSettings)
+async def update_notification_settings(body: NotificationSettingsUpdateRequest):
+    await settings_store.update_notifications(
+        quiet_hours_enabled=body.quiet_hours_enabled,
+        quiet_hours_start=body.quiet_hours_start,
+        quiet_hours_end=body.quiet_hours_end,
+    )
+    return await _notification_settings_response()
 
 
 @app.get("/api/settings/projects-root", response_model=ProjectsRootSettings)

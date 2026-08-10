@@ -30,6 +30,7 @@ import { useState } from 'react';
 import { useAgentSettings } from '../../hooks/useAgentSettings.js';
 import { AgentForm } from '../../components/AgentForm.jsx';
 import { ProjectsRootSetting } from '../../components/ProjectsRootSetting.jsx';
+import { NotificationSettings } from '../../components/NotificationSettings.jsx';
 
 const styles = {
   page: {
@@ -334,6 +335,9 @@ export function ConfiguracaoV2({ onAgentsChanged }) {
           configuração desde que a tela v1 foi aposentada. */}
       <div style={styles.projectsRootSection}>
         <ProjectsRootSetting />
+        {/* Same "installation settings" band as the folder picker: not an
+            agent field at all, applies to the whole app. */}
+        <NotificationSettings />
       </div>
     </div>
   );

@@ -262,6 +262,33 @@ export const api = {
     return r.json()
   },
 
+  // -- End-of-chat notification (sound + Web Notification on the open tab) --
+
+  async fetchNotificationSettings() {
+    // Returns the 3 persisted columns (quiet_hours_enabled/start/end) plus
+    // 2 fields DERIVED from the server's clock: server_utc_offset_minutes
+    // (required — the window is defined in the server's timezone, and the
+    // phone accessing via Tailscale might be in a different one) and
+    // quiet_hours_active.
+    const r = await fetch(`${BASE}/settings/notifications`)
+    if (!r.ok) throw new Error('Falha ao buscar configuração de notificações')
+    return r.json()
+  },
+
+  async updateNotificationSettings(partial) {
+    // partial: { quiet_hours_enabled?, quiet_hours_start?, quiet_hours_end? }
+    const r = await fetch(`${BASE}/settings/notifications`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(partial),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body.detail?.[0]?.msg || 'Falha ao salvar configuração de notificações')
+    }
+    return r.json()
+  },
+
   // -- Pasta de projetos configurável --
 
   async fetchProjectsRoot() {
