@@ -1,0 +1,123 @@
+/* frontend/src/index.css */
+:root {
+  --bg-base: #0d0d0d;
+  --bg-surface: #111111;
+  --bg-surface-2: #141414;
+  --bg-surface-3: #1a1a1a;
+  --bg-active: #1e2a1e;
+
+  --border: #1e1e1e;
+  --border-strong: #2a2a2a;
+
+  --text-primary: #e0e0e0;
+  --text-secondary: #888888;
+  --text-muted: #444444;
+  --text-very-muted: #2a2a2a;
+
+  --accent-claude: #3b82f6;
+  --accent-claude-bg: #1e3a5f;
+  --accent-claude-text: #60a5fa;
+
+  --accent-anti: #f97316;
+  --accent-anti-bg: #3a1e1e;
+  --accent-anti-text: #fb923c;
+
+  --accent-gemini: #a855f7;
+  --accent-gemini-bg: #2e1e3a;
+  --accent-gemini-text: #c084fc;
+
+  --accent-cursor: #ec4899;
+  --accent-cursor-bg: #3a1e2e;
+  --accent-cursor-text: #f472b6;
+
+  --accent-green: #4ade80;
+  --accent-green-dim: #1e2a1e;
+
+  --state-running: #22d3ee;
+  --state-attention: #fbbf24;
+  --destructive: #ff3333;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* iPad touch targets mínimos */
+  --touch-target: 44px;
+
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* App root sizing: 100vh/100vw overshoot the visible area on mobile Safari
+   (the address bar isn't counted), causing the terminal to size itself larger
+   than the screen and appear to overflow ("gigante atravessando a tela").
+   100dvh/100dvw track the actual visible viewport; the vh/vw line above is the
+   fallback for browsers that don't support dvh/dvw yet. */
+.app-root {
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  width: 100dvw;
+}
+
+/* Scrollbar minimalista */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge--claude { background: var(--accent-claude-bg); color: var(--accent-claude-text); }
+.badge--anti   { background: var(--accent-anti-bg);   color: var(--accent-anti-text); }
+.badge--gemini { background: var(--accent-gemini-bg); color: var(--accent-gemini-text); }
+.badge--cursor { background: var(--accent-cursor-bg); color: var(--accent-cursor-text); }
+.badge--none   { background: var(--bg-surface-3); color: var(--text-muted); }
+.badge--terminal { background: var(--bg-surface-3); color: var(--text-muted); }
+.badge--cliente {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+}
+
+/* Status dot animado */
+.status-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green);
+}
+.status-dot--active { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* Typing indicator */
+.typing-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: bounce 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: .2s; }
+.typing-dot:nth-child(3) { animation-delay: .4s; }
+@keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }

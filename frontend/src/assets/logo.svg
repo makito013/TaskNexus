@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 150" width="100%" height="100%">
+  <defs>
+    <!-- Gradiente Principal -->
+    <linearGradient id="nexusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
+    
+    <!-- Gradiente do Texto -->
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
+
+    <!-- Efeito de Brilho (Neon) -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Fundo (Inspirado no GitHub Dark Dimmed) -->
+  <rect width="100%" height="100%" rx="16" fill="#0d1117"/>
+
+  <!-- Grupo do Ícone -->
+  <g transform="translate(35, 25)">
+    <!-- Hexágono Externo (A Rede) -->
+    <polygon points="50,5 93,30 93,80 50,105 7,80 7,30" fill="none" stroke="#21262d" stroke-width="4" />
+    <polygon points="50,5 93,30 93,80 50,105 7,80 7,30" fill="none" stroke="url(#nexusGradient)" stroke-width="1.5" opacity="0.4" />
+
+    <!-- Linhas de Conexão do Nexus -->
+    <line x1="50" y1="5" x2="50" y2="105" stroke="#21262d" stroke-width="2" />
+    <line x1="7" y1="30" x2="93" y2="80" stroke="#21262d" stroke-width="2" />
+    <line x1="7" y1="80" x2="93" y2="30" stroke="#21262d" stroke-width="2" />
+
+    <!-- Checkmark (A Tarefa) -->
+    <path d="M 22 55 L 43 76 L 85 30" fill="none" stroke="url(#nexusGradient)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+
+    <!-- Nódulos/Agentes -->
+    <circle cx="22" cy="55" r="4" fill="#ffffff" />
+    <circle cx="43" cy="76" r="4" fill="#ffffff" />
+    <circle cx="85" cy="30" r="4" fill="#ffffff" />
+    
+    <!-- Centro do Nexus -->
+    <circle cx="50" cy="55" r="5" fill="#00f2fe" filter="url(#glow)" opacity="0.9"/> 
+  </g>
+
+  <!-- Tipografia -->
+  <!-- "Task" (Sólido, representando o trabalho base) -->
+  <text x="155" y="92" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="52" font-weight="800" fill="#ffffff" letter-spacing="-1.5">
+    Task<tspan fill="url(#textGradient)" font-weight="300">Nexus</tspan>
+  </text>
+  <!-- "Nexus" (Fino e com gradiente, representando o fluxo e conexão) -->
+
+  <!-- Subtítulo -->
+  <text x="160" y="118" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#8b949e" letter-spacing="3">
+    AGENT WORKSPACE
+  </text>
+</svg>

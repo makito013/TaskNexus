@@ -1,0 +1,93 @@
+# Variáveis de ambiente. Amplo de propósito: a regra anterior cobria só
+# `backend/.env`, e um `.env` na raiz ou em `frontend/` — arquivo que costuma
+# nascer depois, sem ninguém revisitar este .gitignore — passaria batido.
+# `!.env.example` reabre a exceção do template versionado (backend/.env.example);
+# sem ela, `.env.*` engoliria justamente o arquivo que precisa ser público.
+.env
+.env.*
+!.env.example
+node_modules/
+__pycache__/
+*.pyc
+dist/
+.DS_Store
+backend/.venv/
+logs/
+.superpowers/
+.mcp.json
+.agents/
+.claude/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Notas e planejamento interno (exceto docs/windows-deploy.md e docs/images/,
+# que são documentação pública)
+.planning/
+docs/*
+!docs/windows-deploy.md
+!docs/images/
+!docs/images/**
+
+# Pipeline de dev pessoal — não faz parte do app
+agentes/
+skills/
+
+# Caches de build/teste
+.pytest_cache/
+.vite/
+
+# Configs de ferramentas de AI (cada usuário tem as suas)
+.adal/
+.augment/
+.codebuddy/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.devin/
+.factory/
+.goose/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+
+# Coverage de testes (gerado automaticamente)
+backend/.coverage
+.coverage
+
+# Lixo de metadado macOS/AppleDouble solto na raiz
+._docs
+
+# Saída local do skill graphify — não faz parte do produto
+graphify-out/
+
+# Segredos / chaves privadas
+*.pem
+*.key
+*.crt
+*.pfx
+id_rsa*
+credentials.json
+certs/
+
+# Anexos de card do Board (uploads reais do usuário, ex.: imagens) — dado de
+# runtime, não faz parte do produto. Escopo mínimo: só attachments/.
+.escritorio/attachments/

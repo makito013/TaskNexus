@@ -1,0 +1,178 @@
+/* frontend/src/layouts/v2/theme.css
+ *
+ * Milestone 2 (plano Layout v2, 05-TL.md, Tarefa 11): tokens de tema do
+ * layout v2, namespace `--v2-*` para nunca colidir com os tokens `--*` do v1
+ * (index.css) — os dois podem coexistir no mesmo documento sem que um
+ * sobrescreva o outro. Importado SÓ pelo entrypoint de AppV2.jsx: layout v1
+ * nunca paga o custo (nem o risco de cascata) destas regras.
+ *
+ * Valores em oklch() (suportado no Safari/iPadOS moderno, plataforma alvo
+ * deste projeto — ver constraints em .claude/CLAUDE.md) definidos pelo
+ * Designer a partir da extração do mock (05-DESIGNER.md).
+ *
+ * Tipografia (Milestone 3, Tarefa 19): Figtree e IBM Plex Mono self-hosted —
+ * arquivos .woff2 baixados do Google Fonts e servidos localmente em
+ * frontend/public/fonts/ (nenhum <link>/@import de fonts.googleapis.com em
+ * produção). Figtree é servida pelo Google como UM ÚNICO arquivo de fonte
+ * variável cobrindo o eixo de peso inteiro (confirmado: os 4 pesos
+ * requisitados — 400/500/600/700 — resolveram para a MESMA URL no CSS2 da
+ * API) — por isso um só @font-face com `font-weight: 400 700` (faixa, não
+ * um valor fixo) em vez de 4 blocos repetidos apontando pro mesmo arquivo.
+ * IBM Plex Mono já veio como 3 arquivos estáticos distintos (400/500/600),
+ * um @font-face por peso, convenção normal para fontes não-variáveis.
+ * Ambas em `font-display: swap` (mesmo default do Google Fonts) para não
+ * bloquear o primeiro paint do texto enquanto a fonte carrega — cai no
+ * fallback de sistema (-apple-system/ui-monospace, já usado em todo o v2)
+ * até o arquivo local resolver.
+ */
+
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/figtree-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-600.woff2') format('woff2');
+}
+
+:root[data-layout="v2"][data-theme="light"] {
+  --v2-bg: oklch(0.968 0.007 85);
+  --v2-surface: oklch(0.985 0.006 85);
+  --v2-surface-2: oklch(0.945 0.008 85);
+  --v2-surface-3: oklch(0.925 0.01 85);
+  --v2-border: oklch(0.895 0.009 85);
+  --v2-text: oklch(0.30 0.018 70);
+  --v2-text-dim: oklch(0.52 0.015 70);
+  --v2-text-faint: oklch(0.66 0.012 70);
+  --v2-accent: oklch(0.58 0.065 168);
+  --v2-accent-strong: oklch(0.50 0.075 168);
+  --v2-accent-soft: oklch(0.93 0.028 168);
+  --v2-accent-2: oklch(0.56 0.075 268);
+  --v2-accent-2-soft: oklch(0.93 0.03 268);
+  --v2-danger: oklch(0.55 0.14 25);
+  --v2-danger-soft: oklch(0.93 0.04 25);
+  --v2-bubble-me: oklch(0.93 0.028 168);
+  --v2-shadow: 0 1px 2px oklch(0.4 0.02 70/.06), 0 6px 20px oklch(0.4 0.02 70/.06);
+  --v2-shadow-lg: 0 12px 48px oklch(0.3 0.02 70/.18);
+  /* Bloco C (BottomSheet.jsx) — scrim atrás do painel do bottom sheet. Mesma
+     base oklch escura usada em --v2-shadow-lg (0.3 0.02 70), alpha ~0.55 pra
+     escurecer o fundo sem ficar opaco demais no tema claro. */
+  --v2-scrim: oklch(0.3 0.02 70 / 0.55);
+}
+
+:root[data-layout="v2"][data-theme="dark"] {
+  --v2-bg: oklch(0.255 0.012 262);
+  --v2-surface: oklch(0.298 0.014 262);
+  --v2-surface-2: oklch(0.335 0.016 262);
+  --v2-surface-3: oklch(0.375 0.017 262);
+  --v2-border: oklch(0.40 0.018 262);
+  --v2-text: oklch(0.93 0.01 262);
+  --v2-text-dim: oklch(0.74 0.013 262);
+  --v2-text-faint: oklch(0.60 0.014 262);
+  --v2-accent: oklch(0.74 0.065 168);
+  --v2-accent-strong: oklch(0.80 0.07 168);
+  --v2-accent-soft: oklch(0.36 0.035 168);
+  --v2-accent-2: oklch(0.74 0.07 268);
+  --v2-accent-2-soft: oklch(0.36 0.035 268);
+  --v2-danger: oklch(0.68 0.14 25);
+  --v2-danger-soft: oklch(0.36 0.05 25);
+  --v2-bubble-me: oklch(0.36 0.035 168);
+  /* Designer não especificou --v2-shadow/--v2-shadow-lg para o bloco dark —
+     reaproveita os mesmos valores do bloco light (a cor-base do oklch já é
+     escura o bastante para ler bem em ambos os temas). */
+  --v2-shadow: 0 1px 2px oklch(0.4 0.02 70/.06), 0 6px 20px oklch(0.4 0.02 70/.06);
+  --v2-shadow-lg: 0 12px 48px oklch(0.3 0.02 70/.18);
+  /* Bloco C (BottomSheet.jsx) — Designer não especificou um --v2-scrim
+     separado pro tema escuro; mesma cor-base oklch do bloco light já lê bem
+     como scrim em ambos os temas (mesmo racional documentado acima para
+     --v2-shadow/--v2-shadow-lg). */
+  --v2-scrim: oklch(0.15 0.02 262 / 0.55);
+}
+
+/* Tarefa 14 (05-TL.md): anel visual de "pensando/processando" no avatar do
+ * agente em ChatSidebarV2.jsx — mesmo princípio do `.status-dot--active` de
+ * index.css (v1), reimplementado aqui no namespace v2 em vez de reaproveitar
+ * a classe v1 (que não segue os tokens --v2-*). */
+.v2-chat-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-strong);
+  border: 2px solid transparent;
+}
+
+.v2-chat-avatar--running {
+  border-color: var(--v2-accent);
+  animation: v2-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes v2-thinking-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Retrabalho pontual (pedido literal do Bruno): avatar circular do CLIENTE em
+ * ClienteList.jsx, mostrado no lugar do nome por extenso quando a sidebar
+ * está recolhida (`collapsed`) — mesma estilística visual de
+ * `.v2-chat-avatar` acima (círculo, iniciais, tokens --v2-*), sem o variant
+ * `--running` (não se aplica a cliente, só a chat/sessão). */
+.v2-cliente-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--v2-accent-2-soft);
+  color: var(--v2-accent-2);
+}
+
+/* Navegação mobile dedicada do Layout v2 (plano do TL, Tarefa 12):
+ * MobileMenuScreen.jsx aparece por cima do `content` (que fica SEMPRE
+ * montado por baixo) com fade + leve translateY (12px->0, ~180ms ease-out).
+ * Só opacity/transform — NUNCA anima width/height do container do terminal,
+ * que não é tocado por esta classe. Aplicada só na entrada (mount); sem
+ * reverso na saída, já que a tela é desmontada imediatamente ao trocar
+ * mobileView (puramente cosmético, não afeta nenhum dos gates funcionais). */
+@keyframes v2-mobile-menu-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.v2-mobile-menu-enter {
+  animation: v2-mobile-menu-enter 180ms ease-out;
+}
