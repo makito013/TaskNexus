@@ -586,6 +586,18 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
         "markers": (),
         "exit_is_failure": True,
     },
+    "antigravity": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
+    "gemini": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
+    "agy": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
 }
 
 
@@ -737,6 +749,15 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
         # Board, não cria tarefas de validação e não avisa quando termina de
         # responder. Mesma paridade do `agy`.
         return list(agent.cmd) + ["--trust", "--resume", session_id]
+    if agent.ia in ("antigravity", "gemini", "agy"):
+        cmd = list(agent.cmd)
+        if resume:
+            cmd += ["--resume", session_id]
+        else:
+            cmd += ["--session-id", session_id]
+            if system_prompt:
+                cmd += ["--prompt-interactive", system_prompt]
+        return cmd
     cmd = list(agent.cmd) + ["--dangerously-skip-permissions"]
     if system_prompt:
         cmd += ["--prompt-interactive", system_prompt]
