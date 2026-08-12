@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { api } from './services/api.js'
+import { registerServiceWorker } from './hooks/useServiceWorker.js'
 
 // Milestone 1 (plano Layout v2, 05-TL.md): bootstrap assíncrono — busca a
 // configuração de aparência ANTES de montar <App/>, para que
@@ -25,4 +26,9 @@ api.fetchAppearance()
         <App initialAppearance={appearance} />
       </React.StrictMode>
     )
+
+    // Fire-and-forget, same as the appearance fetch above: registration
+    // never rejects (see useServiceWorker.js), so no .catch() is needed
+    // here, and it must not block/delay the render call above it.
+    registerServiceWorker()
   })

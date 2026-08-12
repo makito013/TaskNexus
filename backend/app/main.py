@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import mimetypes
 import socket
 import sys
 import time
@@ -71,7 +72,13 @@ SESSIONS_DB = os.getenv("SESSIONS_DB", "sessions.db")
 # pelo FastAPI — um processo só, uma porta só, sem depender do Vite dev server
 # em uso contínuo. Se `dist/` não existir (fluxo de dev normal, Vite dev
 # server + proxy do vite.config.js), o mount é pulado e nada muda.
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+# Accepts an env var override (same pattern as BOARD_UPLOADS_ROOT below)
+# to allow deterministic integration tests against a temporary dist/,
+# without depending on running `npm run build` before the suite.
+FRONTEND_DIST = os.getenv(
+    "FRONTEND_DIST",
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"),
+)
 # Diretório onde as imagens de cards são gravadas em disco (Tarefa 6,
 # 05-ARQUITETO.md seção 2/5.3). Resolvido a partir de __file__ (mesmo
 # espírito de FRONTEND_DIST), não do CWD — mas, diferente de FRONTEND_DIST,
@@ -2130,6 +2137,40 @@ if os.path.isdir(FRONTEND_DIST):
     @app.get("/favicon.svg")
     async def favicon():
         return FileResponse(os.path.join(FRONTEND_DIST, "favicon.svg"))
+
+    # PWA static assets — same reasoning as favicon.svg above: these must be
+    # registered before the catch-all, or the browser would receive
+    # index.html instead of the manifest/service worker/icons/fonts, and the
+    # PWA would silently fail to be installable.
+    app.mount(
+        "/icons",
+        StaticFiles(directory=os.path.join(FRONTEND_DIST, "icons")),
+        name="pwa_icons",
+    )
+
+    # .woff2 is missing from mimetypes' built-in map on Windows/Python 3.12 —
+    # without this, StaticFiles/FileResponse falls back to "text/plain" for
+    # every font, which some browsers refuse to load as a webfont.
+    mimetypes.add_type("font/woff2", ".woff2")
+    app.mount(
+        "/fonts",
+        StaticFiles(directory=os.path.join(FRONTEND_DIST, "fonts")),
+        name="webfonts",
+    )
+
+    @app.get("/manifest.webmanifest")
+    async def pwa_manifest():
+        return FileResponse(
+            os.path.join(FRONTEND_DIST, "manifest.webmanifest"),
+            media_type="application/manifest+json",
+        )
+
+    @app.get("/sw.js")
+    async def service_worker():
+        return FileResponse(
+            os.path.join(FRONTEND_DIST, "sw.js"),
+            media_type="text/javascript",
+        )
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):

@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA installability (Phase 2): manifest + theme-color make the app
+         installable on Chromium/Android. Safari on iOS ignores both — it
+         only reads its own apple-touch-icon/apple-mobile-web-app-* tags
+         below, hence the duplication instead of relying on the manifest
+         alone. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0d0d0d" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TaskNexus" />
     <title>TaskNexus</title>
     <!-- Milestone 1 (plano Layout v2, 05-TL.md): fundo escuro fixo (mesmo tom
          de --bg-base do v1) cobrindo o instante pré-JS, enquanto o fetch de
