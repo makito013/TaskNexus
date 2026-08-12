@@ -586,6 +586,18 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
         "markers": (),
         "exit_is_failure": True,
     },
+    "antigravity": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
+    "gemini": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
+    "agy": {
+        "markers": (b"No session found", b"Session not found"),
+        "exit_is_failure": False,
+    },
 }
 
 
@@ -689,18 +701,29 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
     ia="cursor" always resumes an existing chat — ver o ramo abaixo para o
     porquê de `--resume` vir por último e de `system_prompt` ser ignorado.
 
-    Other agent types (e.g. Gemini/Antigravity's `agy`) have no --session-id
-    equivalent for a fresh session and no way for us to capture a specific
-    conversation ID to target later — `--conversation <ID>` exists but agy never
-    prints an ID we could store, only `--continue` ("resume the most recent
-    conversation [in this project]"). Since a project can now have several
-    concurrent agy instances (multi-chat), "most recent" is ambiguous across
-    them: a cold reconnect (PTY killed by the grace-period cleanup, or a
-    reload/server restart) could silently resume a DIFFERENT tab's
-    conversation. So `resume` is intentionally ignored here — every fresh
-    process spawn for a non-claude agent starts a new conversation. The only
-    continuity these agents get is the existing PTY-reuse path (proc.active),
-    which is unambiguous because it reattaches to the exact same process.
+    Other agent types (Gemini/Antigravity's `agy`) now get the same
+    session-id contract as claude: a fresh spawn passes `--session-id
+    <session_id>` (the id WE generate, same as claude), and `resume=True`
+    passes `--resume <session_id>` explicitly — not `--continue` ("resume the
+    most recent conversation"), which stays unused here precisely because it
+    is ambiguous across a project's multiple concurrent agy instances
+    (multi-chat): a cold reconnect (PTY killed by the grace-period cleanup,
+    or a reload/server restart) could silently resume a DIFFERENT tab's
+    conversation if we relied on "most recent" instead of an explicit id.
+    `system_prompt`, when present on a fresh session, is passed via
+    `--prompt-interactive` (agy's flag — NOT --append-system-prompt, that is
+    claude-specific).
+
+    ASSUMPTION NOT VERIFIED EXPERIMENTALLY: this assumes the real `agy` CLI
+    actually accepts `--session-id <id>` on a fresh session and later accepts
+    that same id back via `--resume <id>` to reattach the right conversation
+    (i.e. explicit-id resume, with the same semantics as claude's
+    --session-id/--resume pair). This was not spiked against the real agy
+    binary in this change — if that contract turns out to be wrong (e.g. agy
+    silently ignores --session-id, or --resume only accepts "most recent"
+    despite taking an argument), the multi-chat ambiguity this docstring
+    used to warn about would resurface silently. Treat this as the current
+    intended behavior, not a confirmed fact.
     """
     if agent is None or agent.ia == "claude":
         return _build_pty_cmd(session_id, resume, system_prompt, base_cmd=agent.cmd if agent else None)
@@ -737,6 +760,15 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
         # Board, não cria tarefas de validação e não avisa quando termina de
         # responder. Mesma paridade do `agy`.
         return list(agent.cmd) + ["--trust", "--resume", session_id]
+    if agent.ia in ("antigravity", "gemini", "agy"):
+        cmd = list(agent.cmd)
+        if resume:
+            cmd += ["--resume", session_id]
+        else:
+            cmd += ["--session-id", session_id]
+            if system_prompt:
+                cmd += ["--prompt-interactive", system_prompt]
+        return cmd
     cmd = list(agent.cmd) + ["--dangerously-skip-permissions"]
     if system_prompt:
         cmd += ["--prompt-interactive", system_prompt]

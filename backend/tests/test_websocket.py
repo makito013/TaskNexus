@@ -318,7 +318,11 @@ def test_build_agent_cmd_delegates_to_claude_contract_for_none_or_claude_agent(c
 
 
 def test_build_agent_cmd_uses_agent_cmd_for_non_claude_agent():
-    """Non-claude agents (e.g. Gemini/agy) must launch their own cmd, never 'claude'."""
+    """Non-claude agents (e.g. Gemini/agy) must launch their own cmd, never
+    'claude', and use the explicit --session-id contract (same shape as
+    claude's own --session-id/--resume pair) — NOT the generic
+    --dangerously-skip-permissions fallback that unlisted ia types get,
+    since antigravity/gemini/agy have their own branch in _build_agent_cmd."""
     from app.main import _build_agent_cmd
     from app.models import Agent
 
@@ -327,23 +331,28 @@ def test_build_agent_cmd_uses_agent_cmd_for_non_claude_agent():
     fresh = _build_agent_cmd(gemini_agent, "sid-1", resume=False, system_prompt="You are agent X")
     assert fresh[0] == "agy"
     assert "claude" not in fresh
-    assert "--dangerously-skip-permissions" in fresh
+    assert "--dangerously-skip-permissions" not in fresh
+    assert "--session-id" in fresh
+    assert fresh[fresh.index("--session-id") + 1] == "sid-1"
     assert "--prompt-interactive" in fresh
-    assert "You are agent X" in fresh
-    assert "--session-id" not in fresh
+    assert fresh[fresh.index("--prompt-interactive") + 1] == "You are agent X"
 
     fresh_no_prompt = _build_agent_cmd(gemini_agent, "sid-1", resume=False, system_prompt=None)
     assert "--prompt-interactive" not in fresh_no_prompt
 
 
-def test_build_agent_cmd_ignores_resume_for_non_claude_agent():
-    """resume=True must NOT translate to --continue for non-claude agents: agy's
-    --continue resumes "the most recent conversation" project-wide, which is
-    ambiguous when a project has several concurrent agy instances (multi-chat) —
-    a cold reconnect could silently resume a different tab's conversation. Every
-    fresh process spawn for a non-claude agent must start a new conversation;
-    continuity for these agents only comes from PTY-reuse (the process staying
-    alive), never from --continue."""
+def test_build_agent_cmd_uses_explicit_resume_for_non_claude_agent():
+    """resume=True must translate to an explicit `--resume <session_id>` for
+    non-claude agents with the new contract (antigravity/gemini/agy) — never
+    `--continue` ("resume the most recent conversation [in this project]"),
+    which stays deliberately unused: `--continue` would be ambiguous when a
+    project has several concurrent agy instances (multi-chat), since a cold
+    reconnect (PTY killed by the grace-period cleanup, or a reload/server
+    restart) could silently resume a DIFFERENT tab's conversation. An
+    explicit id, mirroring claude's --resume, has no such ambiguity.
+    system_prompt is only ever attached on a fresh session (again mirroring
+    claude's --append-system-prompt contract) — on resume the agent already
+    has it, so --prompt-interactive must NOT appear here."""
     from app.main import _build_agent_cmd
     from app.models import Agent
 
@@ -351,9 +360,10 @@ def test_build_agent_cmd_ignores_resume_for_non_claude_agent():
 
     resumed = _build_agent_cmd(gemini_agent, "sid-1", resume=True, system_prompt="You are agent X")
     assert "--continue" not in resumed
-    assert "sid-1" not in resumed
-    assert "--prompt-interactive" in resumed
-    assert "You are agent X" in resumed
+    assert "--resume" in resumed
+    assert resumed[resumed.index("--resume") + 1] == "sid-1"
+    assert "--prompt-interactive" not in resumed
+    assert "You are agent X" not in resumed
 
 
 def test_build_agent_cmd_uses_custom_cmd_for_claude_agent_with_non_default_cmd():
@@ -1416,13 +1426,29 @@ def test_resume_failure_signatures_cursor_falls_back_to_exit_code():
     assert isinstance(cursor["markers"], tuple)
 
 
-def test_agent_types_without_resume_semantics_have_no_probe():
-    """agy/terminal não têm o conceito de retomar um id específico, então não há
-    falha de retomada para detectar — a ausência no registry é o que desliga o
-    probe para eles."""
+def test_agent_types_with_new_resume_semantics_have_a_probe():
+    """antigravity/gemini/agy gained an explicit --session-id/--resume
+    contract in _build_agent_cmd (same shape as claude's), so they now DO
+    need a resume-failure probe to detect a stale/unknown session id — the
+    three share the same placeholder markers because the real agy CLI's
+    failure output was not confirmed experimentally (see _build_agent_cmd's
+    docstring); exit_is_failure=False matches claude's approach (dying by
+    itself isn't proof of a failed resume, the marker text is)."""
     from app.main import _RESUME_FAILURE_SIGNATURES
 
-    assert "gemini" not in _RESUME_FAILURE_SIGNATURES
+    for ia in ("antigravity", "gemini", "agy"):
+        entry = _RESUME_FAILURE_SIGNATURES[ia]
+        assert entry["markers"] == (b"No session found", b"Session not found")
+        assert entry["exit_is_failure"] is False
+
+
+def test_agent_types_without_resume_semantics_have_no_probe():
+    """terminal is a raw shell with no session/resume concept at all (see
+    _build_agent_cmd's ia="terminal" branch, which returns agent.cmd
+    unmodified) — so it correctly has no entry in the registry, there's no
+    "failed resume" to ever detect for it."""
+    from app.main import _RESUME_FAILURE_SIGNATURES
+
     assert "terminal" not in _RESUME_FAILURE_SIGNATURES
 
 
