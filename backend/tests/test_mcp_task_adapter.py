@@ -102,6 +102,78 @@ def _make_adapter(port, session_id="test-session-id"):
     return _AdapterProcess(env)
 
 
+class _BinaryAdapterProcess:
+    """Like _AdapterProcess, but writes raw UTF-8 bytes straight to stdin
+    instead of going through Popen(text=True) — a text-mode pipe on this
+    side would apply Python's own (possibly wrong) encoding when writing,
+    reintroducing the exact bug this test is meant to catch on the
+    adapter's reading side. bufsize=0 (not the text-mode bufsize=1 used by
+    _AdapterProcess) because line buffering is a text-mode-only concept;
+    passing bufsize=1 with text=False just emits a RuntimeWarning and
+    silently falls back to unbuffered, so flushes are done explicitly
+    below instead of relying on buffering semantics."""
+
+    def __init__(self, env):
+        self.proc = subprocess.Popen(
+            [sys.executable, ADAPTER_PATH],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            text=False,
+            bufsize=0,
+        )
+        self._lines: "queue_mod.Queue" = queue_mod.Queue()
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self):
+        for line in self.proc.stdout:
+            self._lines.put(line)
+
+    def send_utf8_line(self, message: dict):
+        """Encodes `message` as UTF-8 bytes (never relying on the platform's
+        default text encoding) and writes it + b"\\n" directly to stdin."""
+        payload = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        self.proc.stdin.write(payload + b"\n")
+        self.proc.stdin.flush()
+
+    def recv(self, timeout=3.0):
+        line = self._lines.get(timeout=timeout)
+        return json.loads(line.decode("utf-8"))
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.proc.wait(timeout=2.0)
+        except Exception:
+            self.proc.kill()
+
+
+def _make_hostile_env(port):
+    """Env that reproduces the real-world Windows failure mode this test
+    guards against: no PYTHONUTF8 (the main.py defense-in-depth env var is
+    absent, as if _build_mcp_config_json's fix wasn't applied to this
+    process) and PYTHONIOENCODING pinned to cp1252 (a legacy single-byte
+    Windows codepage that cannot represent most UTF-8 continuation bytes as
+    themselves), so decoding stdin with anything other than the explicit
+    reconfigure("utf-8") in main() corrupts non-ASCII input. Inherited
+    PYTHONUTF8/PYTHONIOENCODING from the current environment (pytest's own
+    venv/shell) are popped first — otherwise this "hostile" env could
+    accidentally inherit a friendly setting and the test would pass for the
+    wrong reason, independent of the fix under test."""
+    env = os.environ.copy()
+    env.pop("PYTHONUTF8", None)
+    env.pop("PYTHONIOENCODING", None)
+    env["PYTHONIOENCODING"] = "cp1252"
+    env["ESCRITORIO_HOOK_URL"] = "http://127.0.0.1:{0}/api/hooks/task".format(port)
+    env["ESCRITORIO_CLAUDE_SESSION_ID"] = "test-session-id"
+    return env
+
+
 def test_initialize_echoes_protocol_version_and_capabilities():
     server, thread, port = _start_ephemeral_server()
     try:
@@ -342,6 +414,44 @@ def test_unknown_notification_without_id_gets_no_response():
             adapter.send({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
             response = adapter.recv()
             assert response["id"] == 7
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_criar_tarefa_preserves_utf8_accents_under_hostile_windows_encoding():
+    """Regression test for the mojibake bug: a UTF-8-encoded request written
+    as raw bytes to stdin (never through Python's own text-mode encoding)
+    must reach the backend POST body intact even when the child process's
+    default encoding is a hostile Windows codepage (PYTHONIOENCODING=cp1252,
+    no PYTHONUTF8) — i.e. `for line in sys.stdin` inside main() must decode
+    as UTF-8 regardless of locale.getpreferredencoding(), which is exactly
+    what main()'s stdin.reconfigure("utf-8") guarantees."""
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/task": {"success": True}}
+    )
+    try:
+        env = _make_hostile_env(port)
+        adapter = _BinaryAdapterProcess(env)
+        try:
+            adapter.send_utf8_line({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "criar_tarefa_validacao",
+                    "arguments": {
+                        "titulo": "Revisão de código",
+                        "descricao_markdown": "Confirme a validação da migração",
+                    },
+                },
+            })
+            response = adapter.recv(timeout=5.0)
+            text = response["result"]["content"][0]["text"]
+            assert text == "Tarefa de validação criada."
+
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["titulo"] == "Revisão de código"
+            assert received["body"]["descricao_markdown"] == "Confirme a validação da migração"
         finally:
             adapter.close()
     finally:

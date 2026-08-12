@@ -1,5 +1,6 @@
 """Testes de integração para os hooks do agente para o Board (Tarefa 7,
-05-TL.md): POST /api/hooks/cards/create e POST /api/hooks/cards/move.
+05-TL.md, + Fase 3): POST /api/hooks/cards/create, /move, /update, /delete,
+/get e /list.
 
 Mesmo padrão de fixture `client` de test_hooks_task.py/test_cards_endpoints.py
 (reload de app.main com env vars apontando pra um tmp_path isolado). Sessões
@@ -68,7 +69,7 @@ def _insert_card_direct(db_path: str, **cols) -> int:
     problemas de "different event loop" ao chamar o CardStore fora do loop
     do TestClient). Permite montar estados que nenhum endpoint HTTP produz
     hoje (ex: um card com origem="agente:claude" já no projeto de OUTRO
-    cliente, para exercitar a regra "mesmo cliente" de _agent_can_move sem
+    cliente, para exercitar a regra "mesmo cliente" de _agent_same_cliente sem
     depender de qual agente o criou)."""
     now = time.time()
     conn = sqlite3.connect(db_path)
@@ -448,3 +449,482 @@ def test_hook_cards_move_nonexistent_card_returns_explicit_error(client):
     body = r.json()
     assert body.get("success") is False
     assert body.get("error")
+
+
+# -- POST /api/hooks/cards/update (Fase 3) -----------------------------------
+
+def test_hook_cards_update_same_cliente_edits_fields_and_sets_ultima_atualizacao(client):
+    """Fluxo de sucesso: agente do mesmo cliente corrige título/descrição/status
+    de um card existente e passa a constar como último a atualizar."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000001")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Titulo errado",
+        "descricao": "descricao errada",
+    }).json()
+    card_id = created["card_id"]
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": card_id,
+        "titulo": "Titulo certo",
+        "descricao": "descricao certa",
+        "status": "em_revisao",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    assert body["card"]["titulo"] == "Titulo certo"
+
+    updated = _get_card(client, card_id)
+    assert updated["titulo"] == "Titulo certo"
+    assert updated["descricao"] == "descricao certa"
+    assert updated["status"] == "em_revisao"
+    assert updated["ultima_atualizacao_por"] == "agente:agente-teste"
+
+
+def test_hook_cards_update_omitted_fields_are_preserved(client):
+    """Campos omitidos não são apagados — mesma semântica parcial do PATCH."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000002")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Original",
+        "descricao": "Descrição original",
+    }).json()
+    card_id = created["card_id"]
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": card_id,
+        "titulo": "Só o título muda",
+    })
+    assert r.json()["success"] is True
+
+    updated = _get_card(client, card_id)
+    assert updated["titulo"] == "Só o título muda"
+    assert updated["descricao"] == "Descrição original"
+    assert updated["status"] == "a_fazer"
+
+
+def test_hook_cards_update_subcard_is_supported(client):
+    """Editar subcard usa exatamente o mesmo contrato de editar card de topo."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000003")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    parent = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Pai",
+    }).json()
+    sub = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Sub", "parent_id": parent["card_id"],
+    }).json()
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": sub["card_id"],
+        "titulo": "Sub editado",
+    })
+    assert r.json()["success"] is True
+
+    pai = _get_card(client, parent["card_id"])
+    subcard = next(s for s in pai["subcards"] if s["id"] == sub["card_id"])
+    assert subcard["titulo"] == "Sub editado"
+
+
+def test_hook_cards_update_unknown_session_is_noop(client):
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": "unknown-uuid",
+        "card_id": 999999,
+        "titulo": "X",
+    })
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_hook_cards_update_other_cliente_rejected_and_card_unchanged(client, tmp_path):
+    """P0/segurança: card de outro cliente não pode ser editado, e a checagem
+    acontece ANTES do update (o card fica intacto)."""
+    db_path = str(tmp_path / "sessions.db")
+    card_id = _insert_card_direct(
+        db_path,
+        titulo="Card do outro cliente",
+        projeto_id="outrocliente/proj",
+        descricao="original",
+    )
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000004")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": card_id,
+        "titulo": "Invadido",
+        "descricao": "invadido",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("success") is False
+    assert "outro cliente" in body.get("error", "")
+
+    unchanged = _get_card(client, card_id, projeto_id="outrocliente/proj")
+    assert unchanged["titulo"] == "Card do outro cliente"
+    assert unchanged["descricao"] == "original"
+    assert unchanged["ultima_atualizacao_por"] == "bruno"
+
+
+def test_hook_cards_update_nonexistent_card_returns_explicit_error(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000005")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": 999999, "titulo": "X",
+    })
+    assert r.status_code == 200
+    assert r.json().get("success") is False
+    assert r.json().get("error")
+
+
+def test_hook_cards_update_deleted_card_returns_explicit_error(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("a1a1a1a1-0000-0000-0000-000000000006")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Vai ser apagado",
+    }).json()
+    client.delete("/api/cards/{0}".format(created["card_id"]))
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": created["card_id"], "titulo": "X",
+    })
+    assert r.json().get("success") is False
+
+
+# -- POST /api/hooks/cards/delete (Fase 3) -----------------------------------
+
+def test_hook_cards_delete_same_cliente_removes_card_and_reports_subcards(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("b2b2b2b2-0000-0000-0000-000000000001")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    parent = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Pai",
+    }).json()
+    client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Sub 1", "parent_id": parent["card_id"],
+    })
+    client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Sub 2", "parent_id": parent["card_id"],
+    })
+
+    r = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": claude_sid, "card_id": parent["card_id"],
+    })
+    assert r.status_code == 200
+    assert r.json() == {"success": True, "subcards_afetados": 2}
+
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+def test_hook_cards_delete_unknown_session_is_noop(client):
+    r = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": "unknown-uuid", "card_id": 999999,
+    })
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_hook_cards_delete_other_cliente_rejected_and_card_kept(client, tmp_path):
+    """P0/segurança: exclusão exige mesmo cliente, e a checagem vem ANTES do
+    soft_delete — o card do outro cliente continua no board."""
+    db_path = str(tmp_path / "sessions.db")
+    card_id = _insert_card_direct(
+        db_path, titulo="Card do outro cliente", projeto_id="outrocliente/proj",
+    )
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("b2b2b2b2-0000-0000-0000-000000000002")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": claude_sid, "card_id": card_id,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("success") is False
+    assert "outro cliente" in body.get("error", "")
+
+    ainda_la = _get_card(client, card_id, projeto_id="outrocliente/proj")
+    assert ainda_la["id"] == card_id
+
+
+def test_hook_cards_delete_nonexistent_card_returns_explicit_error(client):
+    """Diferente do DELETE /api/cards/{id} da UI, que responde sucesso para id
+    inexistente: o hook do agente confirma existência antes, senão o agente
+    receberia "excluído com sucesso" para um card que nunca existiu."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("b2b2b2b2-0000-0000-0000-000000000003")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": claude_sid, "card_id": 999999,
+    })
+    assert r.status_code == 200
+    assert r.json().get("success") is False
+    assert r.json().get("error")
+
+
+def test_hook_cards_delete_already_deleted_card_returns_explicit_error(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("b2b2b2b2-0000-0000-0000-000000000004")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Apagar duas vezes",
+    }).json()
+    first = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": claude_sid, "card_id": created["card_id"],
+    })
+    assert first.json()["success"] is True
+
+    second = client.post("/api/hooks/cards/delete", json={
+        "claude_session_id": claude_sid, "card_id": created["card_id"],
+    })
+    assert second.json().get("success") is False
+
+
+# -- POST /api/hooks/cards/get (Fase 3) --------------------------------------
+
+def test_hook_cards_get_same_cliente_returns_raw_card_fields(client):
+    """ver_card devolve os campos CRUS do card (CardStore.get) — sem
+    subcards/imagens hidratados, decisão fechada com o Bruno."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("c3c3c3c3-0000-0000-0000-000000000001")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Card para revisar",
+        "descricao": "conteúdo",
+    }).json()
+    client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Sub", "parent_id": created["card_id"],
+    })
+
+    r = client.post("/api/hooks/cards/get", json={
+        "claude_session_id": claude_sid, "card_id": created["card_id"],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    card = body["card"]
+    assert card["id"] == created["card_id"]
+    assert card["titulo"] == "Card para revisar"
+    assert card["descricao"] == "conteúdo"
+    assert card["projeto_id"] == "meu-projeto"
+    assert card["origem"] == "agente:agente-teste"
+    # cru: nenhuma hidratação, mesmo tendo um subcard e podendo ter imagens
+    assert "subcards" not in card
+    assert "imagens" not in card
+
+
+def test_hook_cards_get_unknown_session_is_noop(client):
+    r = client.post("/api/hooks/cards/get", json={
+        "claude_session_id": "unknown-uuid", "card_id": 999999,
+    })
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_hook_cards_get_other_cliente_rejected(client, tmp_path):
+    """P0/segurança: leitura também é restrita ao mesmo cliente — senão o
+    agente lê o conteúdo de cards de outros clientes só enumerando ids."""
+    db_path = str(tmp_path / "sessions.db")
+    card_id = _insert_card_direct(
+        db_path, titulo="Segredo do outro cliente", projeto_id="outrocliente/proj",
+    )
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("c3c3c3c3-0000-0000-0000-000000000002")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/get", json={
+        "claude_session_id": claude_sid, "card_id": card_id,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("success") is False
+    assert "outro cliente" in body.get("error", "")
+    assert "card" not in body
+
+
+def test_hook_cards_get_nonexistent_card_returns_explicit_error(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("c3c3c3c3-0000-0000-0000-000000000003")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/get", json={
+        "claude_session_id": claude_sid, "card_id": 999999,
+    })
+    assert r.status_code == 200
+    assert r.json().get("success") is False
+    assert r.json().get("error")
+
+
+def test_hook_cards_get_deleted_card_returns_explicit_error(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("c3c3c3c3-0000-0000-0000-000000000004")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Apagado",
+    }).json()
+    client.delete("/api/cards/{0}".format(created["card_id"]))
+
+    r = client.post("/api/hooks/cards/get", json={
+        "claude_session_id": claude_sid, "card_id": created["card_id"],
+    })
+    assert r.json().get("success") is False
+
+
+# -- POST /api/hooks/cards/list (Fase 3) -------------------------------------
+
+def test_hook_cards_list_without_projeto_id_lists_whole_cliente(client, tmp_path):
+    """Sem projeto_id: todos os cards de topo do CLIENTE da sessão — o
+    cliente-como-projeto e todos os sub-projetos —, e NADA de outro cliente."""
+    db_path = str(tmp_path / "sessions.db")
+    id_aadmin = _insert_card_direct(db_path, titulo="No aadmin", projeto_id="cliente/aadmin")
+    id_outro = _insert_card_direct(db_path, titulo="No outro", projeto_id="cliente/outro")
+    id_raiz = _insert_card_direct(db_path, titulo="Cliente-only", projeto_id="cliente")
+    _insert_card_direct(db_path, titulo="De outro cliente", projeto_id="outrocliente/proj")
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000001")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/list", json={"claude_session_id": claude_sid})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    assert body["total"] == 3
+    assert sorted(c["id"] for c in body["cards"]) == sorted([id_aadmin, id_outro, id_raiz])
+    assert all(c["projeto_id"].startswith("cliente") for c in body["cards"])
+
+
+def test_hook_cards_list_with_projeto_id_filters_that_project_only(client, tmp_path):
+    db_path = str(tmp_path / "sessions.db")
+    _insert_card_direct(db_path, titulo="No aadmin", projeto_id="cliente/aadmin")
+    id_outro = _insert_card_direct(db_path, titulo="No outro", projeto_id="cliente/outro")
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000002")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/list", json={
+        "claude_session_id": claude_sid, "projeto_id": "cliente/outro",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    assert [c["id"] for c in body["cards"]] == [id_outro]
+
+
+def test_hook_cards_list_embeds_subcards_and_resumo(client):
+    """A listagem devolve a árvore hidratada (mesmo formato de GET /api/cards),
+    para o agente enxergar subcards sem uma segunda chamada."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000003")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    parent = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Pai",
+    }).json()
+    sub = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Sub", "parent_id": parent["card_id"],
+    }).json()
+
+    r = client.post("/api/hooks/cards/list", json={"claude_session_id": claude_sid})
+    body = r.json()
+    assert [c["id"] for c in body["cards"]] == [parent["card_id"]]
+    assert [s["id"] for s in body["cards"][0]["subcards"]] == [sub["card_id"]]
+    assert body["cards"][0]["subcards_resumo"] == {"total": 1, "feitos": 0}
+
+
+def test_hook_cards_list_empty_is_success_not_error(client):
+    """Nenhum card é sucesso com lista vazia — o adapter precisa distinguir
+    "nenhum card" de "sessão não encontrada"."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000004")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/list", json={"claude_session_id": claude_sid})
+    assert r.status_code == 200
+    assert r.json() == {"success": True, "cards": [], "total": 0}
+
+
+def test_hook_cards_list_unknown_session_is_noop(client):
+    r = client.post("/api/hooks/cards/list", json={"claude_session_id": "unknown-uuid"})
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_hook_cards_list_other_cliente_projeto_id_rejected(client, tmp_path):
+    """P0/segurança: pedir explicitamente um projeto de outro cliente é erro,
+    nunca uma listagem parcial."""
+    db_path = str(tmp_path / "sessions.db")
+    _insert_card_direct(db_path, titulo="De outro cliente", projeto_id="outrocliente/proj")
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000005")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/list", json={
+        "claude_session_id": claude_sid, "projeto_id": "outrocliente/proj",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("success") is False
+    assert "outro cliente" in body.get("error", "")
+    assert "cards" not in body
+
+
+def test_hook_cards_list_empty_projeto_id_lists_whole_cliente(client, tmp_path):
+    """projeto_id="" significa "não informado" (o adapter nunca deveria mandar
+    assim, mas o backend não pode estreitar silenciosamente para o projeto da
+    sessão — resolve_projeto_alvo trata string vazia como "projeto atual")."""
+    db_path = str(tmp_path / "sessions.db")
+    id_aadmin = _insert_card_direct(db_path, titulo="No aadmin", projeto_id="cliente/aadmin")
+    id_outro = _insert_card_direct(db_path, titulo="No outro", projeto_id="cliente/outro")
+
+    session_key = "cliente/aadmin::agente-teste"
+    fixed_uuid = uuid_mod.UUID("d4d4d4d4-0000-0000-0000-000000000006")
+    claude_sid = _register_session(
+        client, session_key, project_id="cliente/aadmin", fixed_uuid=fixed_uuid
+    )
+
+    r = client.post("/api/hooks/cards/list", json={
+        "claude_session_id": claude_sid, "projeto_id": "",
+    })
+    body = r.json()
+    assert body["success"] is True
+    assert sorted(c["id"] for c in body["cards"]) == sorted([id_aadmin, id_outro])

@@ -704,3 +704,150 @@ async def test_executar_limpar_concluidos_is_idempotent(store):
 
     second = await store.executar_limpar_concluidos("proj-a")
     assert second == {"cards": 0, "imagens": 0, "filenames_apagados": []}
+
+
+# -- list_by_cliente (Fase 3) ------------------------------------------------
+
+
+async def _create_top_level(store, titulo: str, projeto_id: str) -> int:
+    return await store.create(
+        titulo=titulo,
+        projeto_id=projeto_id,
+        status="a_fazer",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_returns_cliente_project_and_all_subprojects(store):
+    """Caso normal: o card cliente-only (projeto_id == cliente_id) e os cards
+    dos sub-projetos do mesmo cliente vêm todos juntos, e nada de outro
+    cliente entra."""
+    cliente_only = await _create_top_level(store, "Cliente-only", "acme")
+    site = await _create_top_level(store, "Site", "acme/site")
+    app_card = await _create_top_level(store, "App", "acme/app")
+    await _create_top_level(store, "De outro cliente", "globex/site")
+
+    cards = await store.list_by_cliente("acme")
+
+    assert [c["id"] for c in cards] == [cliente_only, site, app_card]
+    assert all(c["projeto_id"].startswith("acme") for c in cards)
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_cliente_as_projeto_without_subprojects(store):
+    """Cliente-como-projeto sem nenhum sub-projeto: o predicado do braço de
+    igualdade sozinho já tem que devolver o card."""
+    card_id = await _create_top_level(store, "Único", "podesubir")
+
+    cards = await store.list_by_cliente("podesubir")
+
+    assert len(cards) == 1
+    assert cards[0]["id"] == card_id
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_does_not_leak_cliente_whose_name_shares_prefix(store):
+    """Fronteira de prefixo: "cliente" é prefixo de "cliente2". Um
+    LIKE 'cliente%' ingênuo (sem a "/" no padrão) vazaria os cards de
+    cliente2 para quem consulta cliente."""
+    proprio = await _create_top_level(store, "Do cliente", "cliente/proj")
+    proprio_raiz = await _create_top_level(store, "Cliente-only", "cliente")
+    await _create_top_level(store, "Do cliente2", "cliente2/proj")
+    await _create_top_level(store, "Cliente2-only", "cliente2")
+
+    cards = await store.list_by_cliente("cliente")
+
+    assert sorted(c["id"] for c in cards) == sorted([proprio, proprio_raiz])
+    assert all(c["projeto_id"] in ("cliente", "cliente/proj") for c in cards)
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_does_not_leak_when_cliente_id_contains_like_wildcards(
+    store,
+):
+    """Fronteira que o teste de prefixo acima NÃO pega: nomes reais de cliente
+    contêm "_" (ex: "cliente_projeto_1", o exemplo canônico da docstring de
+    cliente_id_from_projeto_id), e "_" é wildcard de 1 caractere no LIKE. Um
+    LIKE 'cliente_a/%' casaria com "clienteXa/proj" — vazamento cross-tenant.
+    Este é o caso com dentes: o teste de fronteira de prefixo acima passa até
+    com o LIKE ingênuo, porque a "/" no padrão já barra "cliente2"."""
+    proprio = await _create_top_level(store, "Legítimo", "cliente_a/proj")
+    await _create_top_level(store, "Vizinho casado pelo _ do LIKE", "clienteXa/proj")
+
+    cards = await store.list_by_cliente("cliente_a")
+
+    assert [c["id"] for c in cards] == [proprio]
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_does_not_leak_when_cliente_id_contains_percent(store):
+    """Mesma família do teste acima, para o outro wildcard do LIKE: um
+    cliente_id contendo "%" (caractere legal em nome de pasta no Windows)
+    viraria LIKE 'cli%/%', que casa com QUALQUER cliente cujo id comece com
+    "cli"."""
+    proprio = await _create_top_level(store, "Legítimo", "cli%/proj")
+    await _create_top_level(store, "Vizinho casado pelo % do LIKE", "cliente2/proj")
+
+    cards = await store.list_by_cliente("cli%")
+
+    assert [c["id"] for c in cards] == [proprio]
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_handles_non_ascii_cliente_id(store):
+    """O braço de prefixo compara substr(projeto_id, 1, len(prefixo)) — len em
+    Python conta code points e substr do SQLite conta caracteres, não bytes.
+    Um nome de cliente acentuado (plausível num projeto PT-BR: "açougue",
+    "são-paulo") desalinharia os dois se a contagem fosse em bytes, casando o
+    cliente errado ou nenhum."""
+    proprio = await _create_top_level(store, "Legítimo", "açme/proj")
+    await _create_top_level(store, "Vizinho sem acento", "acme/proj")
+
+    cards = await store.list_by_cliente("açme")
+
+    assert [c["id"] for c in cards] == [proprio]
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_hydrates_like_list_top_level(store):
+    """Os dois caminhos de listagem (por projeto e por cliente) precisam
+    devolver exatamente o mesmo formato — subcards, subcards_resumo e imagens
+    inclusive —, senão o consumidor teria que saber qual dos dois rodou."""
+    parent_id = await _create_top_level(store, "Pai", "acme/site")
+    await store.create(
+        titulo="Sub feito",
+        projeto_id="acme/site",
+        status="feito",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+        parent_id=parent_id,
+    )
+    await store.add_image(parent_id, "capa.png", "image/png", 100)
+
+    por_cliente = await store.list_by_cliente("acme")
+    por_projeto = await store.list_top_level(["acme/site"])
+
+    assert por_cliente == por_projeto
+    assert por_cliente[0]["subcards_resumo"] == {"total": 1, "feitos": 1}
+    assert por_cliente[0]["imagens"][0]["filename"] == "capa.png"
+
+
+@pytest.mark.asyncio
+async def test_list_by_cliente_omits_subcards_and_deleted_cards_from_top_level(store):
+    parent_id = await _create_top_level(store, "Pai", "acme/site")
+    await store.create(
+        titulo="Sub",
+        projeto_id="acme/site",
+        status="a_fazer",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+        parent_id=parent_id,
+    )
+    apagado = await _create_top_level(store, "Apagado", "acme/app")
+    await store.soft_delete(apagado)
+
+    cards = await store.list_by_cliente("acme")
+
+    assert [c["id"] for c in cards] == [parent_id]

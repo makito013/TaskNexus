@@ -200,6 +200,18 @@ def _handle_request(request: dict) -> dict | None:
 
 
 def main() -> None:
+    # Python 3.9 on Windows decodes stdin/stdout with locale.getpreferredencoding()
+    # (cp1252/cp850) instead of UTF-8 when the stream is a pipe (not a real
+    # console) — which is exactly how the `claude` CLI spawns this adapter.
+    # Must be the very first statement in main(): reconfigure() raises
+    # io.UnsupportedOperation once any byte has already been consumed from the
+    # stream. errors="replace" on stdin is load-bearing, not cosmetic — the
+    # decode happens in the `for line in sys.stdin:` loop below, outside the
+    # try/except around json.loads(); without it, a single invalid byte raises
+    # UnicodeDecodeError there and kills the adapter process silently for the
+    # rest of the session.
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         line = line.strip()
         if not line:

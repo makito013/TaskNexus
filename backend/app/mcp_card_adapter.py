@@ -1,6 +1,7 @@
-"""Adaptador MCP standalone: ponte entre as tools `criar_card`/`mover_card`
-expostas ao `claude` CLI (via --mcp-config) e o backend FastAPI do Escritório
-(endpoints POST /api/hooks/cards/create e POST /api/hooks/cards/move).
+"""Adaptador MCP standalone: ponte entre as tools de card expostas ao `claude`
+CLI (via --mcp-config) — `criar_card`, `mover_card`, `editar_card`,
+`excluir_card`, `ver_card`, `listar_cards` — e o backend FastAPI do Escritório
+(endpoints POST /api/hooks/cards/{create,move,update,delete,get,list}).
 
 Roda como PROCESSO FILHO do `claude` CLI (subprocess separado do backend
 FastAPI, spawnado pelo próprio CLI a partir do comando/args em
@@ -50,6 +51,18 @@ HOOK_CREATE_URL = os.environ.get(
 )
 HOOK_MOVE_URL = os.environ.get(
     "ESCRITORIO_HOOK_MOVE_URL", "http://localhost:8000/api/hooks/cards/move"
+)
+HOOK_UPDATE_URL = os.environ.get(
+    "ESCRITORIO_HOOK_UPDATE_URL", "http://localhost:8000/api/hooks/cards/update"
+)
+HOOK_DELETE_URL = os.environ.get(
+    "ESCRITORIO_HOOK_DELETE_URL", "http://localhost:8000/api/hooks/cards/delete"
+)
+HOOK_GET_URL = os.environ.get(
+    "ESCRITORIO_HOOK_GET_URL", "http://localhost:8000/api/hooks/cards/get"
+)
+HOOK_LIST_URL = os.environ.get(
+    "ESCRITORIO_HOOK_LIST_URL", "http://localhost:8000/api/hooks/cards/list"
 )
 
 # Contexto SSL que não valida certificado — seguro aqui porque a conexão é
@@ -113,7 +126,91 @@ TOOL_MOVER_CARD = {
     },
 }
 
-TOOLS = [TOOL_CRIAR_CARD, TOOL_MOVER_CARD]
+_STATUS_ENUM = ["a_fazer", "em_andamento", "em_revisao", "feito"]
+
+TOOL_EDITAR_CARD = {
+    "name": "editar_card",
+    "description": (
+        "Edita o conteúdo de um card existente: título, descrição e/ou status. "
+        "Campos omitidos ficam inalterados. Use para corrigir ou completar o "
+        "texto de um card já criado. Só é possível editar cards do mesmo "
+        "cliente da conversa atual — cards de outro cliente não podem ser "
+        "editados."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "card_id": {"type": "integer"},
+            "titulo": {"type": "string"},
+            "descricao": {"type": "string"},
+            "status": {"type": "string", "enum": _STATUS_ENUM},
+        },
+        "required": ["card_id"],
+    },
+}
+
+TOOL_EXCLUIR_CARD = {
+    "name": "excluir_card",
+    "description": (
+        "Exclui um card do board. Excluir um card de topo exclui junto os "
+        "subcards dele. Só é possível excluir cards do mesmo cliente da "
+        "conversa atual — cards de outro cliente não podem ser excluídos."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {"card_id": {"type": "integer"}},
+        "required": ["card_id"],
+    },
+}
+
+TOOL_VER_CARD = {
+    "name": "ver_card",
+    "description": (
+        "Mostra os dados de um card específico pelo id (título, descrição, "
+        "status, projeto, origem, datas). Use antes de editar para revisar o "
+        "conteúdo atual. Só é possível consultar cards do mesmo cliente da "
+        "conversa atual."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {"card_id": {"type": "integer"}},
+        "required": ["card_id"],
+    },
+}
+
+TOOL_LISTAR_CARDS = {
+    "name": "listar_cards",
+    "description": (
+        "Lista os cards do board com seus ids, para descobrir o id de um card "
+        "antes de vê-lo, editá-lo, movê-lo ou excluí-lo. Sem argumentos, "
+        "lista os cards de TODOS os projetos do cliente da conversa atual; "
+        "com projeto_id, lista só aquele projeto. Sempre restrito ao mesmo "
+        "cliente da conversa atual — cards de outro cliente nunca aparecem."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "projeto_id": {
+                "type": "string",
+                "description": (
+                    "ID do projeto do mesmo cliente cujos cards devem ser "
+                    "listados. Se omitido, lista os cards de todos os "
+                    "projetos do cliente."
+                ),
+            },
+        },
+        "required": [],
+    },
+}
+
+TOOLS = [
+    TOOL_CRIAR_CARD,
+    TOOL_MOVER_CARD,
+    TOOL_EDITAR_CARD,
+    TOOL_EXCLUIR_CARD,
+    TOOL_VER_CARD,
+    TOOL_LISTAR_CARDS,
+]
 
 
 def _write_message(message: dict) -> None:
@@ -173,13 +270,18 @@ def _post_json(url: str, body: dict):
 
 
 def _format_result(result, success_text: str) -> str:
-    """Traduz o corpo JSON de /api/hooks/cards/create|move para o texto que a
+    """Traduz o corpo JSON de qualquer /api/hooks/cards/* para o texto que a
     tool devolve ao agente. `success: False` -> texto de erro de negócio
-    (regra violada, permissão negada); `success: True` -> texto de sucesso;
+    (regra violada, permissão negada); `success: True` -> `success_text`;
     ausência da chave `success` (resposta {"status": "ok"} do no-op
     silencioso quando claude_session_id não resolve para uma session_key,
     mesmo padrão de hook_task/hook_stop) -> mensagem informativa, já que
-    nenhum card foi de fato criado/movido."""
+    nenhum card foi de fato criado/alterado/consultado.
+
+    Nas tools de consulta (ver_card/listar_cards) e no excluir_card, o
+    `success_text` NÃO é uma frase fixa: o chamador o monta a partir do
+    próprio payload (o card, a lista, a contagem de subcards) — é o payload
+    que interessa ao agente, não a confirmação."""
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is False:
@@ -221,6 +323,72 @@ def _handle_mover_card(arguments: dict) -> str:
     return _format_result(result, "Card movido com sucesso.")
 
 
+def _handle_editar_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+        "titulo": arguments.get("titulo"),
+        "descricao": arguments.get("descricao"),
+        "status": arguments.get("status"),
+    }
+    result = _post_json(HOOK_UPDATE_URL, body)
+    return _format_result(result, "Card editado com sucesso.")
+
+
+def _handle_excluir_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+    }
+    result = _post_json(HOOK_DELETE_URL, body)
+    subcards = result.get("subcards_afetados") if isinstance(result, dict) else None
+    success_text = "Card excluído com sucesso."
+    if subcards:
+        success_text += " {0} subcard(s) excluído(s) junto.".format(subcards)
+    return _format_result(result, success_text)
+
+
+def _handle_ver_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+    }
+    result = _post_json(HOOK_GET_URL, body)
+    card = result.get("card") if isinstance(result, dict) else None
+    # O próprio payload é a resposta útil da tool — serializado como JSON
+    # legível em vez de uma frase fixa de sucesso.
+    success_text = (
+        json.dumps(card, ensure_ascii=False, indent=2)
+        if card is not None
+        else "Card não encontrado."
+    )
+    return _format_result(result, success_text)
+
+
+def _handle_listar_cards(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+    }
+    # Só entra no corpo quando o agente informa de fato: mandar "" faria o
+    # backend cair no ramo "usa o projeto da conversa atual" em vez de listar
+    # o cliente inteiro (ver hook_cards_list).
+    projeto_id = arguments.get("projeto_id")
+    if projeto_id:
+        body["projeto_id"] = projeto_id
+
+    result = _post_json(HOOK_LIST_URL, body)
+    cards = result.get("cards") if isinstance(result, dict) else None
+    if cards:
+        success_text = "{0} card(s) encontrado(s):\n{1}".format(
+            len(cards), json.dumps(cards, ensure_ascii=False, indent=2)
+        )
+    else:
+        # Lista vazia continua sendo sucesso (o backend devolve success=True
+        # com cards=[]); _format_result só chega aqui nesse caso.
+        success_text = "Nenhum card encontrado."
+    return _format_result(result, success_text)
+
+
 def _handle_tools_call(request: dict) -> dict:
     params = request.get("params") or {}
     tool_name = params.get("name")
@@ -230,6 +398,14 @@ def _handle_tools_call(request: dict) -> dict:
         text = _handle_criar_card(arguments)
     elif tool_name == TOOL_MOVER_CARD["name"]:
         text = _handle_mover_card(arguments)
+    elif tool_name == TOOL_EDITAR_CARD["name"]:
+        text = _handle_editar_card(arguments)
+    elif tool_name == TOOL_EXCLUIR_CARD["name"]:
+        text = _handle_excluir_card(arguments)
+    elif tool_name == TOOL_VER_CARD["name"]:
+        text = _handle_ver_card(arguments)
+    elif tool_name == TOOL_LISTAR_CARDS["name"]:
+        text = _handle_listar_cards(arguments)
     else:
         text = "Tool desconhecida: {0}".format(tool_name)
 
@@ -258,6 +434,18 @@ def _handle_request(request: dict):
 
 
 def main() -> None:
+    # Python 3.9 on Windows decodes stdin/stdout with locale.getpreferredencoding()
+    # (cp1252/cp850) instead of UTF-8 when the stream is a pipe (not a real
+    # console) — which is exactly how the `claude` CLI spawns this adapter.
+    # Must be the very first statement in main(): reconfigure() raises
+    # io.UnsupportedOperation once any byte has already been consumed from the
+    # stream. errors="replace" on stdin is load-bearing, not cosmetic — the
+    # decode happens in the `for line in sys.stdin:` loop below, outside the
+    # try/except around json.loads(); without it, a single invalid byte raises
+    # UnicodeDecodeError there and kills the adapter process silently for the
+    # rest of the session.
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         line = line.strip()
         if not line:

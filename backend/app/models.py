@@ -228,6 +228,44 @@ class HookCardMoveRequest(BaseModel):
     novo_status: str
 
 
+class HookCardUpdateRequest(BaseModel):
+    """Body de POST /api/hooks/cards/update — equivalente de agente do PATCH
+    /api/cards/{card_id} (CardUpdateRequest), com card_id no body em vez do
+    path (o adapter MCP faz sempre um POST plano) e claude_session_id para o
+    backend resolver a session_key. Campos omitidos/None não são alterados,
+    mesma semântica de CardStore.update."""
+    claude_session_id: str
+    card_id: int
+    titulo: str | None = None
+    descricao: str | None = None
+    status: str | None = None
+
+
+class HookCardDeleteRequest(BaseModel):
+    """Body de POST /api/hooks/cards/delete. Soft delete — mesmo contrato
+    mínimo de HookCardMoveRequest, só sem o campo de destino."""
+    claude_session_id: str
+    card_id: int
+
+
+class HookCardGetRequest(BaseModel):
+    """Body de POST /api/hooks/cards/get. Retorna os campos crus do card
+    (CardStore.get), sem hidratar subcards/imagens."""
+    claude_session_id: str
+    card_id: int
+
+
+class HookCardListRequest(BaseModel):
+    """Body de POST /api/hooks/cards/list. `projeto_id` omitido -> todos os
+    cards de topo do CLIENTE da sessão atual; informado -> só aquele projeto
+    (validado como sendo do mesmo cliente via resolve_projeto_alvo). Não
+    existe parâmetro cliente_id de propósito: a regra "mesmo cliente" já
+    restringe o resultado ao cliente da sessão, um cliente_id explícito seria
+    redundante ou uma tentativa de acesso cross-tenant."""
+    claude_session_id: str
+    projeto_id: str | None = None
+
+
 class LimparConcluidosResult(BaseModel):
     """Resposta tanto do preview (GET) quanto da execução (POST) da limpeza
     de concluídos — mesmo formato, para o frontend reaproveitar o mesmo tipo

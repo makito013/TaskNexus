@@ -254,6 +254,54 @@ class CardStore:
         async with self._conn.execute(query, params) as cursor:
             rows = await cursor.fetchall()
 
+        return await self._hydrate_top_level_rows(rows)
+
+    async def list_by_cliente(self, cliente_id: str) -> list[dict]:
+        """Cards de topo ativos de TODOS os projetos de um cliente — o próprio
+        cliente-como-projeto (projeto_id == cliente_id) mais todos os
+        sub-projetos (projeto_id começando por "{cliente_id}/"). Mesmo formato
+        hidratado de list_top_level (subcards/subcards_resumo/imagens), via o
+        mesmo helper, para que os dois caminhos de listagem sejam
+        indistinguíveis para quem consome.
+
+        Existe porque listar por cliente não é expressável com list_top_level:
+        a lista de sub-projetos não é conhecida pelo CardStore (vem de
+        scan_projects, no processo do backend) e um card pode estar num
+        projeto cuja pasta já não existe mais.
+
+        Predicado sem wildcard de propósito. O braço de igualdade
+        (projeto_id = ?) usa idx_cards_projeto; o braço de prefixo compara
+        substr(projeto_id, 1, len) com "{cliente_id}/" literal — sem semântica
+        de padrão nenhuma. LIKE está descartado porque "_" é wildcard de 1
+        caractere no LIKE e nomes reais de cliente TÊM underscore
+        (ex: "cliente_projeto_1", o exemplo canônico da docstring de
+        cliente_id_from_projeto_id): LIKE 'cliente_projeto_1/%' casaria também
+        com "clienteXprojetoY1/..." — vazamento cross-tenant real. GLOB
+        resolveria o "_" mas ainda interpreta "[" como classe de caracteres;
+        substr não interpreta nada e compara com collation BINARY
+        (case-sensitive), que é o que a regra de isolamento por cliente exige.
+        """
+        prefix = cliente_id + "/"
+        async with self._conn.execute(
+            f"""
+            SELECT {self._CARD_COLUMNS} FROM cards
+            WHERE (projeto_id = ? OR substr(projeto_id, 1, ?) = ?)
+              AND parent_id IS NULL AND deleted_at IS NULL
+            ORDER BY id ASC
+            """,
+            (cliente_id, len(prefix), prefix),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        return await self._hydrate_top_level_rows(rows)
+
+    async def _hydrate_top_level_rows(self, rows) -> list[dict]:
+        """Hidratação compartilhada por list_top_level/list_by_cliente: para
+        cada linha de card de topo, embute imagens, subcards ativos e o
+        subcards_resumo derivado. Extraído para que os dois caminhos de
+        listagem retornem provadamente o MESMO formato (o consumidor —
+        UI e tool MCP listar_cards — não pode depender de qual dos dois
+        rodou)."""
         result = []
         for row in rows:
             card = self._row_to_card_dict(row)

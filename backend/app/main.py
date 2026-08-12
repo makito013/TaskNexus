@@ -49,6 +49,10 @@ from app.models import (
     LimparConcluidosResult,
     HookCardCreateRequest,
     HookCardMoveRequest,
+    HookCardUpdateRequest,
+    HookCardDeleteRequest,
+    HookCardGetRequest,
+    HookCardListRequest,
     AppearanceSettings,
     AppearanceUpdateRequest,
     NotificationSettings,
@@ -605,8 +609,9 @@ def _build_mcp_config_json(session_id: str) -> str:
     """Gera o --mcp-config inline JSON que registra os adaptadores MCP
     (mcp_task_adapter.py e mcp_card_adapter.py, ver esses arquivos) como
     servidores stdio do `claude` CLI, expondo `criar_tarefa_validacao`
-    (escritorio-tarefas) e `criar_card`/`mover_card` (escritorio-cards,
-    Tarefa 8 do plano 05-TL.md). Os abspaths são resolvidos a partir de
+    (escritorio-tarefas) e `criar_card`/`mover_card`/`editar_card`/
+    `excluir_card`/`ver_card`/`listar_cards` (escritorio-cards, Tarefa 8 do
+    plano 05-TL.md + Fase 3). Os abspaths são resolvidos a partir de
     __file__ (diretório deste módulo), NÃO do cwd do PTY — o cwd do PTY é o
     diretório do projeto do usuário, onde os scripts não existem.
 
@@ -635,6 +640,11 @@ def _build_mcp_config_json(session_id: str) -> str:
                 "env": {
                     "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
                     "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
+                    # Defense in depth alongside the reconfigure() calls in
+                    # mcp_task_adapter.main(): forces UTF-8 mode for the whole
+                    # child interpreter (stdin/stdout/stderr + filesystem),
+                    # not just the two streams reconfigure() touches.
+                    "PYTHONUTF8": "1",
                 },
             },
             "escritorio-cards": {
@@ -644,6 +654,11 @@ def _build_mcp_config_json(session_id: str) -> str:
                     "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
                     "ESCRITORIO_HOOK_CREATE_URL": f"{base_url}/api/hooks/cards/create",
                     "ESCRITORIO_HOOK_MOVE_URL": f"{base_url}/api/hooks/cards/move",
+                    "ESCRITORIO_HOOK_UPDATE_URL": f"{base_url}/api/hooks/cards/update",
+                    "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/cards/delete",
+                    "ESCRITORIO_HOOK_GET_URL": f"{base_url}/api/hooks/cards/get",
+                    "ESCRITORIO_HOOK_LIST_URL": f"{base_url}/api/hooks/cards/list",
+                    "PYTHONUTF8": "1",
                 },
             },
         }
@@ -1528,9 +1543,13 @@ async def executar_limpar_concluidos(projeto_id: str):
 # pode já ter sido encerrada quando o hook chega).
 
 
-def _agent_can_move(card: dict, own_projeto_id: str) -> bool:
-    """Decisão de produto (Bruno, definitiva): qualquer agente pode
-    mover/mudar o status de QUALQUER card — independente de qual agente o
+def _agent_same_cliente(card: dict, own_projeto_id: str) -> bool:
+    """Predicado ÚNICO de autorização de agente sobre um card existente —
+    compartilhado por mover/editar/excluir/ver (hook_cards_move,
+    hook_cards_update, hook_cards_delete, hook_cards_get).
+
+    Decisão de produto (Bruno, definitiva): qualquer agente pode
+    mover/editar/excluir/ler QUALQUER card — independente de qual agente o
     criou ou de a qual sessão ele está vinculado. A restrição por agent_id
     (origem == "agente:{agent_id}") e por session_key foi REMOVIDA de
     propósito: o cenário que motivou a mudança é "o Claude abre o card mas o
@@ -1543,7 +1562,12 @@ def _agent_can_move(card: dict, own_projeto_id: str) -> bool:
     via cliente_id_from_projeto_id (reaproveitada, não duplicada). Não há
     mais regra extra para o status 'feito' — mover para 'feito' segue a
     mesma regra de qualquer outro status (o Gemini que terminou o card do
-    Claude precisa conseguir concluí-lo)."""
+    Claude precisa conseguir concluí-lo).
+
+    Nos hooks que alteram ou leem um card, este predicado é avaliado ANTES da
+    operação (nunca depois): responder "pertence a outro cliente" só quando o
+    card existe já é informação demais, mas aplicar a regra depois do
+    update/delete alteraria dados de outro cliente antes de recusar."""
     return (
         cliente_id_from_projeto_id(card["projeto_id"])
         == cliente_id_from_projeto_id(own_projeto_id)
@@ -1633,7 +1657,7 @@ async def hook_cards_move(body: HookCardMoveRequest):
     if card is None or card["deleted_at"] is not None:
         return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
 
-    if not _agent_can_move(card, own_projeto_id):
+    if not _agent_same_cliente(card, own_projeto_id):
         return {
             "success": False,
             "error": f"Card {body.card_id} pertence a outro cliente",
@@ -1642,6 +1666,132 @@ async def hook_cards_move(body: HookCardMoveRequest):
     origem = f"agente:{agent_id}"
     await card_store.update(body.card_id, status=body.novo_status, ultima_atualizacao_por=origem)
     return {"success": True}
+
+
+# -- Fase 3: hooks de edição/exclusão/consulta de card -----------------------
+#
+# Mesmas invariantes dos hooks acima, nesta ordem exata em update/delete/get:
+# 1. sessão não resolvida -> {"status": "ok"} (no-op silencioso);
+# 2. card inexistente ou soft-deletado -> {"success": False, ...};
+# 3. card de outro cliente -> {"success": False, ...} ANTES de tocar no card.
+# Espelham PATCH/DELETE /api/cards/{card_id} (uso da UI), com duas diferenças
+# deliberadas: resolução de sessão + regra "mesmo cliente" (que a UI não tem,
+# porque o Bruno enxerga todos os clientes), e checagem de existência no
+# delete — que o DELETE REST não faz (devolve sucesso para id inexistente).
+
+
+@app.post("/api/hooks/cards/update")
+async def hook_cards_update(body: HookCardUpdateRequest):
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, agent_id = session_key.partition("::")
+    card = await card_store.get(body.card_id)
+    if card is None or card["deleted_at"] is not None:
+        return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
+
+    if not _agent_same_cliente(card, own_projeto_id):
+        return {
+            "success": False,
+            "error": f"Card {body.card_id} pertence a outro cliente",
+        }
+
+    # Um update sem nenhum campo de conteúdo ainda toca atualizado_em e
+    # ultima_atualizacao_por — mesmo comportamento do PATCH REST (update_card),
+    # mantido por paridade em vez de virar uma rejeição que o plano não pediu.
+    campos = body.model_dump(
+        include={"titulo", "descricao", "status"}, exclude_none=True
+    )
+    updated = await card_store.update(
+        body.card_id,
+        ultima_atualizacao_por=f"agente:{agent_id}",
+        **campos,
+    )
+    if updated is None:
+        # CardStore.update revalida existência: só cai aqui se o card foi
+        # apagado entre o get() acima e o update. Não pode virar
+        # {"success": True, "card": null} — seria confirmar uma edição que
+        # não aconteceu.
+        return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
+    return {"success": True, "card": updated}
+
+
+@app.post("/api/hooks/cards/delete")
+async def hook_cards_delete(body: HookCardDeleteRequest):
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, _ = session_key.partition("::")
+    card = await card_store.get(body.card_id)
+    if card is None or card["deleted_at"] is not None:
+        return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
+
+    if not _agent_same_cliente(card, own_projeto_id):
+        return {
+            "success": False,
+            "error": f"Card {body.card_id} pertence a outro cliente",
+        }
+
+    result = await card_store.soft_delete(body.card_id)
+    return {"success": True, "subcards_afetados": result["subcards_afetados"]}
+
+
+@app.post("/api/hooks/cards/get")
+async def hook_cards_get(body: HookCardGetRequest):
+    """Retorna os campos CRUS do card (CardStore.get), sem hidratar
+    subcards/imagens — decisão fechada com o Bruno: ver_card espelha a linha
+    da tabela, quem quer a árvore usa listar_cards."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, _ = session_key.partition("::")
+    card = await card_store.get(body.card_id)
+    if card is None or card["deleted_at"] is not None:
+        return {"success": False, "error": f"Card {body.card_id} não encontrado"}
+
+    if not _agent_same_cliente(card, own_projeto_id):
+        return {
+            "success": False,
+            "error": f"Card {body.card_id} pertence a outro cliente",
+        }
+
+    return {"success": True, "card": card}
+
+
+@app.post("/api/hooks/cards/list")
+async def hook_cards_list(body: HookCardListRequest):
+    """Sem projeto_id: todos os cards de topo do CLIENTE da sessão. Com
+    projeto_id: só aquele projeto, validado por resolve_projeto_alvo — que já
+    garante "existe" + "mesmo cliente", então não há checagem duplicada aqui.
+
+    A lista vazia é sucesso (`success: True`, `cards: []`), nunca erro: o
+    adapter precisa distinguir "nenhum card" de "sessão não resolvida"."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, _ = session_key.partition("::")
+
+    # Truthy, não `is not None`: projeto_id="" vindo do adapter significa
+    # "não informado", e resolve_projeto_alvo trataria string vazia como
+    # "usa o projeto atual" — silenciosamente estreitando uma listagem que
+    # deveria abranger o cliente inteiro.
+    if body.projeto_id:
+        projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
+        try:
+            projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        cards = await card_store.list_top_level([projeto_id])
+    else:
+        cards = await card_store.list_by_cliente(
+            cliente_id_from_projeto_id(own_projeto_id)
+        )
+
+    return {"success": True, "cards": cards, "total": len(cards)}
 
 
 @app.post("/api/sessions/{session_key:path}/continue")
