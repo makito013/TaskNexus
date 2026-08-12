@@ -144,10 +144,14 @@ export function AppV2({ initialAppearance }) {
 
   // Feature Clientes na sidebar v2 (Bloco B): estado de "cliente selecionado"
   // é INDEPENDENTE do `selectedProjectId` do TerminalContext, que continua
-  // dirigindo o painel principal (ChatV2/BoardV2) sem mudança nenhuma aqui.
-  // `null` = "Todos" — mesmo sentinel que BoardView.jsx/ClienteFilterBar (v1)
-  // já usam. Lazy-init a partir do projeto atualmente selecionado, pra abrir
-  // já filtrado no cliente certo em vez de sempre cair em "Todos" no 1º render.
+  // dirigindo só o painel de Chat (ChatV2) sem mudança nenhuma aqui. BoardV2
+  // é a exceção desde a Fase 2 do plano (bug reportado pelo Bruno: um card
+  // criado num subprojeto era invisível no board sem um chat aberto NAQUELE
+  // subprojeto específico) — recebe `selectedClienteId` abaixo pra filtrar
+  // pelo cliente da sidebar, exatamente como TarefasV2 já fazia. `null` =
+  // "Todos" — mesmo sentinel que BoardView.jsx/ClienteFilterBar (v1) já
+  // usam. Lazy-init a partir do projeto atualmente selecionado, pra abrir já
+  // filtrado no cliente certo em vez de sempre cair em "Todos" no 1º render.
   const [selectedClienteId, setSelectedClienteId] = useState(
     () => (selectedProjectId ? clienteIdFromProjetoId(selectedProjectId) : null)
   );
@@ -307,7 +311,11 @@ export function AppV2({ initialAppearance }) {
             />
           </div>
           {v2Screen === 'board' && (
-            <BoardV2 projects={projects} selectedProjectId={selectedProjectId} />
+            <BoardV2
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              selectedClienteId={selectedClienteId}
+            />
           )}
           {v2Screen === 'tarefas' && (
             <TarefasV2 projects={projects} selectedClienteId={selectedClienteId} />

@@ -7,13 +7,28 @@
 // views/BoardView.jsx (v1) já usa — só a apresentação muda, conforme
 // instrução do Designer/TL para este milestone.
 //
-// Filtro de projeto: `selectedProjectId` vem do estado já existente de
-// AppV2.jsx (o mesmo projeto selecionado na SidebarV2 para o Chat) —
-// nenhuma cascata Cliente/Projeto própria como em BoardView.jsx v1 (essa
-// tela não faz parte do escopo desta tarefa). Sem projeto selecionado,
-// `useCards([])` busca cards de TODOS os projetos (mesmo comportamento
-// "Todos" de v1) e o card mostra uma tag com o nome do projeto para dar
-// contexto; com um projeto selecionado, filtra só os cards dele.
+// Filtro de listagem/agregação (Fase 2 do plano, fix do Bruno: um card criado
+// dentro de um subprojeto ficava invisível no board sem um chat aberto
+// NAQUELE subprojeto específico): `selectedClienteId` vem do mesmo estado que
+// AppV2.jsx já calcula pra sidebar de clientes (`handleSelectCliente`) e já
+// repassa pra TarefasV2 — DESACOPLADO de `selectedProjectId` (o projeto do
+// chat ativo no TerminalContext). `selectedProjectIds` agrega
+// `[selectedClienteId, ...subProjetoIds]` (subprojetos de
+// `projects.find(p => p.id === selectedClienteId)?.sub_projetos`), mesma
+// fórmula de `views/BoardView.jsx` (v1) pro caso "Todos" (null) -> []; "só
+// Cliente" -> cliente + todos os subprojetos. Sem cascata Tier 2 de Projeto
+// específico aqui (isso continua fora do escopo desta tela). Sem cliente
+// selecionado, `useCards([])` busca cards de TODOS os projetos (mesmo
+// comportamento "Todos" de v1) e o card mostra uma tag com o nome do projeto
+// para dar contexto; com exatamente 1 projeto agregado (cliente sem
+// subprojetos), a tag é redundante e some.
+//
+// `selectedProjectId` continua existindo à parte, só para o fluxo de CRIAÇÃO
+// de card (`handleCreate` abaixo) — permanece atrelado ao projeto do chat
+// ativo de propósito (fora de escopo desta fase desenhar uma UI de "criar
+// card cliente-only"), não é contraditório com `selectedClienteId` cuidar da
+// listagem: são dois propósitos diferentes que só coincidem quando o chat
+// ativo e o cliente da sidebar são o mesmo projeto.
 //
 // Decisão — "mover card": em vez de reaproveitar `MoveCardMenu.jsx` (v1,
 // estilizado com tokens `--*`), o controle de mover é um `<select>` nativo
@@ -27,7 +42,7 @@
 // Não expandido silenciosamente: é um corte de escopo deliberado, não uma
 // lacuna esquecida.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useCards } from '../../hooks/useCards.js';
 
 const STATUSES = ['a_fazer', 'em_andamento', 'em_revisao', 'feito'];
@@ -261,8 +276,20 @@ function AddCardForm({ onSubmit, onCancel }) {
   );
 }
 
-export function BoardV2({ projects = [], selectedProjectId }) {
-  const selectedProjectIds = selectedProjectId ? [selectedProjectId] : [];
+export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = null }) {
+  // Subprojetos do cliente selecionado (formato de id completo
+  // "cliente/sub", conforme `Project.sub_projetos` já vem do backend) — mesma
+  // fonte usada por BoardView.jsx (v1) pra agregação Tier 1.
+  const subProjetoIds = useMemo(() => {
+    const found = projects.find((p) => p.id === selectedClienteId);
+    return found?.sub_projetos || [];
+  }, [projects, selectedClienteId]);
+
+  const selectedProjectIds = useMemo(
+    () => (selectedClienteId == null ? [] : [selectedClienteId, ...subProjetoIds]),
+    [selectedClienteId, subProjetoIds]
+  );
+
   const { cards, createCard, updateCard } = useCards(selectedProjectIds);
 
   // Coluna com o formulário de "+ Adicionar card" aberto (null = nenhuma).
@@ -297,7 +324,14 @@ export function BoardV2({ projects = [], selectedProjectId }) {
                         <span style={styles.avatar} title={card.ultima_atualizacao_por || 'bruno'}>
                           {resolveAvatarInitials(card.ultima_atualizacao_por)}
                         </span>
-                        <span style={styles.tag}>{resolveProjectName(card.projeto_id, projects)}</span>
+                        {/* Redundante quando a agregação atual resolve a exatamente 1
+                            projeto (cliente sem subprojetos, ou "Todos" nunca chega
+                            aqui com length 1) — some nesse único caso; "Todos" (length
+                            0) e cliente com múltiplos subprojetos (length > 1) mantêm a
+                            tag pra desambiguar de qual projeto cada card é. */}
+                        {selectedProjectIds.length !== 1 && (
+                          <span style={styles.tag}>{resolveProjectName(card.projeto_id, projects)}</span>
+                        )}
                       </div>
                       <select
                         style={styles.statusSelect}

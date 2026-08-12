@@ -106,6 +106,67 @@ describe('useCards — createCard', () => {
     );
   });
 
+  it('does not append the created card optimistically when its projeto_id is outside the active filter', async () => {
+    // Regression test for the BoardV2 "sidebar client A + chat targets
+    // client B" scenario: creating a card outside the currently active
+    // filter must not flash it on screen and then have it vanish on the
+    // next poll — it should simply never appear locally (the poll for
+    // whoever is actually looking at project B will show it correctly).
+    global.fetch = vi.fn((url, options) => {
+      if (options && options.method === 'POST') {
+        const created = fakeCard({ id: 42, titulo: 'Card em B', projeto_id: 'projB' });
+        return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve(created) });
+      }
+      // GET (initial fetch / poll) — filtered list for the active project A,
+      // which never includes the card just created in B.
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    });
+
+    const { result } = renderHook(() => useCards(['projA']));
+    await waitFor(() => expect(result.current.cards).toEqual([]));
+
+    let created;
+    await act(async () => {
+      created = await result.current.createCard({ titulo: 'Card em B', projeto_id: 'projB' });
+    });
+
+    // Contract preserved: createCard still resolves with the created card
+    // (BoardV2.handleCreate relies on this to close the "add card" form).
+    expect(created).toEqual(expect.objectContaining({ id: 42, projeto_id: 'projB' }));
+    // But it never entered local state — no flash-then-vanish.
+    expect(result.current.cards).toEqual([]);
+  });
+
+  it('still appends the created card optimistically when its projeto_id is inside the active filter', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }));
+    const { result } = renderHook(() => useCards(['projA', 'projB']));
+    await waitFor(() => expect(result.current.cards).toEqual([]));
+
+    const created = fakeCard({ id: 42, titulo: 'Card em A', projeto_id: 'projA' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve(created) }));
+
+    await act(async () => {
+      await result.current.createCard({ titulo: 'Card em A', projeto_id: 'projA' });
+    });
+
+    expect(result.current.cards).toEqual([created]);
+  });
+
+  it('appends the created card optimistically regardless of projeto_id when no filter is active (selectedProjectIds=[])', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }));
+    const { result } = renderHook(() => useCards([]));
+    await waitFor(() => expect(result.current.cards).toEqual([]));
+
+    const created = fakeCard({ id: 42, titulo: 'Card em qualquer projeto', projeto_id: 'projZ' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve(created) }));
+
+    await act(async () => {
+      await result.current.createCard({ titulo: 'Card em qualquer projeto', projeto_id: 'projZ' });
+    });
+
+    expect(result.current.cards).toEqual([created]);
+  });
+
   it('alerts and does not add a ghost card when the network call fails', async () => {
     global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }));
     const { result } = renderHook(() => useCards());

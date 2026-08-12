@@ -52,12 +52,20 @@ vi.mock('../../components/TerminalPanel.jsx', () => ({
   TerminalPanel: () => <div data-testid="mock-terminal-panel">terminal</div>,
 }));
 
+// `mock`-prefixed (mesmo motivo de mockUseTerminal acima): precisa ser um
+// vi.fn() de verdade — não só um objeto de retorno fixo — pra que o bloco
+// "BoardV2 segue o cliente da sidebar" abaixo consiga inspecionar COM QUE
+// array de projeto_id o hook foi chamado a cada render, sem deixar de servir
+// os testes existentes acima (que só olham o texto renderizado, indiferentes
+// aos argumentos).
+const mockUseCards = vi.fn(() => ({
+  cards: [{ id: 1, titulo: 'Card teste', descricao: null, projeto_id: 'projA', status: 'a_fazer', ultima_atualizacao_por: 'bruno' }],
+  createCard: vi.fn(),
+  updateCard: vi.fn(),
+}));
+
 vi.mock('../../hooks/useCards.js', () => ({
-  useCards: () => ({
-    cards: [{ id: 1, titulo: 'Card teste', descricao: null, projeto_id: 'projA', status: 'a_fazer', ultima_atualizacao_por: 'bruno' }],
-    createCard: vi.fn(),
-    updateCard: vi.fn(),
-  }),
+  useCards: (...args) => mockUseCards(...args),
 }));
 
 vi.mock('../../hooks/useGlobalTasks.js', () => ({
@@ -144,6 +152,50 @@ describe('AppV2 — as 4 telas navegam de verdade (não mais placeholder)', () =
     goTo('Configuração');
     goTo('Chat');
     expect(screen.getByText('+ Novo chat')).toBeTruthy();
+  });
+});
+
+// Fase 2 do plano (fix reportado pelo Bruno): BoardV2 passa a seguir o
+// CLIENTE selecionado na sidebar (`selectedClienteId`, o mesmo estado já
+// repassado a TarefasV2), desacoplado de `selectedProjectId` (o projeto do
+// chat ativo em TerminalContext) — mesmo padrão de prop-passing que
+// TarefasV2 já tinha. Cobrimos aqui só a EQUIVALÊNCIA "BoardV2 recebe
+// selectedClienteId == estado da sidebar"; a lógica de agregação
+// cliente+subprojetos em si (a fórmula `[selectedClienteId, ...subs]`) já é
+// coberta isoladamente em BoardV2.test.jsx.
+describe('AppV2 — BoardV2 segue o cliente selecionado na sidebar (Fase 2, desacoplado do chat ativo)', () => {
+  beforeEach(() => { mockUseCards.mockClear(); });
+
+  it('on first render, BoardV2 is filtered by the client derived from the active chat project (lazy-init of selectedClienteId)', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    goTo('Board');
+    // mockUseTerminal (topo do arquivo) tem selectedProjectId: 'projA', que
+    // não tem "/" — clienteIdFromProjetoId('projA') === 'projA'.
+    expect(mockUseCards).toHaveBeenCalledWith(['projA']);
+  });
+
+  it('selecting "Todos" on the sidebar (a board-only, no-op-on-chat action) switches BoardV2 to fetch cards for all projects', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    goTo('Board');
+    expect(mockUseCards).toHaveBeenCalledWith(['projA']);
+
+    // "Todos" na ClienteList da SidebarV2 (desktop) — via `title` (não
+    // `getByText`): com "Todos" selecionado, selectedProjectIds vira [] e a
+    // tag de projeto do BoardV2 (Fase 2) passa a mostrar "Projeto A" em cada
+    // card também, então getByText('Projeto A') mais abaixo colidiria.
+    fireEvent.click(screen.getByTitle('Todos'));
+
+    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+  });
+
+  it('re-selecting the client on the sidebar switches BoardV2 back to that client\'s cards', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    goTo('Board');
+    fireEvent.click(screen.getByTitle('Todos'));
+    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+
+    fireEvent.click(screen.getByTitle('Projeto A'));
+    expect(mockUseCards).toHaveBeenLastCalledWith(['projA']);
   });
 });
 

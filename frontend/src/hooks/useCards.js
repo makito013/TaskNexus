@@ -137,6 +137,15 @@ export function useCards(selectedProjectIds) {
     [selectedProjectIds]
   );
 
+  // Membership set derived from the same stable key as `fetchCards` above —
+  // `null` means "no active filter" (empty `selectedProjectIds`, i.e. every
+  // project is in scope). Used by `createCard`'s optimistic append below to
+  // decide whether the just-created card belongs on screen right now.
+  const activeProjectIdsSet = useMemo(
+    () => (projectIdsKey ? new Set(projectIdsKey.split(',')) : null),
+    [projectIdsKey]
+  );
+
   const fetchCards = useCallback(async () => {
     try {
       const list = await api.fetchCards(selectedProjectIds);
@@ -159,16 +168,39 @@ export function useCards(selectedProjectIds) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [fetchCards]);
 
+  // Bug fixed here: any caller whose creation target can fall outside the
+  // currently active filter — BoardV2 (Cliente A selected in the sidebar
+  // while the active chat's project belongs to client B: "+ Add card" still
+  // creates in B on purpose, chat project drives creation target) or
+  // BoardView v1 (CardFormModal's Cliente/Projeto selects are independent
+  // of the board's active filter, so the user can pick a different client
+  // or subproject than the one currently filtered) — must NOT have the
+  // created card flash-then-vanish on a board filtered to something else.
+  // Root cause was this optimistic append running unconditionally: it added
+  // the card to local state regardless of the active filter, so it showed
+  // up immediately and then disappeared on the next 5s poll (which only
+  // returns cards matching `selectedProjectIds`). Fix: only append
+  // optimistically when the created card's `projeto_id` is actually inside
+  // the active filter (or the filter is empty, i.e. "all projects"). When
+  // it's outside the filter, we deliberately skip the append AND skip any
+  // toast/feedback — the card is not stale, it is simply out of scope for
+  // whatever the user is looking at right now, and the caller's own "+ Add
+  // card" form already gives completion feedback (closes / stops showing
+  // "Saving…") once this promise resolves. No shared toast component
+  // exists in this codebase yet, so adding one here would be scope creep
+  // for a one-line bug fix — see DEV report for the full rationale.
   const createCard = useCallback(async (payload) => {
     try {
       const created = await api.createCard(payload);
-      setCards((prev) => [...prev, created]);
+      if (!activeProjectIdsSet || activeProjectIdsSet.has(created.projeto_id)) {
+        setCards((prev) => [...prev, created]);
+      }
       return created;
     } catch (e) {
       alert('Falha ao criar card. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [activeProjectIdsSet]);
 
   const createSubcard = useCallback(async (parentId, payload) => {
     try {
