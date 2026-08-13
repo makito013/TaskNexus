@@ -110,11 +110,27 @@ export function useFabPosition({ size = FAB_SIZE_PX } = {}) {
   const sizeRef = useRef(size);
   sizeRef.current = size;
 
+  // Suspensão do resync enquanto um gesto de arrasto está em andamento. NÃO é
+  // otimização de render: a base do arrasto (startLeft/startTop) é capturada uma
+  // única vez no pointerdown, e o resync abaixo re-deriva left/top a partir da %
+  // a CADA evento da visual viewport. Se um desses eventos chegar no meio do
+  // gesto, o FAB troca de base embaixo do dedo e o drop aterra num lugar que não
+  // é onde o dedo estava — isso é perda de posição, não flicker de um frame.
+  // O gatilho é raro hoje (exige um evento de visualViewport durante o arrasto),
+  // e fica MAIS frequente quando o casco do app passar a encolher com o teclado:
+  // o Safari despaneia a visual viewport e emite um `scroll` extra.
+  // Quem seta e limpa este ref é layouts/v2/TerminalShortcutsFab.jsx, nos
+  // handlers de pointerdown/pointerup/pointercancel — e a limpeza acontece
+  // DEPOIS do commit, pra que o setState de commitPosition seja a última escrita
+  // de posição do gesto.
+  const suspendResyncRef = useRef(false);
+
   useEffect(() => {
     // Re-derivar SEMPRE da % (ver a invariante no topo do arquivo). Quando não
     // há % salva, o canto padrão é recalculado pra nova viewport — que é o
     // comportamento certo: o default é "canto inferior direito", não um px.
     const resync = () => {
+      if (suspendResyncRef.current) return; // gesto em andamento — ver o ref acima
       const { viewport, insets, bounds } = measure(sizeRef.current);
       const position = percentRef.current
         ? clampPosition(percentToPx(percentRef.current, bounds), bounds)
@@ -166,5 +182,6 @@ export function useFabPosition({ size = FAB_SIZE_PX } = {}) {
     viewport: state.viewport,
     insets: state.insets,
     commitPosition,
+    suspendResyncRef,
   };
 }

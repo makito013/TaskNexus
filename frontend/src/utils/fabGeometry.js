@@ -19,12 +19,26 @@
 // fallbacks abaixo existem por causa disso — não são defensividade cosmética,
 // são o que permite a suíte rodar. Remover qualquer um deles derruba testes.
 
-// Espelha `--touch-target` (frontend/src/index.css:45). A duplicação é
-// inevitável: a geometria precisa do número em JS, e `var()` não é legível
-// por JS sem a ponte de getComputedStyle. Os botões e as colunas da grade
-// continuam usando `var(--touch-target, 44px)`, então grade e botões nunca
-// divergem entre si; aqui o número entra só no cálculo de bounds.
+// Tamanho do FAB em repouso. Espelha `--touch-target`
+// (frontend/src/index.css:45) apenas no VALOR default: a duplicação é
+// inevitável, porque a geometria precisa do número em JS e `var()` não é
+// legível por JS sem a ponte de getComputedStyle. Aqui o número entra só no
+// cálculo de bounds.
+//
+// ISTO NÃO É O TAMANHO DA CÉLULA DO PAINEL. São dois conceitos que coincidiam
+// em 44 por acidente até o FAB ganhar 56px no tablet. Se alguém reunificar os
+// dois, a estimativa de largura do painel erra 48px no tablet e o painel abre
+// cortado ou colado na borda errada — sem erro, sem warning, sem teste
+// vermelho. Ver PANEL_CELL_PX abaixo.
 export const FAB_SIZE_PX = 44;
+
+// Tamanho do FAB em viewport de tablet (mais largo que o breakpoint mobile):
+// +27% linear, +62% de área sobre os 44px. Existe separado justamente para que
+// crescer o FAB NÃO cresça a célula do painel nem nenhum outro alvo de toque do
+// repo — `--touch-target` governa IpadToolbar, os botões do painel e o banner da
+// skin, e uma variante por media query inflaria tudo em cascata sem aparecer em
+// teste nenhum.
+export const FAB_SIZE_TABLET_PX = 56;
 
 // Mesmo respiro do botão flutuante `☰ Menu` (layouts/v2/AppV2.jsx:334-337).
 export const EDGE_MARGIN_PX = 12;
@@ -36,19 +50,48 @@ export const SNAP_THRESHOLD_PX = 24;
 // Folga entre o FAB e o painel que ele abre.
 export const PANEL_GAP_PX = 8;
 
+// A CÉLULA da grade de atalhos. Espelha `--touch-target`
+// (frontend/src/index.css:45), que é o que o JSX do painel realmente usa
+// (`var(--touch-target, 44px)` em layouts/v2/TerminalShortcutsPanel.jsx). Este
+// número existe em JS apenas para ESTIMAR o retângulo do painel na colocação; a
+// tolerância de alguns px é absorvida pelo clamp do painel mais os 12px de
+// margem. NUNCA trocar por FAB_SIZE_PX: são conceitos diferentes que hoje têm o
+// mesmo valor, e o FAB é o que vai divergir primeiro.
+export const PANEL_CELL_PX = 44;
+
+// A barra larga da primeira linha do painel tem a altura de uma célula, para
+// preservar o alvo de toque de 44px; o que ela tem de diferente é a LARGURA
+// (`grid-column: 1 / -1`), e largura ela não ACRESCENTA: gasta as colunas que já
+// existiam. É por isso que PANEL_WIDTH_PX não muda quando ela entra.
+export const PANEL_TOGGLE_ROW_HEIGHT_PX = PANEL_CELL_PX;
+
 export const PANEL_COLUMNS = 4;
-export const PANEL_ROWS = 2;
 export const PANEL_CELL_GAP_PX = 4;
 export const PANEL_PADDING_PX = 8;
+
+// Alturas das linhas, de cima pra baixo. Um VETOR somado por reduce, e não
+// `rows * cell`, justamente para que uma linha de altura diferente (hoje a barra
+// larga; amanhã o que for) entre somando em vez de virar caso especial na
+// fórmula. Se alguém "simplificar" isto de volta para uma multiplicação, a
+// próxima linha de altura distinta volta a exigir uma ramificação.
+export const PANEL_ROW_HEIGHTS_PX = [
+  PANEL_TOGGLE_ROW_HEIGHT_PX,
+  PANEL_CELL_PX,
+  PANEL_CELL_PX,
+];
 
 // Estimativas, não medidas: o painel real é montado com colunas em
 // `var(--touch-target, 44px)`, então estes números podem derivar alguns px se
 // o token mudar. Isso é aceitável de propósito — o clamp do painel mais os
 // 12px de margem absorvem a deriva sem jogar nada pra fora da tela.
 export const PANEL_WIDTH_PX =
-  PANEL_COLUMNS * FAB_SIZE_PX + (PANEL_COLUMNS - 1) * PANEL_CELL_GAP_PX + 2 * PANEL_PADDING_PX; // 204
+  PANEL_COLUMNS * PANEL_CELL_PX
+  + (PANEL_COLUMNS - 1) * PANEL_CELL_GAP_PX
+  + 2 * PANEL_PADDING_PX; // 4*44 + 3*4 + 2*8 = 204
 export const PANEL_HEIGHT_PX =
-  PANEL_ROWS * FAB_SIZE_PX + (PANEL_ROWS - 1) * PANEL_CELL_GAP_PX + 2 * PANEL_PADDING_PX; // 108
+  PANEL_ROW_HEIGHTS_PX.reduce((sum, height) => sum + height, 0)
+  + (PANEL_ROW_HEIGHTS_PX.length - 1) * PANEL_CELL_GAP_PX
+  + 2 * PANEL_PADDING_PX; // 3*44 + 2*4 + 2*8 = 156
 
 /**
  * getVisibleViewport — o "retângulo verdade" contra o qual o FAB se posiciona.

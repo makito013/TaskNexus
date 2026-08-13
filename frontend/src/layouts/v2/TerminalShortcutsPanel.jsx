@@ -20,6 +20,11 @@
 // `WebkitOverflowScrolling` (a grade 4x2 cabe inteira, não rola mais),
 // `borderBottom` e `flexShrink` (não está mais em fluxo).
 import { useRef } from 'react';
+import {
+  PANEL_CELL_GAP_PX,
+  PANEL_COLUMNS,
+  PANEL_PADDING_PX,
+} from '../../utils/fabGeometry.js';
 
 // A justificativa do drag-scroll horizontal morreu junto com o `overflowX`,
 // mas o slop de tap-vs-move do ShortcutButton CONTINUA necessário por outro
@@ -132,9 +137,22 @@ const gridStyle = (left, top, transformOrigin) => ({
   // cima. Ver o racional completo em TerminalShortcutsFab.jsx.
   zIndex: 31,
   display: 'grid',
-  gridTemplateColumns: 'repeat(4, var(--touch-target, 44px))',
-  gap: '4px',
-  padding: '8px',
+  // Contagem de colunas, gap e padding vêm de utils/fabGeometry.js: são
+  // exatamente os três números que PANEL_WIDTH_PX/PANEL_HEIGHT_PX usam para
+  // ESTIMAR o retângulo do painel na colocação. Duplicá-los como literais aqui
+  // (como era antes) é a origem da deriva: mudar o gap para 6px acertaria o
+  // layout e deixaria a estimativa de colocação errada por 6px, sem sintoma
+  // nenhum além de um painel um pouco fora de lugar perto da borda.
+  //
+  // A CÉLULA continua em `var(--touch-target, 44px)` de propósito, e não em
+  // PANEL_CELL_PX: é o mesmo token que os botões usam (btnStyle acima), então
+  // coluna e botão nunca podem divergir entre si. Trocar por um px de JS faria o
+  // painel deixar de acompanhar o token, e a divergência só apareceria no
+  // dispositivo real (o Vitest roda com `css: false`, nenhuma regra .css existe
+  // nos testes).
+  gridTemplateColumns: `repeat(${PANEL_COLUMNS}, var(--touch-target, 44px))`,
+  gap: `${PANEL_CELL_GAP_PX}px`,
+  padding: `${PANEL_PADDING_PX}px`,
   // --v2-surface-2 preserva exatamente o contraste já validado nos dois temas
   // pela barra antiga: botões em --v2-surface-3 sobre um fundo --v2-surface-2.
   background: 'var(--v2-surface-2)',

@@ -10,6 +10,16 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import { isControlFrame, TerminalPanel } from './TerminalPanel.jsx';
 import { FitAddon } from '@xterm/addon-fit';
+// Fake compartilhado de window.visualViewport (jsdom não implementa a API).
+// Este arquivo tinha DUAS copias locais de uma versão com só `height` — sem
+// `width`/`offsetLeft`/`offsetTop`, que são as dimensões que expressam o PAN da
+// layout viewport que o Safari faz por baixo do teclado. O fake compartilhado
+// tem os cinco campos, então os testes de geometria do FAB (e qualquer frente
+// futura que reancore o casco contra a área visível) reproduzem o sintoma real
+// em vez de metade dele. Única diferença de API para as cópias locais: o
+// construtor recebe um OBJETO (`{ height: 800 }`) — com cinco dimensões, um
+// argumento posicional deixaria de ser legível.
+import { FakeVisualViewport } from '../test/fakeVisualViewport.js';
 
 // @xterm/xterm and its addons touch canvas/WebGL APIs jsdom doesn't implement,
 // so the mount tests below (unlike the pure isControlFrame tests above) stub
@@ -636,23 +646,6 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
     }
   }
 
-  class FakeVisualViewport {
-    constructor(height) {
-      this.height = height;
-      this._listeners = { resize: [], scroll: [] };
-    }
-    addEventListener(type, cb) {
-      if (this._listeners[type]) this._listeners[type].push(cb);
-    }
-    removeEventListener(type, cb) {
-      if (!this._listeners[type]) return;
-      this._listeners[type] = this._listeners[type].filter((fn) => fn !== cb);
-    }
-    fire(type) {
-      for (const cb of this._listeners[type] || []) cb();
-    }
-  }
-
   let originalWebSocket;
   let originalResizeObserver;
   let originalVisualViewport;
@@ -691,7 +684,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('shrinks the wrapper height and re-fits when the keyboard opens (viewport shrinks)', () => {
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { container } = render(
@@ -714,7 +707,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('resets the wrapper height once the viewport gap is back within tolerance', () => {
-    const vv = new FakeVisualViewport(500);
+    const vv = new FakeVisualViewport({ height: 500 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { container } = render(
@@ -738,7 +731,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('also reacts to a scroll event on the visual viewport (iOS offset-instead-of-resize case)', () => {
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { container } = render(
@@ -756,7 +749,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('ignores viewport changes within the tolerance (no visible height jitter)', () => {
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { container } = render(
@@ -774,7 +767,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('does nothing when the panel is not visible', () => {
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { container } = render(
@@ -804,20 +797,20 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
   });
 
   it('removes visualViewport listeners on unmount', () => {
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
     const { unmount } = render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );
 
-    expect(vv._listeners.resize.length).toBeGreaterThan(0);
-    expect(vv._listeners.scroll.length).toBeGreaterThan(0);
+    expect(vv.listenerCount('resize')).toBeGreaterThan(0);
+    expect(vv.listenerCount('scroll')).toBeGreaterThan(0);
 
     unmount();
 
-    expect(vv._listeners.resize.length).toBe(0);
-    expect(vv._listeners.scroll.length).toBe(0);
+    expect(vv.listenerCount('resize')).toBe(0);
+    expect(vv.listenerCount('scroll')).toBe(0);
   });
 });
 
@@ -1067,23 +1060,6 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
     }
   }
 
-  class FakeVisualViewport {
-    constructor(height) {
-      this.height = height;
-      this._listeners = { resize: [], scroll: [] };
-    }
-    addEventListener(type, cb) {
-      if (this._listeners[type]) this._listeners[type].push(cb);
-    }
-    removeEventListener(type, cb) {
-      if (!this._listeners[type]) return;
-      this._listeners[type] = this._listeners[type].filter((fn) => fn !== cb);
-    }
-    fire(type) {
-      for (const cb of this._listeners[type] || []) cb();
-    }
-  }
-
   let originalWebSocket;
   let originalResizeObserver;
 
@@ -1175,7 +1151,7 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
   it('discounts the root inset from the pinned visual-viewport height', () => {
     const originalVisualViewport = window.visualViewport;
     const originalInnerHeight = window.innerHeight;
-    const vv = new FakeVisualViewport(800);
+    const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 

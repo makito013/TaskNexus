@@ -120,7 +120,9 @@ const fabStyle = ({ left, top, opacity, armed }) => ({
  */
 export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
   const isTouch = useIsTouchDevice();
-  const { position, viewport, insets, commitPosition } = useFabPosition();
+  const {
+    position, viewport, insets, commitPosition, suspendResyncRef,
+  } = useFabPosition();
 
   const [open, setOpen] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -225,6 +227,14 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     g.dx = 0;
     g.dy = 0;
 
+    // Congela o resync de viewport pelo gesto INTEIRO, já a partir do
+    // pointerdown (não do momento em que o arrasto arma): startLeft/startTop
+    // acabaram de ser capturados acima e são a base de todo delta daqui pra
+    // frente. Um evento da visual viewport no meio do caminho re-derivaria
+    // left/top da % e trocaria essa base embaixo do dedo. Ver o comentário de
+    // suspendResyncRef em hooks/useFabPosition.js.
+    suspendResyncRef.current = true;
+
     // Volta a 100% de opacidade ANTES de qualquer decisão de toggle: o usuário
     // tocou, então o FAB já não está mais ocioso.
     setFaded(false);
@@ -317,9 +327,24 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
   // ~16ms, visível no iPad e invisível em teste. O setState dentro de
   // commitPosition mantém o React como fonte de verdade; o render seguinte
   // escreve exatamente os mesmos valores (idempotente).
-  const commitDrag = () => {
-    const g = gestureRef.current;
-    const snapped = commitPosition({ left: g.startLeft + g.dx, top: g.startTop + g.dy });
+  //
+  // POR QUE OS 4 VALORES VÊM POR PARÂMETRO, e não de gestureRef — isto não é
+  // estilo, é a correção de um bug real que chegou ao iPad: `resetGesture()`
+  // zera `dx`/`dy` no ref, e os dois handlers chamavam `resetGesture()` ANTES de
+  // `commitDrag()`. Resultado: todo arrasto comitava `startLeft + 0`, reescrevia
+  // a posição ANTIGA no DOM e persistia a % antiga — um no-op idempotente
+  // perfeito, que é exatamente o sintoma "arrasto o botão e ele volta pro canto
+  // onde estava". Com o snapshot explícito por parâmetro, a ordem das duas
+  // chamadas deixa de importar e a CLASSE do bug desaparece.
+  //
+  // ALTERNATIVA REJEITADA, e não a reintroduza: mover `resetGesture()` para
+  // depois de `commitDrag()`. Faz o teste passar, mas deixa a correção
+  // dependente de uma ordem de chamada que nenhuma assinatura expressa — a
+  // mesma fragilidade que produziu o bug — e reabre uma janela em que um segundo
+  // `pointerdown` chega com `g.pointerId` ainda setado e é descartado pelo guard
+  // de handlePointerDown. Custo idêntico, robustez menor.
+  const commitDrag = ({ startLeft, startTop, dx, dy }) => {
+    const snapped = commitPosition({ left: startLeft + dx, top: startTop + dy });
     const el = fabRef.current;
     if (el) {
       el.style.left = `${snapped.left}px`;
@@ -345,20 +370,26 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     releaseCapture(e.pointerId);
     clearLongPressTimer();
 
-    const { phase } = g;
+    // Snapshot dos 4 campos ANTES do resetGesture(), que zera dx/dy — ver o
+    // comentário de commitDrag. Tirar o snapshot aqui é o que torna a ordem
+    // destas duas linhas irrelevante.
+    const { phase, startLeft, startTop, dx, dy } = g;
     resetGesture();
     setArmed(false);
 
     if (phase === 'pressed') {
       // Tap: subiu antes dos 280ms e sem escorregar. O único gesto que alterna.
       setOpen((o) => !o);
-      return;
-    }
-    if (phase === 'dragging') {
-      commitDrag();
+    } else if (phase === 'dragging') {
+      commitDrag({ startLeft, startTop, dx, dy });
     }
     // 'armed' (segurou e soltou sem mover) e 'aborted' não fazem nada: cruzar o
     // threshold CONSOME o gesto, e um gesto abortado não é sinal de intenção.
+
+    // Liberado só AQUI, no fim do handler e DEPOIS do commit: o setState de
+    // commitPosition tem que ser a última escrita de posição do gesto, senão um
+    // resync enfileirado sobrescreveria a posição recém-comitada.
+    suspendResyncRef.current = false;
   };
 
   const handlePointerCancel = (e) => {
@@ -368,20 +399,25 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     releaseCapture(e.pointerId);
     clearLongPressTimer();
 
-    const { phase } = g;
-    const wasDragging = phase === 'dragging';
+    // Mesmo snapshot-antes-do-reset do handlePointerUp. O bug do delta zerado
+    // estava DUPLICADO aqui: o comentário abaixo ("nunca volta pra posição
+    // antiga") descrevia um comportamento que o código não tinha, porque
+    // resetGesture() zerava dx/dy antes de commitDrag() lê-los do ref.
+    const { phase, startLeft, startTop, dx, dy } = g;
     resetGesture();
     setArmed(false);
 
-    if (wasDragging) {
+    if (phase === 'dragging') {
       // Persiste a ÚLTIMA posição válida, nunca volta pra posição antiga: se o
       // sistema cancelou o gesto no meio, o botão já está visualmente sob o
       // dedo, e saltar de volta seria uma perda de trabalho do usuário.
-      commitDrag();
-      return;
+      commitDrag({ startLeft, startTop, dx, dy });
     }
     // pointercancel durante PRESSED não mexe no painel: cancelamento não é sinal
     // de intenção, e só um tap completo alterna.
+
+    // Mesmo motivo do handlePointerUp: liberar depois do commit.
+    suspendResyncRef.current = false;
   };
 
   // Caminho de acessibilidade, NÃO substituto da máquina de estados acima. Como
