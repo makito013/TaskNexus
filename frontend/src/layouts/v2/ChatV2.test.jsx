@@ -22,9 +22,9 @@ vi.mock('../../components/TerminalPanel.jsx', () => ({
   }),
 }));
 
-// O hard gate do TerminalShortcutsBar (useIsTouchDevice) é irrelevante pro
-// que este arquivo testa — força "touch" para que a presença/ausência da
-// barra (guiada por activeSession, não pelo tipo de dispositivo) seja o que
+// O hard gate do TerminalShortcutsFab (useIsTouchDevice) é irrelevante pro
+// que este arquivo testa — força "touch" para que a presença/ausência do FAB
+// (guiada por activeSession, não pelo tipo de dispositivo) seja o que
 // está sob teste aqui.
 vi.mock('../../hooks/useIsTouchDevice.js', () => ({
   useIsTouchDevice: () => true,
@@ -159,13 +159,26 @@ describe('ChatV2 — activePanelRef aponta para o painel ativo', () => {
   });
 });
 
-describe('ChatV2 — TerminalShortcutsBar (atalhos touch)', () => {
+// O painel de atalhos nasce SEMPRE fechado (decisão travada: o estado
+// aberto/fechado não persiste) — então todo teste que procura um botão de
+// atalho precisa antes abrir o painel pelo FAB. `openShortcutsPanel` é um tap:
+// pointerDown + pointerUp sem movimento e abaixo do threshold de long-press,
+// que é o único gesto que alterna o painel (ver a máquina de gestos em
+// TerminalShortcutsFab.jsx).
+function openShortcutsPanel() {
+  const fab = screen.getByLabelText('Show terminal shortcuts');
+  fireEvent.pointerDown(fab, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(fab, { clientX: 10, clientY: 10, pointerId: 1 });
+}
+
+describe('ChatV2 — TerminalShortcutsFab (atalhos touch)', () => {
   it('não renderiza quando não há sessão ativa', () => {
     render(<ChatV2 sessions={[]} activeSessionKey={null} projects={PROJECTS} onCreateTask={vi.fn()} />);
+    expect(screen.queryByLabelText('Show terminal shortcuts')).toBeNull();
     expect(screen.queryByLabelText('Esc')).toBeNull();
   });
 
-  it('renderiza os botões de atalho quando há sessão ativa', () => {
+  it('renderiza os botões de atalho quando há sessão ativa e o painel é aberto pelo FAB', () => {
     render(
       <ChatV2
         sessions={[SESSION]}
@@ -174,6 +187,7 @@ describe('ChatV2 — TerminalShortcutsBar (atalhos touch)', () => {
         onCreateTask={vi.fn()}
       />
     );
+    openShortcutsPanel();
     expect(screen.getByLabelText('Esc')).toBeTruthy();
     expect(screen.getByLabelText('Nova linha (Alt+Enter)')).toBeTruthy();
   });
@@ -189,11 +203,12 @@ describe('ChatV2 — TerminalShortcutsBar (atalhos touch)', () => {
         activePanelRef={activePanelRef}
       />
     );
+    openShortcutsPanel();
 
     const button = screen.getByLabelText('Esc');
-    // TerminalShortcutsBar só dispara no pointerup, depois de confirmar que o
-    // ponteiro não se moveu (não foi um arrasto de rolagem) — ver
-    // TerminalShortcutsBar.jsx.
+    // TerminalShortcutsPanel só dispara no pointerup, depois de confirmar que o
+    // ponteiro não se moveu (não foi um arrasto) — ver
+    // TerminalShortcutsPanel.jsx.
     fireEvent.pointerDown(button, { clientX: 10, clientY: 10 });
     fireEvent.pointerUp(button, { clientX: 10, clientY: 10 });
 

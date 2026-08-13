@@ -1,9 +1,9 @@
 // frontend/src/hooks/useIsTouchDevice.js
 // (a) The `typeof window.matchMedia === 'function'` guard is NOT redundant:
 // this repo's jsdom test environment has no global `matchMedia` mock, and
-// this hook is now used by TerminalShortcutsBar.jsx, which mounts unmocked
+// this hook is now used by TerminalShortcutsFab.jsx, which mounts unmocked
 // in AppV2.test.jsx — without the guard, that test file would throw instead
-// of the bar just rendering null.
+// of the fab just rendering null.
 // (b) Deliberately one-shot: computed once in useEffect, with no `change`
 // listener, unlike the sibling useMediaQuery.js which does subscribe to
 // changes. This preserves exact parity with the original inline detection

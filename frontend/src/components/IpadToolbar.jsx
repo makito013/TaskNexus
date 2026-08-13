@@ -41,7 +41,7 @@ const btnStyle = {
  */
 export function IpadToolbar({ panelRef }) {
   // D-09: hard gate — never render on non-touch devices. Detection now
-  // lives in useIsTouchDevice.js (shared with layouts/v2/TerminalShortcutsBar.jsx).
+  // lives in useIsTouchDevice.js (shared with layouts/v2/TerminalShortcutsFab.jsx).
   const isTouch = useIsTouchDevice();
 
   // Return null (not hidden) on non-touch devices — D-09

@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { TerminalPanel } from '../../components/TerminalPanel.jsx';
 import { TaskQuickCreatePopover } from './TaskQuickCreatePopover.jsx';
-import { TerminalShortcutsBar } from './TerminalShortcutsBar.jsx';
+import { TerminalShortcutsFab } from './TerminalShortcutsFab.jsx';
 
 const styles = {
   column: {
@@ -108,11 +108,17 @@ export function ChatV2({ sessions = [], activeSessionKey, projects = [], onCreat
         </div>
       )}
 
-      {/* Mesmo gate do header acima: sem sessão ativa não há painel/PTY pra
-          receber os bytes de atalho, então a barra não tem o que mostrar
-          nem em quem atuar. Fica logo abaixo do header e acima do terminal
-          por ser, ela também, controle do painel ativo — não conteúdo. */}
-      {activeSession && <TerminalShortcutsBar panelRef={activePanelRef} />}
+      {/* Mesmo gate do header acima, e pelo mesmo motivo: sem sessão ativa não
+          há painel/PTY pra receber os bytes de atalho, então o FAB não tem em
+          quem atuar. Onde ele aparece na árvore não importa mais pro layout —
+          o FAB e o painel que ele abre são `position: fixed`, overlays que não
+          ocupam espaço em fluxo (era o problema da barra fixa que ele
+          substituiu, que comia ~56px de altura do terminal permanentemente).
+          Continua aqui, e NÃO num portal pro document.body, de propósito: ver a
+          armadilha do `display: none` documentada em TerminalShortcutsFab.jsx. */}
+      {activeSession && (
+        <TerminalShortcutsFab terminalRef={activePanelRef} sessionKey={activeSession.sessionKey} />
+      )}
 
       <TaskQuickCreatePopover
         open={taskPopoverOpen}
