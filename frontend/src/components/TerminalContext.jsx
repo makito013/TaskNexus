@@ -36,11 +36,37 @@ import { createBrowserNotifier, installUnlockOnFirstGesture } from '../services/
 import { decideSessionsToNotify, buildSessionNotification } from '../utils/sessionNotifications.js';
 import { isQuietNow } from '../utils/quietHours.js';
 import { NOTIFICATION_SETTINGS_CHANGED_EVENT } from '../hooks/useNotificationSettings.js';
+import {
+  PUSH_SUBSCRIPTION_CHANGED_EVENT,
+  reconcilePushSubscription,
+} from '../services/pushSubscription.js';
 
 const TerminalContext = createContext(null);
 
 const POLL_INTERVAL_MS = 7000;
 const JUST_STARTED_GRACE_MS = 10000; // 10s grace after explicit startSession
+
+/**
+ * `session_key` carried by the `?session=` deep link the service worker
+ * opens when a push notification is clicked (Phase 3).
+ *
+ * Read from the URL and never written back: this app has no real router
+ * (useRoute.js is a hand-rolled 3-route switcher), and the query parameter
+ * is a one-shot hand-off, not app state. Leaving it in the address bar is
+ * harmless — nothing re-reads it after the provider's first render.
+ *
+ * Returns null outside a browser (tests/SSR) and for a blank value.
+ */
+export function readSessionKeyFromLocation(search = typeof window === 'undefined' ? '' : window.location.search) {
+  try {
+    // URLSearchParams decodes the percent-encoding the worker applied, so
+    // '::' and the '/' of a sub-project path come back intact.
+    const value = new URLSearchParams(search).get('session');
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 /** `notifier` is injectable only for tests (a stub in place of
  * Notification/AudioContext) — in production the default is the real
@@ -48,6 +74,13 @@ const JUST_STARTED_GRACE_MS = 10000; // 10s grace after explicit startSession
 export function TerminalProvider({ children, notifier = null }) {
   // Selected agent (just UI selection, no PTY yet)
   const [activeSessionKey, setActiveSessionKey] = useState(() => {
+    // `?session=` deep link (Phase 3): the service worker's
+    // notificationclick opens '/?session=<encoded session_key>', and this is
+    // the only place that reads it. It WINS over localStorage — the user
+    // just tapped a specific notification, which is a stronger statement of
+    // intent than whatever tab was open last.
+    const fromNotification = readSessionKeyFromLocation();
+    if (fromNotification) return fromNotification;
     try { return localStorage.getItem('escritorio::active_session_key') || null; }
     catch { return null; }
   });
@@ -70,6 +103,13 @@ export function TerminalProvider({ children, notifier = null }) {
   // Independent from activeSessionKey so a project with no started session yet
   // can still be "selected" (see header comment).
   const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    // R-6: the deep link has to be read HERE too, in the same initializer,
+    // and it has to win over the stored project. This state is independent
+    // from activeSessionKey, so without it the app would open the notified
+    // chat while the tab strip still rendered the previously selected
+    // project — the tab wouldn't even be visible.
+    const fromNotification = readSessionKeyFromLocation();
+    if (fromNotification) return fromNotification.split('::')[0];
     try {
       const storedProject = localStorage.getItem('escritorio::selected_project_id');
       if (storedProject) return storedProject;
@@ -110,6 +150,12 @@ export function TerminalProvider({ children, notifier = null }) {
   // opening the page in the morning would play a sound for every chat that
   // finished overnight).
   const notifiedKeysRef = useRef(null);
+  // Whether THIS device has an active Web Push subscription (Phase 3).
+  // Gates the anti-double-sound ledger: only a device that actually receives
+  // the push may suppress its own sound. Read once at mount and refreshed
+  // when the Settings screen toggles push, same event channel the
+  // quiet-hours settings already use.
+  const hasPushSubscriptionRef = useRef(false);
 
   // Unlocks audio and requests notification permission on the user's FIRST
   // gesture — both require a gesture per browser policy (on iPad WebKit,
@@ -131,6 +177,28 @@ export function TerminalProvider({ children, notifier = null }) {
     return () => {
       cancelled = true;
       window.removeEventListener(NOTIFICATION_SETTINGS_CHANGED_EVENT, handler);
+    };
+  }, []);
+
+  // Whether this device receives Web Push. Resolved once at mount (which
+  // also re-registers the subscription on the backend, repairing the case
+  // where the backend was offline when the user enabled it) and kept fresh
+  // by the event the Settings screen emits when push is toggled.
+  //
+  // Failing open — leaving the ref false — is the safe default: the sound
+  // plays. The opposite mistake would silently mute the app.
+  useEffect(() => {
+    let cancelled = false;
+    reconcilePushSubscription({ registerSubscription: api.registerPushSubscription })
+      .then((active) => { if (!cancelled) hasPushSubscriptionRef.current = active; })
+      .catch(() => { /* stays false: the sound keeps playing */ });
+    const handler = (event) => {
+      hasPushSubscriptionRef.current = Boolean(event.detail?.active);
+    };
+    window.addEventListener(PUSH_SUBSCRIPTION_CHANGED_EVENT, handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(PUSH_SUBSCRIPTION_CHANGED_EVENT, handler);
     };
   }, []);
 
@@ -339,21 +407,26 @@ export function TerminalProvider({ children, notifier = null }) {
       // without it, the sound would repeat every 7s while needs_attention
       // stayed true).
       if (persisted && !cancelled) {
-        const { toNotify, nextNotifiedKeys } = decideSessionsToNotify({
+        const { toNotify, toSound, nextNotifiedKeys } = decideSessionsToNotify({
           sessions: persisted,
           notifiedKeys: notifiedKeysRef.current,
           focusedKey,
           quietHoursActive: isQuietNow(notificationSettingsRef.current),
+          hasPushSubscription: hasPushSubscriptionRef.current,
         });
         notifiedKeysRef.current = nextNotifiedKeys;
-        if (toNotify.length > 0) {
+        // Phase 3: `toSound` is `toNotify` minus the chats the backend
+        // already delivered by Web Push to THIS device — that push carried
+        // its own OS sound, and playing this one on top would alert twice
+        // for a single pause.
+        if (toSound.length > 0) {
           // A single sound, even when several chats finished in the same
           // tick — the visual notification is per session (tag =
           // session_key), the sound doesn't need to (and shouldn't) stack.
           notifierRef.current.playSound();
-          for (const key of toNotify) {
-            notifierRef.current.notify(buildSessionNotification(key, persisted[key]));
-          }
+        }
+        for (const key of toNotify) {
+          notifierRef.current.notify(buildSessionNotification(key, persisted[key]));
         }
       }
 

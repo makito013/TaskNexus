@@ -183,3 +183,187 @@ describe('NotificationSettings — browser permission', () => {
     expect(screen.getByText(/não expõe a API de notificações/)).toBeTruthy();
   });
 });
+
+// ─── Web Push (Phase 3, decision G-2: explicit button, no auto-subscribe) ───
+// The whole browser side arrives through the `push` prop: jsdom implements
+// neither PushManager nor ServiceWorkerRegistration, and the point of the
+// adapter object is that a test replaces it wholesale.
+
+function createPushStub(overrides = {}) {
+  return {
+    isSupported: () => true,
+    permission: () => 'granted',
+    userAgent: () => 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120',
+    fetchPublicKey: vi.fn().mockResolvedValue({ public_key: 'AQID', available: true }),
+    getExisting: vi.fn().mockResolvedValue(null),
+    subscribe: vi.fn().mockResolvedValue({ endpoint: 'https://push.example/a' }),
+    unsubscribe: vi.fn().mockResolvedValue('https://push.example/a'),
+    serialize: () => ({
+      endpoint: 'https://push.example/a',
+      keys: { p256dh: 'p', auth: 'a' },
+    }),
+    register: vi.fn().mockResolvedValue({ status: 'subscribed' }),
+    unregister: vi.fn().mockResolvedValue({ status: 'unsubscribed' }),
+    broadcast: vi.fn(),
+    ...overrides,
+  };
+}
+
+const enableButton = () => screen.getByRole('button', { name: /Ativar push neste dispositivo/ });
+const disableButton = () => screen.getByRole('button', { name: /Desativar push neste dispositivo/ });
+
+function renderWithPush(push) {
+  return render(
+    <NotificationSettings notificationApi={{ permission: 'granted' }} push={push} />,
+  );
+}
+
+describe('NotificationSettings — push state', () => {
+  it('offers an enabled button when push is available and not yet subscribed', async () => {
+    renderWithPush(createPushStub());
+    await waitFor(() => expect(enableButton().disabled).toBe(false));
+  });
+
+  it('never subscribes on its own while resolving the state (G-2)', async () => {
+    // An unrequested permission prompt is the fastest way to get push
+    // permanently denied — and 'denied' is irreversible from JavaScript.
+    const push = createPushStub();
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton()).toBeTruthy());
+    expect(push.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('shows the disable button when this device is already subscribed', async () => {
+    const push = createPushStub({
+      getExisting: vi.fn().mockResolvedValue({ endpoint: 'https://push.example/a' }),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(disableButton()).toBeTruthy());
+    expect(screen.getByText(/mesmo com o navegador fechado/)).toBeTruthy();
+  });
+
+  it('disables the button and explains when the browser blocked notifications', async () => {
+    const push = createPushStub({ permission: () => 'denied' });
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(true));
+    expect(screen.getByText(/bloqueou as notificações neste aparelho/)).toBeTruthy();
+  });
+
+  it('disables the button when the browser has no push support at all', async () => {
+    const push = createPushStub({ isSupported: () => false });
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(true));
+  });
+
+  it('tells an iOS user to install the app on the Home Screen', async () => {
+    // The specific case required by decision G-2: on WebKit, PushManager
+    // only exists once the PWA is installed, and a generic "unavailable"
+    // would leave the user with no way forward.
+    const push = createPushStub({
+      isSupported: () => false,
+      userAgent: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari',
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(screen.getByText(/Adicionar à Tela de Início/)).toBeTruthy());
+  });
+
+  it('reports the server having no VAPID key as unavailable', async () => {
+    const push = createPushStub({
+      fetchPublicKey: vi.fn().mockResolvedValue({ public_key: null, available: false }),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(true));
+  });
+});
+
+describe('NotificationSettings — enabling push', () => {
+  it('subscribes, registers on the backend and flips to the active state', async () => {
+    const push = createPushStub();
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(false));
+
+    fireEvent.click(enableButton());
+    await waitFor(() => expect(disableButton()).toBeTruthy());
+    expect(push.subscribe).toHaveBeenCalledWith('AQID');
+    expect(push.register).toHaveBeenCalledWith({
+      endpoint: 'https://push.example/a',
+      keys: { p256dh: 'p', auth: 'a' },
+    });
+  });
+
+  it('broadcasts the change so the open tab stops playing its own sound', async () => {
+    const push = createPushStub();
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(false));
+
+    fireEvent.click(enableButton());
+    await waitFor(() => expect(push.broadcast).toHaveBeenCalledWith(true));
+  });
+
+  it('surfaces a rejected permission prompt instead of failing silently', async () => {
+    const push = createPushStub({
+      subscribe: vi.fn().mockRejectedValue(new Error('NotAllowedError')),
+      permission: vi.fn().mockReturnValueOnce('default').mockReturnValue('denied'),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(false));
+
+    fireEvent.click(enableButton());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/NotAllowedError/));
+    // Re-read state: the button must stop inviting a retry that can no
+    // longer work.
+    await waitFor(() => expect(enableButton().disabled).toBe(true));
+  });
+
+  it('does not claim success when the backend registration fails', async () => {
+    const push = createPushStub({
+      register: vi.fn().mockRejectedValue(new Error('Falha ao registrar este dispositivo')),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(enableButton().disabled).toBe(false));
+
+    fireEvent.click(enableButton());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Falha ao registrar/));
+    expect(push.broadcast).not.toHaveBeenCalled();
+  });
+});
+
+describe('NotificationSettings — disabling push', () => {
+  it('unsubscribes in the browser and removes the backend row', async () => {
+    const push = createPushStub({
+      getExisting: vi.fn().mockResolvedValue({ endpoint: 'https://push.example/a' }),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(disableButton()).toBeTruthy());
+
+    fireEvent.click(disableButton());
+    await waitFor(() => expect(enableButton()).toBeTruthy());
+    expect(push.unsubscribe).toHaveBeenCalled();
+    // Without this the server keeps pushing to a device the user asked to
+    // be left alone.
+    expect(push.unregister).toHaveBeenCalledWith('https://push.example/a');
+  });
+
+  it('broadcasts the change so the open tab resumes its own sound', async () => {
+    const push = createPushStub({
+      getExisting: vi.fn().mockResolvedValue({ endpoint: 'https://push.example/a' }),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(disableButton()).toBeTruthy());
+
+    fireEvent.click(disableButton());
+    await waitFor(() => expect(push.broadcast).toHaveBeenCalledWith(false));
+  });
+
+  it('surfaces a failure to unsubscribe', async () => {
+    const push = createPushStub({
+      getExisting: vi.fn().mockResolvedValue({ endpoint: 'https://push.example/a' }),
+      unsubscribe: vi.fn().mockRejectedValue(new Error('boom')),
+    });
+    renderWithPush(push);
+    await waitFor(() => expect(disableButton()).toBeTruthy());
+
+    fireEvent.click(disableButton());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/boom/));
+  });
+});

@@ -115,6 +115,64 @@ Backend: Python 3 + FastAPI + Uvicorn + aiosqlite + PyYAML.
 Frontend: React 18 + Vite 5 + [`@xterm/xterm`](https://xtermjs.org/) (terminal
 real) + marked/dompurify. Sem TypeScript, sem framework de CSS/UI.
 
+## Notificações de fim de chat (som, aba e push)
+
+Quando um chat termina de responder, o TaskNexus avisa por três caminhos
+independentes:
+
+1. **Badge e título da aba** — sempre, sem exigir nenhuma permissão. É o que
+   sobra quando todo o resto está bloqueado.
+2. **Som + notificação do navegador na aba aberta** — depende da permissão de
+   notificação do navegador, pedida no primeiro toque/clique na página.
+3. **Web Push (navegador fechado)** — precisa ser ativado **por dispositivo**,
+   no botão "Ativar push neste dispositivo" em Configuração → Notificações.
+
+A janela de silêncio (Configuração → Notificações) vale para os três canais de
+entrega, e usa o **relógio do servidor** — abrir o app de outro fuso horário
+não desloca o horário configurado.
+
+### ⚠️ Push exige contexto seguro (HTTPS ou `localhost`)
+
+Service Worker e Web Push só existem em **contexto seguro**. Na prática:
+
+| Como você acessa | Push funciona? |
+| --- | --- |
+| `https://<host>.ts.net` (Tailscale) | ✅ sim |
+| `http://localhost:5173` / `http://localhost:8000` | ✅ sim |
+| `https://<ip-da-lan>` com o cert do `deploy.ps1` | ✅ sim |
+| `http://192.168.x.x` (IP de LAN, ou `deploy.ps1 -NoTls`) | ❌ não |
+
+Por IP de rede local sem TLS o navegador **nem registra o service worker**, e
+a falha é silenciosa: nenhum erro aparece na tela, o botão de ativar push só
+fica indisponível. Se o push parece não funcionar, esse é o primeiro item a
+conferir.
+
+**No iPhone/iPad há um requisito a mais:** o Safari só expõe a API de push
+para um app **instalado na Tela de Início**. Abra o TaskNexus no Safari, use
+o menu de compartilhar → "Adicionar à Tela de Início", e ative o push a partir
+do app instalado — no Safari comum a opção aparece como indisponível.
+
+### Como funciona por baixo
+
+O par de chaves VAPID é **gerado no primeiro boot do backend** e guardado no
+`sessions.db` (tabela `vapid_keys`) — não há nada para configurar em `.env`.
+A chave privada fica em claro no arquivo, como as demais informações do banco
+(ver a nota sobre variáveis de ambiente mais abaixo).
+
+Cada dispositivo que ativa o push vira uma linha em `push_subscriptions`.
+Endpoints que o serviço de push reporta como mortos (404/410) são removidos
+sozinhos no envio seguinte. Desativar o push num aparelho não afeta os outros.
+
+Uma sessão gera **uma** notificação por pausa (`tag = session_key`), e o
+aparelho que recebeu o push não toca o som da aba por cima — mas um navegador
+sem push ativado continua tocando o som normalmente, então ativar push no
+celular não silencia o desktop.
+
+⚠️ **Dependências:** o push exige `pywebpush`/`py-vapid` (já em
+`backend/requirements.txt`). Numa instalação que não reinstalou os requisitos,
+o backend sobe normalmente e apenas reporta o push como indisponível — nenhum
+outro recurso é afetado.
+
 ## ⚠️ Segurança e escopo de deployment
 
 O backend sobe sem nenhuma autenticação, escutando em `0.0.0.0` (porta 8000 no

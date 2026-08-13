@@ -24,6 +24,10 @@ from app.task_store import TaskStore
 from app.agent_store import GlobalAgentStore
 from app.card_store import CardStore
 from app.settings_store import SettingsStore
+from app.push_store import PushSubscriptionStore
+from app.push_payload import build_push_payload
+from app.push_service import send_push_to_all
+from app.vapid_keys import load_or_create_vapid_keys
 from app.image_validation import sniff_image_type, UploadTooLargeError, validate_upload_stream
 from app.agent_discovery import scan_projects, resolve_projeto_alvo, cliente_id_from_projeto_id
 from app.asyncio_patches import install_proactor_connection_lost_patch
@@ -58,6 +62,9 @@ from app.models import (
     AppearanceUpdateRequest,
     NotificationSettings,
     NotificationSettingsUpdateRequest,
+    PushSubscriptionRequest,
+    PushSubscriptionDeleteRequest,
+    VapidPublicKeyResponse,
     ProjectsRootSettings,
     ProjectsRootUpdateRequest,
     AttachmentUploadResult,
@@ -118,7 +125,18 @@ task_store = TaskStore(db_path=SESSIONS_DB)
 agent_store = GlobalAgentStore(db_path=SESSIONS_DB)
 card_store = CardStore(db_path=SESSIONS_DB)
 settings_store = SettingsStore(db_path=SESSIONS_DB)
+push_store = PushSubscriptionStore(db_path=SESSIONS_DB)
 pty_manager = PTYManager()
+
+# VAPID keypair provisioned at boot (decision G-1). None = push unavailable
+# on this machine (dependency missing / provisioning failed) — every push
+# path checks it and degrades to a no-op, nothing else is affected.
+_vapid_keys = None
+
+# Strong references to in-flight push broadcasts. asyncio only holds a WEAK
+# reference to a running task, so a fire-and-forget create_task() can be
+# garbage-collected mid-flight and the push silently never leaves (Risk R-3).
+_push_tasks: set[asyncio.Task] = set()
 _session_locks: dict[str, asyncio.Lock] = {}
 # Quantos callers estão DENTRO de `_session_lock` para cada chave — contando
 # tanto quem já segura o lock quanto quem está na fila esperando por ele. É o
@@ -389,6 +407,12 @@ async def lifespan(app: FastAPI):
     await agent_store.initialize()
     await card_store.initialize()
     await settings_store.initialize()
+    await push_store.initialize()
+    # Generates the VAPID keypair on the very first boot and reuses it from
+    # then on (G-1). Never raises — a failure here leaves _vapid_keys as
+    # None, which every push path treats as "push unavailable" (R-2).
+    global _vapid_keys
+    _vapid_keys = await load_or_create_vapid_keys(push_store)
     await _reload_projects_root()
     await _reload_global_agents_cache()
     _pretrust_projects()
@@ -408,6 +432,7 @@ async def lifespan(app: FastAPI):
     await agent_store.close()
     await card_store.close()
     await settings_store.close()
+    await push_store.close()
 
 
 # Two Windows-only workarounds for an abruptly disconnecting client (the
@@ -961,6 +986,56 @@ async def update_notification_settings(body: NotificationSettingsUpdateRequest):
     return await _notification_settings_response()
 
 
+# ─── Web Push (Phase 3) ────────────────────────────────────────────────────
+# Registered here, alongside the other /api routes, so they sit far ahead of
+# the SPA catch-all at the bottom of this file — a push route shadowed by the
+# catch-all would answer with index.html and 200 OK, and the browser would
+# fail to subscribe with no visible error (same regression class already
+# guarded for /sw.js in test_pwa_static_routes.py).
+#
+# No authentication: these routes inherit the same posture as every other
+# route in this app (a personal tailnet install). Adding auth to this one
+# endpoint alone would be inconsistent, and is out of scope for this feature.
+
+
+@app.get("/api/push/vapid-public-key", response_model=VapidPublicKeyResponse)
+async def get_vapid_public_key():
+    """applicationServerKey for the browser's pushManager.subscribe().
+
+    Answers 200 with `available: false` instead of an error when the key
+    couldn't be provisioned: the UI needs to tell the difference between
+    "this server can't do push" and "the request failed", and only a
+    successful response carries that distinction cleanly."""
+    if _vapid_keys is None:
+        return VapidPublicKeyResponse(public_key=None, available=False)
+    return VapidPublicKeyResponse(public_key=_vapid_keys.public_key, available=True)
+
+
+@app.post("/api/push/subscriptions", status_code=201)
+async def register_push_subscription(body: PushSubscriptionRequest):
+    """Registers this device for push. Idempotent by endpoint (the browser
+    hands back the same endpoint for the same device/origin), so two tabs —
+    or a re-subscribe after a reload — collapse into a single row instead of
+    doubling the notification."""
+    await push_store.upsert(
+        endpoint=body.endpoint,
+        p256dh=body.keys.p256dh,
+        auth=body.keys.auth,
+        user_agent=body.user_agent,
+    )
+    return {"status": "subscribed", "endpoint": body.endpoint}
+
+
+@app.delete("/api/push/subscriptions")
+async def delete_push_subscription(body: PushSubscriptionDeleteRequest):
+    """Unregisters a device. Tolerates an unknown endpoint (no 404): the
+    browser may have already dropped the subscription on its side, and the
+    user's intent — "stop pushing to this device" — is satisfied either
+    way."""
+    await push_store.delete(body.endpoint)
+    return {"status": "unsubscribed", "endpoint": body.endpoint}
+
+
 @app.get("/api/settings/projects-root", response_model=ProjectsRootSettings)
 async def get_projects_root_settings():
     settings = await settings_store.get()
@@ -1119,6 +1194,68 @@ async def sessions_active():
     return result
 
 
+async def _dispatch_push_for_session(session_key: str) -> bool:
+    """Decides whether this pause gets a Web Push and, if so, fires it.
+
+    Returns whether a broadcast was scheduled (used by the tests; the caller
+    ignores it).
+
+    ⚠️ ORDER IS LOAD-BEARING (Risk R-1, the TOCTOU race on the ledger).
+    `mark_push_notified` is awaited at DECISION time — before
+    `create_task`, never in the send's success callback. Between the
+    decision and the push service's answer there is a full round trip in
+    which the frontend's 7s poll would still read `push_notified = 0` and
+    play the local sound, and then the push would land on top of it: two
+    audible alerts for one pause. Writing the mark first inverts the
+    trade-off to the fail-safe side — if the delivery later fails, the local
+    sound was suppressed for a notification that never arrived, which is the
+    same "discard, don't defer" contract the quiet-hours window already uses.
+
+    Every failure path here is swallowed: this runs inside the Stop hook,
+    whose only real job is `mark_needs_attention`. A push problem can never
+    make the hook fail.
+    """
+    if _vapid_keys is None:
+        return False
+    try:
+        subscriptions = await push_store.list_all()
+        # The genuine no-op path under decision G-1: with the keypair
+        # generated at boot, "no keys" no longer happens — "nobody has
+        # enabled push on any device" does.
+        if not subscriptions:
+            return False
+
+        settings = await settings_store.get_notifications()
+        offset_minutes = current_utc_offset_minutes()
+        if is_within_quiet_hours(
+            enabled=settings["quiet_hours_enabled"],
+            start=settings["quiet_hours_start"],
+            end=settings["quiet_hours_end"],
+            now_epoch_seconds=time.time(),
+            utc_offset_minutes=offset_minutes,
+        ):
+            # Not marked as notified: the push was discarded, so the local
+            # sound decision stays entirely with the frontend (which applies
+            # the same window itself).
+            return False
+
+        meta = await store.get_all_meta()
+        payload = build_push_payload(session_key, meta.get(session_key, {}))
+        await store.mark_push_notified(session_key)
+        task = asyncio.create_task(
+            send_push_to_all(payload, store=push_store, vapid_keys=_vapid_keys)
+        )
+        # Strong reference until completion (R-3) — asyncio itself only
+        # keeps a weak one, so an unreferenced task can be collected in
+        # flight and the push silently never leaves.
+        _push_tasks.add(task)
+        task.add_done_callback(_push_tasks.discard)
+        return True
+    except Exception as exc:
+        print(f"==> AVISO: falha ao disparar push para {session_key}: {exc!r}", flush=True)
+        return False
+
+
 @app.post("/api/hooks/stop")
 async def hook_stop(request: Request):
     """Fase 4 (ADR-02 revisado): callback do hook Stop do Claude Code,
@@ -1135,7 +1272,12 @@ async def hook_stop(request: Request):
     if claude_session_id:
         session_key = await store.get_session_key_by_claude_id(claude_session_id)
         if session_key:
+            # Unconditional, and always first: the badge/title notification
+            # is never silenced, not by quiet hours and not by push being
+            # unavailable. This also resets push_notified, so the push
+            # decision below starts from a clean slate for THIS pause.
             await store.mark_needs_attention(session_key)
+            await _dispatch_push_for_session(session_key)
     return {"status": "ok"}
 
 

@@ -19,8 +19,18 @@
 // <input type="time"> emits invalid intermediate values while the user types
 // ("2:" -> "22:" -> "22:0"), and each one would turn into a 422 PUT.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNotificationSettings } from '../hooks/useNotificationSettings.js';
+import { api } from '../services/api.js';
+import {
+  broadcastPushSubscriptionChange,
+  getExistingSubscription,
+  getServiceWorkerRegistration,
+  isPushSupported,
+  serializeSubscription,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '../services/pushSubscription.js';
 
 const styles = {
   wrap: {
@@ -78,7 +88,70 @@ const styles = {
     fontSize: '11px',
     color: 'var(--v2-danger, var(--destructive, #ff3333))',
   },
+  pushBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    paddingTop: '4px',
+  },
+  pushButton: {
+    alignSelf: 'flex-start',
+    padding: '7px 12px',
+    borderRadius: '6px',
+    border: '1px solid var(--v2-border, var(--border-strong, #2a2a2a))',
+    background: 'var(--v2-surface-2, var(--bg-surface-2, #141414))',
+    color: 'var(--v2-text, var(--text-primary, #e0e0e0))',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  pushButtonDisabled: {
+    cursor: 'not-allowed',
+    opacity: 0.5,
+  },
 };
+
+// ─── Web Push (channel B) ──────────────────────────────────────────────────
+// Decision G-2: an EXPLICIT button, never a silent auto-subscribe at boot.
+// Subscribing triggers the browser's permission prompt, and a prompt the
+// user didn't ask for is the fastest way to get push permanently denied —
+// which is irreversible from JavaScript.
+
+/** The four states the button reports, plus 'loading' while resolving. */
+const PUSH_STATE = {
+  LOADING: 'loading',
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  DENIED: 'denied',
+  UNAVAILABLE: 'unavailable',
+};
+
+/** Whether this looks like iOS/iPadOS, where PushManager only exists once
+ * the app has been added to the Home Screen. Used only to pick the message
+ * — never to gate behaviour, which is decided by feature detection. */
+function looksLikeIos(userAgent = '') {
+  return /iPad|iPhone|iPod/.test(userAgent) ||
+    // iPadOS 13+ reports itself as a Mac; the touch points give it away.
+    (/Macintosh/.test(userAgent) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+}
+
+function pushStateHint(state, { isIos }) {
+  if (state === PUSH_STATE.LOADING) return 'Verificando…';
+  if (state === PUSH_STATE.ACTIVE) {
+    return 'Este dispositivo recebe notificações mesmo com o navegador fechado. O som toca no aparelho, não na aba.';
+  }
+  if (state === PUSH_STATE.DENIED) {
+    // Deliberately worded differently from permissionHint() above so the
+    // two blocks never read as the same sentence repeated twice.
+    return 'O navegador bloqueou as notificações neste aparelho, então o push não pode ser ativado. Reative a permissão nas configurações do navegador e recarregue a página.';
+  }
+  if (state === PUSH_STATE.UNAVAILABLE) {
+    if (isIos) {
+      return 'No iPhone/iPad o push só funciona com o app instalado: abra o menu de compartilhar do Safari e escolha "Adicionar à Tela de Início". Depois abra o TaskNexus por esse ícone e volte aqui.';
+    }
+    return 'Este dispositivo não oferece push. Ele exige HTTPS (o endereço do Tailscale) ou localhost — por IP da rede local o navegador nem registra o service worker.';
+  }
+  return 'Ative para receber a notificação no aparelho mesmo com o navegador fechado. É por dispositivo: cada aparelho precisa ativar o seu.';
+}
 
 /** Text for the browser's permission state. Informational only: 'denied' is
  * irreversible from JavaScript, so there's no "ask again" button — the
@@ -94,22 +167,115 @@ function permissionHint(permission) {
   return 'A permissão de notificação é pedida no primeiro toque/clique na página.';
 }
 
-/** `notificationApi` is injectable only for tests — in production it's the
- * global `Notification`. No other browser API is touched here. */
+/** Every browser API used here arrives by injection (`notificationApi`,
+ * `push`) — jsdom implements neither `Notification` nor `PushManager`, and a
+ * test that depended on real permission wouldn't run anywhere. In production
+ * they default to the real ones. */
 export function NotificationSettings({
   notificationApi = typeof Notification === 'undefined' ? null : Notification,
+  push = defaultPushAdapter,
 }) {
   const { settings, loading, saving, error, save } = useNotificationSettings();
   // Local copy of the times so the input stays controlled while the user
   // edits, without sending a PUT per keystroke.
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [pushState, setPushState] = useState(PUSH_STATE.LOADING);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState(null);
 
   useEffect(() => {
     if (!settings) return;
     setStart(settings.quiet_hours_start);
     setEnd(settings.quiet_hours_end);
   }, [settings]);
+
+  const isIos = looksLikeIos(push.userAgent());
+
+  /** Resolves the current state WITHOUT asking for permission: reading an
+   * existing subscription never prompts. */
+  const refreshPushState = useCallback(async () => {
+    if (!push.isSupported()) {
+      setPushState(PUSH_STATE.UNAVAILABLE);
+      return;
+    }
+    let serverKey = null;
+    try {
+      serverKey = await push.fetchPublicKey();
+    } catch {
+      // Backend unreachable: don't claim "unavailable" (which reads as a
+      // permanent verdict), let the button try and report a real error.
+      serverKey = null;
+    }
+    if (serverKey && serverKey.available === false) {
+      setPushState(PUSH_STATE.UNAVAILABLE);
+      return;
+    }
+    const subscription = await push.getExisting();
+    if (subscription) {
+      setPushState(PUSH_STATE.ACTIVE);
+      return;
+    }
+    setPushState(
+      push.permission() === 'denied' ? PUSH_STATE.DENIED : PUSH_STATE.INACTIVE,
+    );
+  }, [push]);
+
+  useEffect(() => {
+    let cancelled = false;
+    refreshPushState().catch(() => {
+      if (!cancelled) setPushState(PUSH_STATE.UNAVAILABLE);
+    });
+    return () => { cancelled = true; };
+  }, [refreshPushState]);
+
+  const handleEnablePush = async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      const { public_key: publicKey, available } = await push.fetchPublicKey();
+      if (!available || !publicKey) {
+        setPushState(PUSH_STATE.UNAVAILABLE);
+        return;
+      }
+      const subscription = await push.subscribe(publicKey);
+      const serialized = push.serialize(subscription);
+      if (!serialized) throw new Error('O navegador devolveu uma inscrição incompleta.');
+      await push.register(serialized);
+      setPushState(PUSH_STATE.ACTIVE);
+      push.broadcast(true);
+    } catch (e) {
+      // A rejected permission prompt lands here too — re-read the state so
+      // the button turns into the 'denied' message instead of inviting a
+      // retry that can no longer work.
+      setPushError(
+        isIos && !push.isSupported()
+          ? 'Instale o TaskNexus na Tela de Início antes de ativar o push.'
+          : e?.message || 'Não foi possível ativar o push neste dispositivo.',
+      );
+      await refreshPushState().catch(() => {});
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleDisablePush = async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      const endpoint = await push.unsubscribe();
+      // Removes the backend row even when the browser had already dropped
+      // the subscription — otherwise the server keeps pushing to a device
+      // the user asked to be left alone.
+      if (endpoint) await push.unregister(endpoint);
+      setPushState(PUSH_STATE.INACTIVE);
+      push.broadcast(false);
+    } catch (e) {
+      setPushError(e?.message || 'Não foi possível desativar o push neste dispositivo.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -188,7 +354,55 @@ export function NotificationSettings({
         </div>
       )}
 
+      <div style={styles.pushBlock}>
+        <div style={styles.heading}>Notificação com o navegador fechado</div>
+        <div style={styles.hint}>{pushStateHint(pushState, { isIos })}</div>
+        {pushState === PUSH_STATE.ACTIVE ? (
+          <button
+            type="button"
+            style={{ ...styles.pushButton, ...(pushBusy ? styles.pushButtonDisabled : null) }}
+            onClick={handleDisablePush}
+            disabled={pushBusy}
+          >
+            Desativar push neste dispositivo
+          </button>
+        ) : (
+          <button
+            type="button"
+            style={{
+              ...styles.pushButton,
+              ...(pushBusy || pushState !== PUSH_STATE.INACTIVE ? styles.pushButtonDisabled : null),
+            }}
+            onClick={handleEnablePush}
+            // 'denied' and 'unavailable' are offered as a disabled button
+            // rather than a live one: pressing it could not possibly work,
+            // and a button that silently fails is worse than one that
+            // visibly can't be pressed.
+            disabled={pushBusy || pushState !== PUSH_STATE.INACTIVE}
+          >
+            Ativar push neste dispositivo
+          </button>
+        )}
+        {pushError && <div role="alert" style={styles.error}>{pushError}</div>}
+      </div>
+
       {error && <div role="alert" style={styles.error}>{error}</div>}
     </div>
   );
 }
+
+/** Real browser/backend wiring, bundled into one object so tests replace it
+ * wholesale with a stub instead of mocking five modules. */
+const defaultPushAdapter = {
+  isSupported: () => isPushSupported(),
+  permission: () => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission),
+  userAgent: () => (typeof navigator === 'undefined' ? '' : navigator.userAgent),
+  fetchPublicKey: () => api.fetchVapidPublicKey(),
+  getExisting: async () => getExistingSubscription(await getServiceWorkerRegistration()),
+  subscribe: async (publicKey) => subscribeToPush(await getServiceWorkerRegistration(), publicKey),
+  unsubscribe: async () => unsubscribeFromPush(await getServiceWorkerRegistration()),
+  serialize: (subscription) => serializeSubscription(subscription),
+  register: (serialized) => api.registerPushSubscription(serialized),
+  unregister: (endpoint) => api.deletePushSubscription(endpoint),
+  broadcast: (active) => broadcastPushSubscriptionChange(active),
+};

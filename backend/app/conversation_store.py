@@ -27,10 +27,15 @@ class ConversationStore:
         # CREATE TABLE IF NOT EXISTS não adiciona colunas novas a uma tabela que já
         # existe, e ADD COLUMN falha com "duplicate column name" se já rodou antes —
         # cada ALTER é tentado isoladamente e o erro de coluna já existente é ignorado.
+        # push_notified (Fase 3 do plano de notificação): ledger anti-som-
+        # duplicado. Marca que o backend JÁ decidiu mandar um Web Push para
+        # esta pausa, para que o poll de 7s do canal A não toque o som local
+        # por cima da notificação que o push vai entregar.
         for column_def in (
             "display_name TEXT",
             "needs_attention INTEGER NOT NULL DEFAULT 0",
             "last_activity_seen_at REAL",
+            "push_notified INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 await self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {column_def}")
@@ -95,9 +100,31 @@ class ConversationStore:
         (ver POST /api/hooks/stop em main.py) — a heurística original de
         transição running->idle nunca disparava porque a própria TUI do
         Claude Code manda ESC[?6n a cada ~200ms, resetando o timer de
-        atividade indefinidamente."""
+        atividade indefinidamente.
+
+        Zera push_notified no mesmo UPDATE: cada pausa nova começa sem push
+        entregue, senão a segunda pausa da mesma sessão herdaria a marca da
+        primeira e o som local ficaria suprimido para sempre."""
         await self._conn.execute(
-            "UPDATE sessions SET needs_attention = 1 WHERE session_key = ?",
+            "UPDATE sessions SET needs_attention = 1, push_notified = 0 WHERE session_key = ?",
+            (session_key,),
+        )
+        await self._conn.commit()
+
+    async def mark_push_notified(self, session_key: str) -> None:
+        """Fase 3 (Web Push): registra que o backend DECIDIU disparar um push
+        para a pausa atual desta sessão.
+
+        Gravado no momento da DECISÃO, nunca no sucesso do envio (Risco R-1):
+        entre a decisão e a resposta do FCM/APNs existe uma janela de
+        round-trip inteira em que o poll de 7s do frontend ainda leria
+        push_notified = 0 e tocaria o som — e o push chegaria logo depois,
+        dobrando o aviso sonoro. O trade-off aceito é o oposto: se o envio
+        falhar depois, o som local foi suprimido para uma notificação que
+        não chegou — mesmo fail-safe que a janela de silêncio já usa
+        (descarta, não adia)."""
+        await self._conn.execute(
+            "UPDATE sessions SET push_notified = 1 WHERE session_key = ?",
             (session_key,),
         )
         await self._conn.commit()
@@ -123,22 +150,36 @@ class ConversationStore:
 
     async def ack(self, session_key: str) -> None:
         """Fase 4 (D-04): chamado quando o frontend foca a sessão — zera a
-        notificação pendente. No-op silencioso se a linha não existir."""
+        notificação pendente. No-op silencioso se a linha não existir.
+
+        push_notified volta a 0 junto: a pausa foi vista, então a próxima
+        pausa desta sessão precisa poder tocar o som local de novo caso o
+        push não seja disparado (ex: dispositivo desregistrado no meio)."""
         await self._conn.execute(
-            "UPDATE sessions SET needs_attention = 0, last_activity_seen_at = unixepoch('now', 'subsec') WHERE session_key = ?",
+            "UPDATE sessions SET needs_attention = 0, push_notified = 0, last_activity_seen_at = unixepoch('now', 'subsec') WHERE session_key = ?",
             (session_key,),
         )
         await self._conn.commit()
 
     async def get_all_meta(self) -> dict[str, dict]:
         """Fase 4: display_name + needs_attention de todas as sessões
-        persistidas, para o merge em GET /api/sessions/active."""
+        persistidas, para o merge em GET /api/sessions/active.
+
+        Fase 3 do plano de notificação: push_notified viaja junto porque
+        GET /api/sessions/persisted (o poll de 7s que o frontend já faz)
+        também é o veículo do ledger anti-som-duplicado — o cliente precisa
+        saber quais pausas já foram entregues por push para não tocar o som
+        por cima. Custa zero requisição nova."""
         result: dict[str, dict] = {}
         async with self._conn.execute(
-            "SELECT session_key, display_name, needs_attention FROM sessions"
+            "SELECT session_key, display_name, needs_attention, push_notified FROM sessions"
         ) as cursor:
             async for row in cursor:
-                result[row[0]] = {"display_name": row[1], "needs_attention": bool(row[2])}
+                result[row[0]] = {
+                    "display_name": row[1],
+                    "needs_attention": bool(row[2]),
+                    "push_notified": bool(row[3]),
+                }
         return result
 
     async def close(self) -> None:

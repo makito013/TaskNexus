@@ -346,6 +346,62 @@ class NotificationSettingsUpdateRequest(BaseModel):
         return v
 
 
+class PushSubscriptionKeys(BaseModel):
+    """The `keys` object the browser's PushSubscription hands back. Both
+    values are base64url strings produced by the browser — the server never
+    interprets them, it only forwards them to pywebpush, so the validation
+    here is just "present and not blank"."""
+    p256dh: str
+    auth: str
+
+    @field_validator("p256dh", "auth")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("chave de subscription não pode ser vazia")
+        return v
+
+
+class PushSubscriptionRequest(BaseModel):
+    """Body of POST /api/push/subscriptions — the browser's PushSubscription
+    serialized as-is (`endpoint` + `keys`), plus the optional user agent used
+    only to make the device recognizable in the database.
+
+    Rejecting a blank/non-http endpoint at the edge matters: it becomes a
+    PRIMARY KEY, and a junk row would be re-tried on every single push
+    forever with no way for the user to notice."""
+    endpoint: str
+    keys: PushSubscriptionKeys
+    user_agent: str | None = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def _valid_endpoint(cls, v: str) -> str:
+        endpoint = v.strip()
+        if not endpoint.startswith(("https://", "http://")):
+            raise ValueError("endpoint deve ser uma URL http(s)")
+        return endpoint
+
+
+class PushSubscriptionDeleteRequest(BaseModel):
+    """Body of DELETE /api/push/subscriptions. Only the endpoint is needed —
+    it's the primary key."""
+    endpoint: str
+
+
+class VapidPublicKeyResponse(BaseModel):
+    """Response of GET /api/push/vapid-public-key.
+
+    `public_key` is the base64url applicationServerKey the browser needs in
+    `pushManager.subscribe()`. It is nullable, with `available` alongside it,
+    because push degrades instead of failing: on a machine without
+    pywebpush/cryptography installed the key was never provisioned, and the
+    UI has to be able to say "unavailable on this server" rather than choke
+    on a 500."""
+    public_key: str | None
+    available: bool
+
+
 class ProjectsRootSettings(BaseModel):
     """Resposta de GET/PUT /api/settings/projects-root. `projects_root_path`
     é o valor cru persistido (None = sem override); `resolved_path` é o

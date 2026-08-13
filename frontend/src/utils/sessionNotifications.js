@@ -33,13 +33,21 @@
  *   itself", UI-SPEC section 3).
  * @param {boolean} params.quietHoursActive Whether the quiet-hours window is
  *   active right now.
- * @returns {{toNotify: string[], nextNotifiedKeys: string[]}}
+ * @param {boolean} params.hasPushSubscription Whether THIS device has an
+ *   active Web Push subscription. This is the guard on the anti-double-sound
+ *   ledger below, and it has to be a per-device fact: `push_notified` says
+ *   the server pushed to SOME device, which tells this tab nothing unless it
+ *   is one of them.
+ * @returns {{toNotify: string[], toSound: string[], nextNotifiedKeys: string[]}}
+ *   `toNotify` = show the in-tab Web Notification; `toSound` = play the
+ *   sound. They differ only for chats already delivered by push.
  */
 export function decideSessionsToNotify({
   sessions,
   notifiedKeys,
   focusedKey = null,
   quietHoursActive = false,
+  hasPushSubscription = false,
 }) {
   const pending = Object.keys(sessions || {}).filter(
     (key) => sessions[key]?.needs_attention === true && key !== focusedKey,
@@ -57,13 +65,31 @@ export function decideSessionsToNotify({
   const nextNotifiedKeys = pending;
 
   if (notifiedKeys === null || quietHoursActive) {
-    return { toNotify: [], nextNotifiedKeys };
+    return { toNotify: [], toSound: [], nextNotifiedKeys };
   }
   const already = new Set(notifiedKeys);
-  return {
-    toNotify: pending.filter((key) => !already.has(key)),
-    nextNotifiedKeys,
-  };
+  const toNotify = pending.filter((key) => !already.has(key));
+
+  // Anti-double-sound ledger (Phase 3). The backend sets `push_notified`
+  // the moment it DECIDES to send a Web Push for a pause; a device that
+  // receives that push already gets an OS notification with its own sound,
+  // so playing the in-tab sound on top of it would alert twice for one
+  // pause.
+  //
+  // The `hasPushSubscription` guard is the whole point, and the critical
+  // case is the negative one: a browser WITHOUT a subscription of its own is
+  // not one of the devices that push reached, so it must keep playing the
+  // sound even with `push_notified` true — otherwise enabling push on the
+  // phone would silently mute the desktop.
+  //
+  // Only the SOUND is suppressed. The in-tab Web Notification still fires:
+  // it shares `tag = session_key` with the push, so on a device that got
+  // both, the second one silently replaces the first instead of stacking.
+  const toSound = hasPushSubscription
+    ? toNotify.filter((key) => sessions[key]?.push_notified !== true)
+    : toNotify;
+
+  return { toNotify, toSound, nextNotifiedKeys };
 }
 
 /**

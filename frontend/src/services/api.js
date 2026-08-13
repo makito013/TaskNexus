@@ -289,6 +289,43 @@ export const api = {
     return r.json()
   },
 
+  // -- Web Push (channel B: notification with the browser closed) --
+
+  async fetchVapidPublicKey() {
+    // { public_key, available } — `available: false` means this server never
+    // provisioned a keypair (dependency missing), which the UI shows as
+    // "push unavailable" instead of treating it as a request failure.
+    const r = await fetch(`${BASE}/push/vapid-public-key`)
+    if (!r.ok) throw new Error('Falha ao buscar a chave pública de push')
+    return r.json()
+  },
+
+  async registerPushSubscription(subscription) {
+    // subscription: { endpoint, keys: { p256dh, auth } } — the browser's
+    // PushSubscription already serialized (services/pushSubscription.js).
+    // Idempotent by endpoint on the backend, so calling it again for a
+    // device that's already registered is harmless.
+    const r = await fetch(`${BASE}/push/subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...subscription, user_agent: navigator?.userAgent ?? null }),
+    })
+    if (!r.ok) throw new Error('Falha ao registrar este dispositivo para push')
+    return r.json()
+  },
+
+  async deletePushSubscription(endpoint) {
+    // DELETE with a body: the endpoint is a full URL and would need double
+    // encoding as a path/query parameter.
+    const r = await fetch(`${BASE}/push/subscriptions`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint }),
+    })
+    if (!r.ok) throw new Error('Falha ao remover este dispositivo do push')
+    return r.json()
+  },
+
   // -- Pasta de projetos configurável --
 
   async fetchProjectsRoot() {

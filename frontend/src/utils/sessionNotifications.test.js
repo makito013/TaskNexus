@@ -123,8 +123,99 @@ describe('decideSessionsToNotify — focus and quiet hours', () => {
   it('tolerates a missing/empty session map', () => {
     expect(decideSessionsToNotify({ sessions: undefined, notifiedKeys: [] })).toEqual({
       toNotify: [],
+      toSound: [],
       nextNotifiedKeys: [],
     });
+  });
+});
+
+describe('decideSessionsToNotify — anti-double-sound ledger (Phase 3, push)', () => {
+  const pushedSession = { needs_attention: true, push_notified: true };
+
+  it('plays the sound when this device has no push subscription', () => {
+    // THE critical case. `push_notified` says the server pushed to SOME
+    // device; a browser that isn't one of them heard nothing, so muting it
+    // here would mean enabling push on the phone silently mutes the desktop.
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession },
+      notifiedKeys: [],
+      hasPushSubscription: false,
+    });
+    expect(toNotify).toEqual(['a']);
+    expect(toSound).toEqual(['a']);
+  });
+
+  it('suppresses the sound on a device that is subscribed to push', () => {
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession },
+      notifiedKeys: [],
+      hasPushSubscription: true,
+    });
+    // The visual notification still fires — it shares the tag with the push
+    // and silently replaces it rather than stacking.
+    expect(toNotify).toEqual(['a']);
+    expect(toSound).toEqual([]);
+  });
+
+  it('still plays the sound for a pause the server did NOT push', () => {
+    const { toSound } = decideSessionsToNotify({
+      sessions: { a: pendingSession },
+      notifiedKeys: [],
+      hasPushSubscription: true,
+    });
+    expect(toSound).toEqual(['a']);
+  });
+
+  it('suppresses only the pushed chats when several finish in the same tick', () => {
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession, b: pendingSession },
+      notifiedKeys: [],
+      hasPushSubscription: true,
+    });
+    expect(toNotify.sort()).toEqual(['a', 'b']);
+    expect(toSound).toEqual(['b']);
+  });
+
+  it('delivers neither sound nor notification during quiet hours, pushed or not', () => {
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession },
+      notifiedKeys: [],
+      quietHoursActive: true,
+      hasPushSubscription: true,
+    });
+    expect(toNotify).toEqual([]);
+    expect(toSound).toEqual([]);
+  });
+
+  it('delivers nothing on the first observation, pushed or not', () => {
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession },
+      notifiedKeys: null,
+      hasPushSubscription: true,
+    });
+    expect(toNotify).toEqual([]);
+    expect(toSound).toEqual([]);
+  });
+
+  it('treats a missing push_notified field as not pushed', () => {
+    // Sessions persisted before this column existed, and any older backend.
+    const { toSound } = decideSessionsToNotify({
+      sessions: { a: { needs_attention: true } },
+      notifiedKeys: [],
+      hasPushSubscription: true,
+    });
+    expect(toSound).toEqual(['a']);
+  });
+
+  it('never notifies or sounds for the focused session even when pushed', () => {
+    const { toNotify, toSound } = decideSessionsToNotify({
+      sessions: { a: pushedSession },
+      notifiedKeys: [],
+      focusedKey: 'a',
+      hasPushSubscription: true,
+    });
+    expect(toNotify).toEqual([]);
+    expect(toSound).toEqual([]);
   });
 });
 

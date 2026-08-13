@@ -11,7 +11,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { TerminalProvider, useTerminal } from './TerminalContext.jsx';
+import { TerminalProvider, useTerminal, readSessionKeyFromLocation } from './TerminalContext.jsx';
+import { PUSH_SUBSCRIPTION_CHANGED_EVENT } from '../services/pushSubscription.js';
 
 const POLL_INTERVAL_MS = 7000;
 
@@ -260,6 +261,166 @@ describe('TerminalContext — channel A (sound + Web Notification)', () => {
     window.dispatchEvent(new Event('pointerdown'));
     expect(notifier.unlock).toHaveBeenCalledTimes(1);
 
+    unmount();
+  });
+});
+
+// ─── Phase 3: anti-double-sound ledger and the push deep link ──────────────
+
+describe('readSessionKeyFromLocation', () => {
+  it('reads the session key the service worker deep-linked to', () => {
+    expect(readSessionKeyFromLocation('?session=projA::claude')).toBe('projA::claude');
+  });
+
+  it('decodes the percent-encoding the service worker applied', () => {
+    // R-7: the key always carries '::' and the projectId can carry '/'.
+    expect(readSessionKeyFromLocation('?session=cliente%2Fsite%3A%3Aclaude'))
+      .toBe('cliente/site::claude');
+  });
+
+  it('returns null when there is no session parameter', () => {
+    expect(readSessionKeyFromLocation('')).toBeNull();
+    expect(readSessionKeyFromLocation('?other=1')).toBeNull();
+  });
+
+  it('returns null for a blank value', () => {
+    expect(readSessionKeyFromLocation('?session=')).toBeNull();
+    expect(readSessionKeyFromLocation('?session=%20')).toBeNull();
+  });
+});
+
+describe('TerminalContext — push deep link', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('opens the chat named in the ?session= deep link', async () => {
+    window.history.replaceState({}, '', '/?session=projA%3A%3Aclaude');
+    const { result, unmount } = await mountAndSettle();
+    expect(result.current.activeSessionKey).toBe('projA::claude');
+    unmount();
+  });
+
+  it('selects the deep-linked chat PROJECT too, in the same initializer', async () => {
+    // R-6: selectedProjectId is independent state. Without deriving it here,
+    // the app would open the notified chat while the tab strip still
+    // rendered the previously selected project — the tab wouldn't even be
+    // visible.
+    localStorage.setItem('escritorio::selected_project_id', 'outro-projeto');
+    window.history.replaceState({}, '', '/?session=projA%3A%3Aclaude');
+    const { result, unmount } = await mountAndSettle();
+    expect(result.current.selectedProjectId).toBe('projA');
+    unmount();
+  });
+
+  it('wins over the session restored from localStorage', async () => {
+    // The user just tapped a specific notification — a stronger statement of
+    // intent than whatever tab happened to be open last.
+    localStorage.setItem('escritorio::active_session_key', 'projB::gemini');
+    window.history.replaceState({}, '', '/?session=projA%3A%3Aclaude');
+    const { result, unmount } = await mountAndSettle();
+    expect(result.current.activeSessionKey).toBe('projA::claude');
+    unmount();
+  });
+
+  it('keeps a sub-project path intact when deriving the project', async () => {
+    window.history.replaceState({}, '', '/?session=cliente%2Fsite%3A%3Aclaude');
+    const { result, unmount } = await mountAndSettle();
+    expect(result.current.activeSessionKey).toBe('cliente/site::claude');
+    expect(result.current.selectedProjectId).toBe('cliente/site');
+    unmount();
+  });
+
+  it('falls back to localStorage when there is no deep link', async () => {
+    localStorage.setItem('escritorio::active_session_key', 'projB::gemini');
+    const { result, unmount } = await mountAndSettle();
+    expect(result.current.activeSessionKey).toBe('projB::gemini');
+    unmount();
+  });
+});
+
+describe('TerminalContext — anti-double-sound ledger', () => {
+  /** Flips the provider's per-device push flag through the same event the
+   * Settings screen emits. */
+  function setDeviceSubscribed(active) {
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(PUSH_SUBSCRIPTION_CHANGED_EVENT, { detail: { active } }),
+      );
+    });
+  }
+
+  it('still plays the sound when this device has no push subscription', async () => {
+    // THE critical case: push_notified says the server pushed to SOME
+    // device. A browser that isn't one of them heard nothing, so muting it
+    // would mean enabling push on the phone silently mutes the desktop.
+    const { unmount } = await mountAndSettle();
+
+    persistedPayload = {
+      'projA::claude': { needs_attention: true, display_name: null, push_notified: true },
+    };
+    await runPollTick();
+
+    expect(notifier.playSound).toHaveBeenCalledTimes(1);
+    expect(notifier.notify).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('suppresses the sound on a device that receives the push', async () => {
+    const { unmount } = await mountAndSettle();
+    setDeviceSubscribed(true);
+
+    persistedPayload = {
+      'projA::claude': { needs_attention: true, display_name: null, push_notified: true },
+    };
+    await runPollTick();
+
+    expect(notifier.playSound).not.toHaveBeenCalled();
+    // The visual notification still fires: it shares tag = session_key with
+    // the push, so it replaces it silently instead of stacking.
+    expect(notifier.notify).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('keeps playing the sound for a pause the server did NOT push', async () => {
+    const { unmount } = await mountAndSettle();
+    setDeviceSubscribed(true);
+
+    persistedPayload = {
+      'projA::claude': { needs_attention: true, display_name: null, push_notified: false },
+    };
+    await runPollTick();
+
+    expect(notifier.playSound).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('plays the sound again once push is disabled on this device', async () => {
+    const { unmount } = await mountAndSettle();
+    setDeviceSubscribed(true);
+    setDeviceSubscribed(false);
+
+    persistedPayload = {
+      'projA::claude': { needs_attention: true, display_name: null, push_notified: true },
+    };
+    await runPollTick();
+
+    expect(notifier.playSound).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('plays one sound when a pushed and a non-pushed chat finish together', async () => {
+    const { unmount } = await mountAndSettle();
+    setDeviceSubscribed(true);
+
+    persistedPayload = {
+      'projA::claude': { needs_attention: true, display_name: null, push_notified: true },
+      'projB::gemini': { needs_attention: true, display_name: null, push_notified: false },
+    };
+    await runPollTick();
+
+    expect(notifier.playSound).toHaveBeenCalledTimes(1);
+    expect(notifier.notify).toHaveBeenCalledTimes(2);
     unmount();
   });
 });

@@ -148,3 +148,62 @@ async def test_persists_across_instances(tmp_path):
     result = await s2.get("k")
     await s2.close()
     assert result == "v"
+
+
+# ─── push_notified ledger (Phase 3 of the notification plan) ────────────────
+
+
+@pytest.mark.asyncio
+async def test_push_notified_defaults_to_false(store):
+    await store.set("key1", "sid")
+    meta = await store.get_all_meta()
+    assert meta["key1"]["push_notified"] is False
+
+
+@pytest.mark.asyncio
+async def test_mark_push_notified_is_visible_in_get_all_meta(store):
+    await store.set("key1", "sid")
+    await store.mark_push_notified("key1")
+    meta = await store.get_all_meta()
+    assert meta["key1"]["push_notified"] is True
+
+
+@pytest.mark.asyncio
+async def test_ack_resets_push_notified(store):
+    # The pause was seen, so the NEXT pause of this session must be able to
+    # play the local sound again.
+    await store.set("key1", "sid")
+    await store.mark_needs_attention("key1")
+    await store.mark_push_notified("key1")
+    await store.ack("key1")
+    meta = await store.get_all_meta()
+    assert meta["key1"]["push_notified"] is False
+    assert meta["key1"]["needs_attention"] is False
+
+
+@pytest.mark.asyncio
+async def test_mark_needs_attention_resets_push_notified(store):
+    # Without this reset, a second pause of the same session would inherit
+    # the first pause's mark and the local sound would stay suppressed
+    # forever.
+    await store.set("key1", "sid")
+    await store.mark_push_notified("key1")
+    await store.mark_needs_attention("key1")
+    meta = await store.get_all_meta()
+    assert meta["key1"]["push_notified"] is False
+    assert meta["key1"]["needs_attention"] is True
+
+
+@pytest.mark.asyncio
+async def test_mark_push_notified_nonexistent_is_noop(store):
+    await store.mark_push_notified("ghost")  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_mark_push_notified_does_not_touch_other_sessions(store):
+    await store.set("key1", "sid1")
+    await store.set("key2", "sid2")
+    await store.mark_push_notified("key1")
+    meta = await store.get_all_meta()
+    assert meta["key1"]["push_notified"] is True
+    assert meta["key2"]["push_notified"] is False

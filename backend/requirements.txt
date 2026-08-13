@@ -9,3 +9,9 @@ httpx==0.27.2
 aiosqlite==0.20.0
 python-multipart==0.0.31
 pywinpty==2.0.14; sys_platform == "win32"
+# Web Push / VAPID (Phase 3 of the end-of-chat notification feature).
+# py-vapid is pinned explicitly even though pywebpush already depends on it:
+# app/vapid_keys.py imports it directly to generate the keypair on first
+# boot, so it is a first-order dependency here, not a transitive one.
+pywebpush==2.0.3
+py-vapid==1.9.4

@@ -1,4 +1,5 @@
-# deploy.ps1 — build do frontend + sobe o backend em primeiro plano.
+# deploy.ps1 — build do frontend + instala deps do backend + sobe o backend
+# em primeiro plano.
 #
 # Uso: .\deploy.ps1              # HTTPS na 443 (cert do Tailscale) + 80 redirecionando
 #      .\deploy.ps1 -NoTls       # HTTP puro na 80, sem certificado
@@ -16,9 +17,11 @@
 # `tailscale cert`, porém, fala com o tailscaled local e PODE exigir elevação
 # dependendo da instalação; se falhar, o script diz exatamente o que fazer.
 #
-# Pré-requisito: backend\.venv já criado com dependências instaladas (rode
-# scripts\install-service.ps1 uma vez antes, ele monta o venv com o Python
-# certo — mesmo sem usar o resto daquele script).
+# Pré-requisito: backend\.venv já criado (rode scripts\install-service.ps1
+# uma vez antes, ele monta o venv com o Python certo — mesmo sem usar o resto
+# daquele script). Este script instala/atualiza as dependências dentro desse
+# venv a cada execução (pip install -r requirements.txt), então adicionar
+# uma lib nova ao requirements.txt não exige rodar install-service.ps1 de novo.
 #
 # Exige PowerShell 7+ (pwsh): no Windows PowerShell 5.1,
 # $ErrorActionPreference = "Stop" combinado com o pipeline "2>&1 |" abaixo
@@ -70,6 +73,10 @@ $VenvPython = Join-Path $BackendDir ".venv\Scripts\python.exe"
 if (-not (Test-Path $VenvUvicorn)) {
     throw "Não achei $VenvUvicorn — rode scripts\install-service.ps1 (como Administrador) uma vez antes, pra criar o venv."
 }
+
+Write-Host "==> Instalando dependências do backend (pip install -r requirements.txt)..."
+& $VenvPython -m pip install -q -r (Join-Path $BackendDir "requirements.txt")
+if ($LASTEXITCODE -ne 0) { throw "pip install falhou (exit $LASTEXITCODE)" }
 
 # ---------------------------------------------------------------------------
 # Certificado (só no modo TLS)
