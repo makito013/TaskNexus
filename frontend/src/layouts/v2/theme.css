@@ -74,7 +74,11 @@
   --v2-accent-2-soft: oklch(0.93 0.03 268);
   --v2-danger: oklch(0.55 0.14 25);
   --v2-danger-soft: oklch(0.93 0.04 25);
-  --v2-bubble-me: oklch(0.93 0.028 168);
+  /* Lápide (repaginação do terminal, T7): aqui existiu `--v2-bubble-me`, nunca
+     consumido por nenhum componente — era isca para renderizar bolhas de chat
+     de verdade em volta do output. Removido porque o PTY é a fonte de verdade
+     e ele não é decorado (INV-PTY-OPACITY / ADR-005). */
+  --v2-warn: oklch(0.62 0.13 75);
   --v2-shadow: 0 1px 2px oklch(0.4 0.02 70/.06), 0 6px 20px oklch(0.4 0.02 70/.06);
   --v2-shadow-lg: 0 12px 48px oklch(0.3 0.02 70/.18);
   /* Bloco C (BottomSheet.jsx) — scrim atrás do painel do bottom sheet. Mesma
@@ -99,7 +103,8 @@
   --v2-accent-2-soft: oklch(0.36 0.035 268);
   --v2-danger: oklch(0.68 0.14 25);
   --v2-danger-soft: oklch(0.36 0.05 25);
-  --v2-bubble-me: oklch(0.36 0.035 168);
+  /* Gêmeo dark do --v2-bubble-me removido em T7 — ver a lápide no bloco light. */
+  --v2-warn: oklch(0.78 0.13 80);
   /* Designer não especificou --v2-shadow/--v2-shadow-lg para o bloco dark —
      reaproveita os mesmos valores do bloco light (a cor-base do oklch já é
      escura o bastante para ler bem em ambos os temas). */
@@ -110,6 +115,39 @@
      como scrim em ambos os temas (mesmo racional documentado acima para
      --v2-shadow/--v2-shadow-lg). */
   --v2-scrim: oklch(0.15 0.02 262 / 0.55);
+}
+
+/* Repaginação estética da tela de terminal (PLAN-terminal-skin.md, T2): a
+ * moldura do TerminalPanel.
+ *
+ * SÓ a cor da borda mora aqui — largura, estilo, raio, padding e fundo vêm
+ * inline de `resolveTerminalSkin()` (terminalSkin.js), onde são testáveis sem
+ * CSS. A regra é "nenhuma propriedade em dois lugares": como `border-color`
+ * tem um estado (`:focus-within`), o valor-base dela também tem que morar
+ * aqui. Estilo inline vence classe por especificidade — se a geometria inline
+ * usasse o atalho `border: 1px solid var(--v2-border)`, ele setaria a cor
+ * junto e a regra de foco abaixo NUNCA dispararia. Não apareceria em teste
+ * (Vitest roda com css:false), não apareceria em screenshot estático: só no
+ * iPad com teclado externo, onde é justamente o que diz onde as teclas vão
+ * cair.
+ *
+ * `--v2-border` e não um token dedicado de terminal: o delta de luminosidade
+ * para a cor "certa" do desenho é 0,005 no claro e 0,04 no escuro —
+ * imperceptível —, e é a mesma régua de fio de cabelo da borda inferior do
+ * header logo acima da moldura.
+ *
+ * A textarea escondida do xterm vive dentro do nó do term.open(), dentro
+ * deste elemento, então `:focus-within` funciona sem uma linha de JS. A
+ * largura da borda não muda no foco (1px sempre) — mudar dispararia o
+ * ResizeObserver e um fit() a cada clique. Transição só de `border-color`
+ * pelo mesmo motivo. */
+.v2-terminal-frame {
+  border-color: var(--v2-border);
+  transition: border-color 140ms ease;
+}
+
+.v2-terminal-frame:focus-within {
+  border-color: var(--v2-accent);
 }
 
 /* Tarefa 14 (05-TL.md): anel visual de "pensando/processando" no avatar do
@@ -175,4 +213,61 @@
 
 .v2-mobile-menu-enter {
   animation: v2-mobile-menu-enter 180ms ease-out;
+}
+
+/* ==========================================================================
+ * FAB de atalhos do terminal (Fase 1 — layouts/v2/TerminalShortcutsFab.jsx)
+ *
+ * Só o que NÃO é expressável como style object inline vive aqui: transições,
+ * keyframes e a media query de prefers-reduced-motion. `left`/`top`/
+ * `transform`/`opacity` continuam inline no JSX (são computados) — uma
+ * transição declarada na classe anima um valor setado inline sem problema, e
+ * assim não precisa de `!important` em lugar nenhum. Mesma divisão que
+ * `.v2-mobile-menu-enter` acima já pratica.
+ * ========================================================================== */
+
+/* Ponte env() -> custom property. `env(safe-area-inset-*)` só existe em CSS, e
+ * a geometria do FAB precisa do número em JS (utils/fabGeometry.js
+ * readSafeAreaInsets(), via getComputedStyle sobre :root). Sem este bloco o FAB
+ * fica a 12px da borda FÍSICA em vez da borda segura no iPad com notch — e
+ * ninguém percebe que faltou, porque não gera erro nenhum. */
+:root[data-layout="v2"] {
+  --v2-safe-top: env(safe-area-inset-top, 0px);
+  --v2-safe-right: env(safe-area-inset-right, 0px);
+  --v2-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --v2-safe-left: env(safe-area-inset-left, 0px);
+}
+
+.v2-fab {
+  transition: opacity 150ms ease-out, transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+/* Durante o arrasto o transform tem que ser 1:1 com o dedo — qualquer
+ * transição deixa o FAB visivelmente atrasado atrás do ponteiro. Só o
+ * `transform` sai da lista; opacity/box-shadow continuam transicionando porque
+ * mudam uma única vez (na entrada e na saída do arrasto), não a cada frame.
+ * NUNCA adicionar `left`/`top` a nenhuma destas listas: uma transição neles
+ * brigaria com a limpeza síncrona do transform no commit (ver a seção "commit
+ * sem piscada" em TerminalShortcutsFab.jsx) e produziria um deslize duplo. */
+.v2-fab--dragging {
+  transition: opacity 150ms ease-out, box-shadow 120ms ease-out;
+}
+
+@keyframes v2-fab-panel-enter {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.v2-fab-panel-enter {
+  animation: v2-fab-panel-enter 160ms ease-out;
+}
+
+/* PRECISA ser o último bloco do arquivo: tem a mesma especificidade (uma
+ * classe) que `.v2-fab--dragging`, então quem vence é a ordem de fonte. Mover
+ * este bloco pra cima faz "Reduzir movimento" parar de funcionar durante o
+ * arrasto, silenciosamente. */
+@media (prefers-reduced-motion: reduce) {
+  .v2-fab,
+  .v2-fab--dragging { transition-duration: 0ms; }
+  .v2-fab-panel-enter { animation-duration: 0ms; }
 }

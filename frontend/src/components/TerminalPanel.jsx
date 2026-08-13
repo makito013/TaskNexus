@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useMemo, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '../services/api.js';
+import { resolveTerminalSkin } from './terminalSkin.js';
+import { MOBILE_VIEWPORT_QUERY } from '../utils/viewport.js';
 
 // Bug 2 fix: recognized WS text-frame types sent by the backend as control
 // frames (as opposed to PTY output, which always travels as bytes/Blob — see
@@ -107,6 +109,31 @@ function resolveTerminalTheme() {
 }
 
 export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, projectId, agentId, visible }, ref) {
+  // Repaginação estética (PLAN-terminal-skin.md, T2): toda a camada visual —
+  // geometria da moldura, paleta, tipografia, faixas — vem de uma função pura
+  // resolvida UMA VEZ no mount. `useMemo(..., [])` e não `useState`/efeito
+  // porque nada disto é reativo: troca de layout ou de tema é full-reload
+  // (AppearanceSwitch.jsx chama window.location.reload() depois do PUT), e
+  // main.jsx seta `dataset.layout`/`dataset.theme` antes do primeiro render.
+  // Consequência aceita e documentada: `narrow` também é mount-once, ou seja o
+  // fontSize NÃO reage a uma rotação do iPad — consistente com layout/theme,
+  // que já se comportam assim. Não é bug, não abrir ticket.
+  //
+  // A guarda de `typeof window.matchMedia` NÃO é redundante: o jsdom deste
+  // repo não implementa matchMedia (mesmo motivo documentado em
+  // hooks/useIsTouchDevice.js), e sem ela todo teste que monta o TerminalPanel
+  // isolado quebraria com TypeError. 640px é MOBILE_VIEWPORT_QUERY, o mesmo
+  // gate que decide se o botão flutuante "☰ Menu" existe — usar outro valor
+  // abriria uma faixa de larguras com o botão presente e a compensação ausente.
+  const skin = useMemo(() => resolveTerminalSkin(
+    document.documentElement.dataset.layout,
+    document.documentElement.dataset.theme,
+    {
+      narrow: typeof window.matchMedia === 'function'
+        && window.matchMedia(MOBILE_VIEWPORT_QUERY).matches,
+    },
+  ), []);
+
   const wrapperRef = useRef(null);
   const containerRef = useRef(null);
   const terminalRef = useRef(null);
@@ -559,7 +586,24 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
       if (!vv || !wrapper) return;
       const delta = window.innerHeight - vv.height;
       if (delta > VIEWPORT_TOLERANCE_PX) {
-        wrapper.style.height = `${vv.height}px`;
+        // `- 2 * frameInsetPx` desconta o padding que o root ganhou no v2 (4px
+        // em cima e embaixo): o wrapper é filho do root, então a altura que
+        // sobra para ele é a do viewport visual menos esse padding. No v1
+        // frameInsetPx é 0 e a conta continua sendo `vv.height`, idêntica à de
+        // hoje.
+        //
+        // ⚠️ Honestidade sobre o alcance disto (C2 do plano): esta linha é
+        // provavelmente INERTE hoje, nos dois layouts. O wrapper tem
+        // `flex: 1` = `flex: 1 1 0%`, e num container flex em coluna com
+        // `flex-basis` definido a propriedade `height` não é usada para o
+        // tamanho no eixo principal — o `flex-grow` reexpande o wrapper para
+        // preencher o root de qualquer jeito. O que este handler efetivamente
+        // faz é chamar `fit()`. A correção entra porque a aritmética fica
+        // honesta e custa uma linha, NÃO porque conserta o teclado virtual do
+        // iPad. O RF03 de verdade (a altura ignorar o header e a barra de
+        // atalhos do terminal) continua aberto e é outro ticket, com
+        // investigação em hardware.
+        wrapper.style.height = `${vv.height - 2 * skin.frameInsetPx}px`;
       } else {
         wrapper.style.height = '';
       }
@@ -619,6 +663,12 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
       fitAddonRef.current = null;
       wsRef.current = null;
     };
+    // `skin` é lido dentro deste efeito (onVisualViewportChange) mas NÃO entra
+    // nas dependências de propósito: vem de um useMemo com lista vazia, é
+    // estável por toda a vida do componente, e acrescentá-lo aqui só criaria a
+    // ilusão de que o efeito reage a ele. Este efeito derruba e recria o
+    // WebSocket e a instância do xterm — só identidade de sessão pode
+    // dispará-lo.
   }, [sessionKey, projectId, agentId]);
 
   // Bug 2 fix: order matters here — reset() must resolve BEFORE the socket is
@@ -641,7 +691,7 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
   };
 
   return (
-    <div style={{ flex: 1, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div style={skin.root}>
       {connectionStatus === 'reconnecting' && (
         <div style={{
           position: 'absolute',
@@ -756,8 +806,22 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
         padding on an OUTER wrapper and give the term.open() target (containerRef)
         zero padding of its own, so FitAddon's parentElement measurement is exact.
       */}
-      <div ref={wrapperRef} style={{ flex: 1, width: '100%', height: '100%', overflow: 'hidden', padding: '12px', background: 'var(--bg-surface)' }}>
-        <div ref={containerRef} style={{ width: '100%', height: '100%', padding: 0 }} />
+      {/*
+        A MOLDURA. Toda a geometria vem inline do skin (testável sem CSS); só a
+        COR da borda e sua transição moram em `.v2-terminal-frame` no theme.css,
+        porque têm estado (`:focus-within`) — e estilo inline vence classe por
+        especificidade, então um `border: '1px solid …'` aqui mataria a regra de
+        foco em silêncio. No v1 `frameClassName` é undefined (React não emite o
+        atributo) e o estilo é o literal congelado de sempre.
+      */}
+      <div ref={wrapperRef} className={skin.frameClassName} style={skin.frame}>
+        {/*
+          `data-terminal-viewport` marca o nó do term.open() para os testes de
+          INV-TERM-GEOM: com o Vitest rodando `css: false`, um padding que
+          migrasse daqui para uma classe passaria invisível ao getComputedStyle.
+          Por isso o teste assevera também que este nó NÃO tem className.
+        */}
+        <div ref={containerRef} data-terminal-viewport style={skin.viewport} />
       </div>
     </div>
   );

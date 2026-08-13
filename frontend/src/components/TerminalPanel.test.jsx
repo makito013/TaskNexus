@@ -933,3 +933,275 @@ describe('TerminalPanel — forceFit() via ref (Ajustar layout button)', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
+
+// Repaginação estética da tela de terminal (PLAN-terminal-skin.md, T2): a
+// moldura do v2. A geometria toda vem de resolveTerminalSkin() e já é coberta
+// em terminalSkin.test.js sem DOM nenhum; o que ESTAS suítes cobrem é o que só
+// existe depois de montar — que o skin certo chegou aos nós certos.
+//
+// Teto do que dá para provar aqui: o Vitest roda com `css: false`
+// (vite.config.js não tem `test.css`), então NENHUMA regra de theme.css existe
+// durante o teste. Cor de borda, `:focus-within`, raio e transição são
+// invisíveis daqui e ficam só no QA manual. Por isso a asserção que importa
+// sobre o nó do term.open() é a AUSÊNCIA de className: se um dia alguém mover
+// o padding dele para uma classe, o getComputedStyle continuaria devolvendo
+// zero neste ambiente e a regressão passaria batida — só o `className === ''`
+// pega.
+describe('TerminalPanel — terminal frame skin (v1 default)', () => {
+  class FakeWebSocket {
+    static instances = [];
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+
+    constructor(url) {
+      this.url = url;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.onopen = null;
+      this.onmessage = null;
+      this.onerror = null;
+      this.onclose = null;
+      FakeWebSocket.instances.push(this);
+    }
+
+    send() {}
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED;
+    }
+  }
+
+  let originalWebSocket;
+  let originalResizeObserver;
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    originalWebSocket = global.WebSocket;
+    global.WebSocket = FakeWebSocket;
+    originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    global.WebSocket = originalWebSocket;
+    global.ResizeObserver = originalResizeObserver;
+  });
+
+  it('marks the term.open() target with data-terminal-viewport', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const viewport = container.querySelector('[data-terminal-viewport]');
+    expect(viewport).toBeTruthy();
+    // É o nó que recebeu o term.open() do mock — a textarea foi anexada nele.
+    expect(viewport.querySelector('textarea')).toBeTruthy();
+  });
+
+  // INV-TERM-GEOM. Padding ou borda aqui seriam contados em dobro pelo
+  // FitAddon (box-sizing: border-box global) e desalinhariam cols/rows do PTY.
+  it('gives the viewport no class name, so no stylesheet can add padding to it', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    expect(container.querySelector('[data-terminal-viewport]').className).toBe('');
+  });
+
+  it('keeps the viewport free of padding and border', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const viewport = container.querySelector('[data-terminal-viewport]');
+    expect(viewport.style.padding).toBe('0px');
+    expect(viewport.style.border).toBe('0px');
+  });
+
+  // O v1 está em produção: nenhuma classe, nenhum padding novo no root, e o
+  // wrapper mantém o `--bg-surface` de sempre.
+  it('adds no frame class under v1', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+    expect(frame.className).toBe('');
+    expect(frame.style.padding).toBe('12px');
+    expect(frame.style.background).toBe('var(--bg-surface)');
+    expect(frame.style.borderRadius).toBe('');
+  });
+
+  it('leaves the root without padding under v1', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    expect(container.firstChild.style.padding).toBe('0px');
+  });
+});
+
+describe('TerminalPanel — terminal frame skin (v2)', () => {
+  class FakeWebSocket {
+    static instances = [];
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+
+    constructor(url) {
+      this.url = url;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.onopen = null;
+      this.onmessage = null;
+      this.onerror = null;
+      this.onclose = null;
+      FakeWebSocket.instances.push(this);
+    }
+
+    send() {}
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED;
+    }
+  }
+
+  class FakeVisualViewport {
+    constructor(height) {
+      this.height = height;
+      this._listeners = { resize: [], scroll: [] };
+    }
+    addEventListener(type, cb) {
+      if (this._listeners[type]) this._listeners[type].push(cb);
+    }
+    removeEventListener(type, cb) {
+      if (!this._listeners[type]) return;
+      this._listeners[type] = this._listeners[type].filter((fn) => fn !== cb);
+    }
+    fire(type) {
+      for (const cb of this._listeners[type] || []) cb();
+    }
+  }
+
+  let originalWebSocket;
+  let originalResizeObserver;
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    originalWebSocket = global.WebSocket;
+    global.WebSocket = FakeWebSocket;
+    originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    // O skin é resolvido UMA VEZ no mount a partir do dataset do <html> (que
+    // em produção o main.jsx seta antes do primeiro render) — então isto tem
+    // que estar no lugar ANTES do render, não depois.
+    document.documentElement.dataset.layout = 'v2';
+    document.documentElement.dataset.theme = 'dark';
+  });
+
+  afterEach(() => {
+    cleanup();
+    // Todo o resto deste arquivo depende do default v1 (dataset ausente, que é
+    // também o estado real de qualquer teste que monte o TerminalPanel
+    // isolado) — limpar aqui é o que mantém as outras suítes exercitando o v1.
+    delete document.documentElement.dataset.layout;
+    delete document.documentElement.dataset.theme;
+    global.WebSocket = originalWebSocket;
+    global.ResizeObserver = originalResizeObserver;
+  });
+
+  it('adds the v2-terminal-frame class to the wrapper', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+    expect(frame.className).toBe('v2-terminal-frame');
+  });
+
+  it('applies the frame geometry inline but never the border shorthand', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+    expect(frame.style.padding).toBe('8px');
+    expect(frame.style.borderWidth).toBe('1px');
+    expect(frame.style.borderStyle).toBe('solid');
+    expect(frame.style.borderRadius).toBe('10px');
+    // A cor da borda é do theme.css (tem :focus-within). Se aparecer aqui,
+    // a especificidade do inline matou a regra de foco.
+    expect(frame.style.borderColor).toBe('');
+  });
+
+  // O bug que esta entrega corrige por consequência: `--bg-surface` é token do
+  // v1 com valor fixo #111111, e pintava uma auréola quase-preta de 12px em
+  // volta de um terminal creme no v2 tema claro.
+  it('stops painting the wrapper with the v1 --bg-surface token', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+    expect(frame.style.background).not.toContain('--bg-surface');
+    expect(frame.style.background).toBe('rgb(20, 23, 30)'); // #14171e
+  });
+
+  it('gives the root the 4px inset that separates the frame from the page', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    expect(container.firstChild.style.padding).toBe('4px');
+  });
+
+  // INV-TERM-GEOM continua valendo do outro lado do gate.
+  it('keeps the viewport identical to v1 (no padding, no border, no class)', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const viewport = container.querySelector('[data-terminal-viewport]');
+    expect(viewport.className).toBe('');
+    expect(viewport.style.padding).toBe('0px');
+    expect(viewport.style.border).toBe('0px');
+  });
+
+  // C2 do plano: a aritmética passa a descontar o padding do root. É honesta,
+  // mas provavelmente inerte na renderização real — o wrapper tem
+  // `flex: 1 1 0%` e o flex-grow reexpande a altura de qualquer jeito. Este
+  // teste prova o gate de layout, não a correção do teclado do iPad (que
+  // segue aberta, em outro ticket).
+  it('discounts the root inset from the pinned visual-viewport height', () => {
+    const originalVisualViewport = window.visualViewport;
+    const originalInnerHeight = window.innerHeight;
+    const vv = new FakeVisualViewport(800);
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+
+    try {
+      const { container } = render(
+        <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+      );
+
+      vv.height = 500;
+      act(() => {
+        vv.fire('resize');
+      });
+
+      const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+      // 500 - 2 * 4. Sob v1 o mesmo cenário continua dando '500px' — é essa
+      // diferença que prova que o gate de layout funcionou.
+      expect(frame.style.height).toBe('492px');
+    } finally {
+      Object.defineProperty(window, 'visualViewport', {
+        value: originalVisualViewport,
+        configurable: true,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        value: originalInnerHeight,
+        configurable: true,
+      });
+    }
+  });
+});
