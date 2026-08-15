@@ -172,7 +172,39 @@ export function useFabPosition({ size = FAB_SIZE_PX } = {}) {
     const { viewport, insets, bounds } = measure(sizeRef.current);
     const snapped = snapPosition(clampPosition(rawPosition, bounds), bounds);
     percentRef.current = pxToPercent(snapped, bounds);
-    writeStoredPercent(percentRef.current);
+
+    // NÃO PERSISTIR COM RANGE DEGENERADO. `pxToPercent` delega a `pct1`
+    // (utils/fabGeometry.js), que devolve `1` quando `span <= 0` — valor
+    // ARBITRÁRIO, escolhido para ser um número em vez de `NaN`. Enquanto os
+    // bounds continuam degenerados isso é inofensivo, porque `percentToPx`
+    // colapsa qualquer % em `lo`. O problema é o localStorage: o `1` gravado
+    // sobrevive ao reload e é relido com bounds SAUDÁVEIS, então um FAB que o
+    // usuário deixou no canto SUPERIOR ESQUERDO reaparece no INFERIOR DIREITO.
+    // Este `if` é o ponto exato onde esse caminho se fecha, e é por isso que a
+    // correção é aqui e não no `pct1`: trocar o `1` por `0` lá só mudaria para
+    // qual canto o FAB salta (e derrubaria dois testes de fabGeometry.test.js
+    // que documentam o valor de propósito).
+    //
+    // O guard é de EIXO CRUZADO (`&&`), e isso é decisão, não descuido:
+    // degenerescência em UM eixo descarta a persistência dos DOIS, inclusive a
+    // do eixo saudável. A % é um PAR sob um único `v: 1` no blob, então gravar
+    // metade confiável e metade arbitrária produz um blob que `readStoredPercent`
+    // aceita como válido — pior que blob nenhum, porque nenhum fallback dispara.
+    // Não "melhorar" isto para um guard por eixo sem trocar o schema junto.
+    //
+    // LIMITE EXPLÍCITO E CONSCIENTE desta correção mínima: só o
+    // `writeStoredPercent` está guardado. A linha acima continua escrevendo o
+    // `(1, 1)` degenerado em `percentRef.current`, que alimenta todo `resync`
+    // da sessão em curso — ou seja, numa recuperação de viewport SEM remount o
+    // FAB ainda teleporta uma vez. Ficou aberto de propósito (decisão do Bruno):
+    // a precondição é `vv.width` ou `vv.height` < 68px, inalcançável em
+    // dispositivo real (pior caso touch ~175px; iPad com teclado >= 455px), e
+    // guardar o ref exigiria decidir o que o hook faz quando NÃO tem % nenhuma
+    // para re-derivar — desenho novo, não correção de dívida.
+    if (bounds.maxLeft > bounds.minLeft && bounds.maxTop > bounds.minTop) {
+      writeStoredPercent(percentRef.current);
+    }
+
     setState({ position: snapped, viewport, insets });
     return snapped;
   }, []);

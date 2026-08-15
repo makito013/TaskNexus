@@ -224,9 +224,40 @@ export function snapPosition({ left, top }, bounds) {
  * canto. Com fração do range, 0 = encostado no limite esquerdo e 1 = encostado
  * no direito, exatamente, em qualquer orientação.
  *
- * Caso degenerado (`span <= 0`, viewport menor que o objeto): a % persistida é
- * irrelevante porque percentToPx colapsa em `lo` de qualquer forma. `1` é
- * escolha arbitrária, documentada aqui pra ninguém "consertar" pra 0.
+ * Caso degenerado (`span <= 0`, viewport menor que o objeto): devolvemos `1`.
+ * É escolha arbitrária — documentada aqui pra ninguém "consertar" pra 0 sem ler
+ * o resto deste parágrafo.
+ *
+ * ATENÇÃO — este comentário já afirmou que "a % persistida é irrelevante porque
+ * percentToPx colapsa em `lo` de qualquer forma". Isso é FALSO e desarmou pelo
+ * menos uma revisão: `percentToPx` só colapsa em `lo` ENQUANTO os bounds
+ * continuarem degenerados. Fora disso, o `1` é relido com bounds saudáveis — um
+ * FAB no canto SUPERIOR ESQUERDO reaparece no INFERIOR DIREITO.
+ *
+ * O CAMINHO DE PERSISTÊNCIA JÁ ESTÁ FECHADO (não é mais dívida): o
+ * `writeStoredPercent` de `commitPosition` (hooks/useFabPosition.js) está
+ * guardado atrás de `bounds.maxLeft > bounds.minLeft && bounds.maxTop >
+ * bounds.minTop`, então nenhuma % medida contra range degenerado chega ao
+ * localStorage e nenhuma sobrevive a um reload. O racional completo do guard
+ * — inclusive por que ele é de eixo cruzado — está escrito lá, no ponto onde a
+ * decisão é executada, e não aqui.
+ *
+ * Logo, o `1` devolvido abaixo continua CORRETO e não deve ser "consertado": ele
+ * é um valor transitório, consumido apenas por `percentToPx` dentro do mesmo
+ * ciclo degenerado, onde colapsa em `lo` de qualquer jeito. Trocá-lo por `0`
+ * apenas mudaria para qual canto o FAB saltaria no caminho que ainda está aberto
+ * (ver abaixo) e derrubaria dois testes de fabGeometry.test.js que fixam
+ * justamente este valor.
+ *
+ * O que continua aberto, de propósito: `commitPosition` guarda a ESCRITA no
+ * storage, mas não a escrita em `percentRef.current`. Numa recuperação de
+ * viewport sem remount, a sessão em curso ainda re-deriva a posição a partir do
+ * `(1, 1)` degenerado uma vez. Limite aceito porque a precondição é `vv.width`
+ * ou `vv.height` menor que `EDGE_MARGIN_PX * 2 + FAB_SIZE_PX` (68px com o FAB de
+ * 44): o pior caso touch real é ~175px (iPhone SE em paisagem com teclado
+ * aberto), e no iPad com teclado é >= 455px. Inalcançável em dispositivo —
+ * passaria a ser alcançável se alguma medição transitória de 0 aparecesse
+ * durante o boot, e é esse o cenário em que vale reabrir o assunto.
  */
 function pct1(v, lo, hi) {
   const span = hi - lo;
