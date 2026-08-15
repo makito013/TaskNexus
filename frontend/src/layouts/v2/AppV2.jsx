@@ -24,6 +24,10 @@ import { useTerminal } from '../../components/TerminalContext.jsx';
 import { useProjects } from '../../hooks/useProjects.js';
 import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
+import {
+  useVisibleViewportShell,
+  SHELL_BASE_RECT_STYLE,
+} from '../../hooks/useVisibleViewportShell.js';
 import { useTasks } from '../../hooks/useTasks.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { MOBILE_VIEWPORT_QUERY } from '../../utils/viewport.js';
@@ -84,6 +88,14 @@ export function AppV2({ initialAppearance }) {
     'escritorio::chat_sidebar_collapsed'
   );
   const [v2Screen, setV2Screen] = useState('chat');
+
+  // Rodada 2, Frente B: o casco do v2 acompanha a área REALMENTE visível, para
+  // que abrir o teclado nativo do iPad encolha o app ("tela − teclado") em vez
+  // de o teclado cobrir o chat e o Safari empurrar a topbar para fora da tela.
+  // Toda a mecânica (e o porquê de cada parte dela) está em
+  // hooks/useVisibleViewportShell.js; aqui só entram o ref e o nó.
+  const shellRef = useRef(null);
+  useVisibleViewportShell(shellRef);
 
   // Navegação mobile dedicada do Layout v2 (plano do TL, Tarefa 12):
   // `isMobile` só é true abaixo de MOBILE_VIEWPORT_QUERY (640px) — nunca em
@@ -204,11 +216,48 @@ export function AppV2({ initialAppearance }) {
   };
 
   return (
+    /*
+      ⛔ PROIBIDO NESTE NÓ E EM QUALQUER ANCESTRAL DELE: `transform`, `filter`
+      (e `backdrop-filter`), `will-change` e `contain`.
+
+      Qualquer uma dessas 4 propriedades cria um containing block para
+      descendentes `position: fixed`. O FAB de atalhos do terminal
+      (layouts/v2/TerminalShortcutsFab.jsx) e o painel que ele abre são `fixed`
+      e posicionam-se por `left`/`top` em px calculados contra a VIEWPORT
+      (utils/fabGeometry.js). Se um ancestral relativizar o `fixed`, esses px
+      passam a ser medidos a partir do ancestral: toda a matemática do FAB vira
+      lixo e o botão vai para o lugar errado — sem erro, sem warning e sem
+      teste vermelho. Inclui a proibição explícita de
+      `transform: translateY(-offsetTop)` para compensar o pan do Safari: é a
+      alternativa "óbvia" e é exatamente a que mata o FAB em silêncio. O pan é
+      compensado por `top` em px, escrito por useVisibleViewportShell.
+      A cadeia a preservar limpa: index.css (html/body/#root/.app-root),
+      App.jsx (o div flex-column e `.app-shell-routed-content`), este arquivo,
+      layouts/v2/ChatV2.jsx, components/terminalSkin.js (`root`/`frame`).
+      Guarda automática: layouts/v2/fixedPositioningInvariant.test.js.
+
+      `position: fixed` NESTE nó é seguro: `fixed` não cria containing block
+      para descendentes `fixed`.
+
+      Premissa de rota (risco B-R4): hoje o AppV2 só é montado em `path === '/'`,
+      onde o AppLauncherHeader é deliberadamente ocultado (App.jsx) — ou seja o
+      casco legitimamente ocupa a viewport inteira e não há irmão em fluxo para
+      ele cobrir. Se uma rodada futura montar o AppV2 ABAIXO de um header, este
+      `fixed` passa a cobri-lo e a premissa precisa ser revista aqui.
+
+      `left`/`top`/`width`/`height` vêm de SHELL_BASE_RECT_STYLE e são
+      ESTÁTICOS de propósito: useVisibleViewportShell os reescreve
+      imperativamente, e React só reescreve chaves de `style` que mudaram entre
+      renders — é isso que faz os valores imperativos sobreviverem aos
+      re-renders. Tornar qualquer um dos 4 dinâmico aqui faz o React brigar com
+      o hook e o casco oscilar a cada render (risco B-R3).
+    */
     <div
+      ref={shellRef}
       style={{
         display: 'flex',
-        height: '100%',
-        width: '100%',
+        position: 'fixed',
+        ...SHELL_BASE_RECT_STYLE,
         overflow: 'hidden',
         background: 'var(--v2-bg)',
         color: 'var(--v2-text)',

@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { api } from '../services/api.js';
 import { resolveTerminalSkin } from './terminalSkin.js';
 import { MOBILE_VIEWPORT_QUERY } from '../utils/viewport.js';
+import { useKeyboardSuppressed } from '../hooks/useKeyboardSuppressed.js';
 
 // Bug 2 fix: recognized WS text-frame types sent by the backend as control
 // frames (as opposed to PTY output, which always travels as bytes/Blob — see
@@ -134,7 +135,11 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
     },
   ), []);
 
-  const wrapperRef = useRef(null);
+  // Não existe mais um `wrapperRef`: ele só era lido para escrever altura no nó
+  // da moldura quando o teclado abria, e essa responsabilidade migrou inteira
+  // para hooks/useVisibleViewportShell.js (ver a seção 5e do efeito abaixo). Um
+  // ref pendurado num nó que ninguém lê é convite para alguém "reaproveitar" e
+  // reintroduzir um segundo dono da altura.
   const containerRef = useRef(null);
   const terminalRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -160,6 +165,21 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
   // gets an actionable message instead of a silent reconnect loop.
   const [spawnFailedDetail, setSpawnFailedDetail] = useState(null);
 
+  // Rodada 2, Frente C: modo "esconder teclado". O estado mora em
+  // hooks/useKeyboardSuppressed.js (localStorage + CustomEvent) porque quem o
+  // ALTERNA é o toggle dentro de layouts/v2/TerminalShortcutsPanel.jsx, dois
+  // níveis abaixo de um componente irmão deste — ver o cabeçalho do hook.
+  const [keyboardSuppressed] = useKeyboardSuppressed();
+  // Ref porque o efeito grande abaixo tem deps [sessionKey, projectId, agentId]
+  // e DERRUBA/RECRIA o Terminal + o WebSocket. Acrescentar `keyboardSuppressed`
+  // ali reconectaria o PTY a cada toque no toggle — inaceitável. O ref é lido de
+  // dentro dos handlers/efeitos existentes sem entrar em dependência nenhuma.
+  // Escrito durante o render (não num efeito) de propósito: assim o `term.focus()`
+  // do mount já vê o valor correto e não existe janela em que o teclado pisca
+  // aberto num reload com o modo ligado.
+  const keyboardSuppressedRef = useRef(keyboardSuppressed);
+  keyboardSuppressedRef.current = keyboardSuppressed;
+
   // Expose sendControlByte for the IpadToolbar via ref (TERM-03)
   useImperativeHandle(ref, () => ({
     sendControlByte(bytes) {
@@ -183,7 +203,14 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
         if (fitAddonRef.current && terminalRef.current) {
           try {
             fitAddonRef.current.fit();
-            terminalRef.current.focus();
+            // Gate 1 de 3 do modo "esconder teclado". Com `readOnly` na textarea
+            // o refoco não abre o teclado de tela, mas "Ajustar layout" é
+            // justamente o botão que o Bruno usa quando o layout está torto e o
+            // modo está ligado — refocar ali é ruído, e defesa em profundidade
+            // aqui custa uma linha.
+            if (!keyboardSuppressedRef.current) {
+              terminalRef.current.focus();
+            }
           } catch (e) {
             console.warn('forceFit failed', e);
           }
@@ -191,7 +218,27 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
       };
       doFit();
       setTimeout(doFit, 50);
-    }
+    },
+    // Rodada 2, Frente C: cola via term.paste(), NUNCA via sendControlByte.
+    // `paste()` normaliza \r\n -> \r e envolve o texto em bracketed paste
+    // (\x1b[200~ … \x1b[201~) quando o modo está ligado — e a TUI do `claude`
+    // LIGA bracketed paste. Sem isso, colar 5 linhas viraria 5 submits, cada um
+    // podendo disparar uma ação. Também não usar o POST /api/sessions/{key}/paste
+    // que já existe no repo: ele manda bytes crus, sem bracketed paste.
+    // LIMITE DA MITIGAÇÃO (etapa 10, 2026-08-14): o wrap é CONDICIONAL —
+    // `decPrivateModes.bracketedPasteMode` tem que estar ligado, e quem liga é a
+    // aplicação que roda dentro do PTY. Agentes do tipo "terminal"
+    // (powershell/cmd/bash puros, ver `_build_agent_cmd`) NÃO ligam: neles um
+    // clipboard com \n executa na hora, e o único freio é o usuário ver o que
+    // está colando. Não estender este caminho a origens de texto que não sejam o
+    // clipboard do próprio usuário sem reavaliar isto.
+    // Não depende de foco e não toca a textarea, então funciona com o modo
+    // "esconder teclado" ativo — que é o ponto todo deste método existir.
+    pasteText(text) {
+      if (typeof text === 'string' && text) {
+        terminalRef.current?.paste(text);
+      }
+    },
   }), []);
 
   // Sync visibility ref to avoid stale closure in window resize listener
@@ -207,7 +254,13 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
             // keyboard focus onto the terminal itself — xterm.js never grabs focus
             // on its own, so without this the user has to click the terminal a
             // second time after clicking a tab/chat before they can type.
-            terminalRef.current.focus();
+            //
+            // Gate 2 de 3 do modo "esconder teclado": trocar de aba não pode
+            // refocar a textarea quando o usuário pediu explicitamente que o
+            // teclado não abrisse.
+            if (!keyboardSuppressedRef.current) {
+              terminalRef.current.focus();
+            }
           }
         } catch (e) {
           console.warn('Failed to fit terminal on visibility change', e);
@@ -235,13 +288,34 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
 
     // 3. Mount to DOM
     term.open(containerRef.current);
+
+    // Rodada 2, Frente C: aplicar `readOnly` AQUI, e não só no efeito de
+    // [keyboardSuppressed] abaixo, é OBRIGATÓRIO e não redundante. Trocar de
+    // sessão re-executa este efeito e cria um Terminal novo, mas o efeito de
+    // [keyboardSuppressed] NÃO roda de novo porque o valor não mudou — sem esta
+    // linha o terminal novo nasceria com a textarea editável e o teclado voltaria
+    // a abrir ao primeiro toque, só depois de trocar de sessão. O guard de
+    // `textarea` existe porque a propriedade é `undefined` antes de open() e
+    // depois de dispose() (API pública, tipada como opcional em xterm.d.ts).
+    if (term.textarea) {
+      term.textarea.readOnly = keyboardSuppressedRef.current;
+    }
+
     if (visibleRef.current) {
       try {
         fitAddon.fit();
         // A brand-new session mounts already active (this is the panel the user
         // just opened) — grab focus immediately so typing works without an extra
         // click, same as the visibility-change effect does for tab switches.
-        term.focus();
+        //
+        // Gate 3 de 3 do modo "esconder teclado", e o mais importante dos três:
+        // é ele que garante que um RELOAD com o modo ligado não abra o teclado em
+        // momento nenhum durante o boot. `keyboardSuppressedRef` é inicializado
+        // no primeiro render, antes deste efeito, então o valor lido aqui é o
+        // persistido, não um `false` transitório.
+        if (!keyboardSuppressedRef.current) {
+          term.focus();
+        }
       } catch (e) {
         console.warn('Initial fit failed', e);
       }
@@ -499,7 +573,13 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
     // two ways, both intentional: (a) xterm's own click handling on
     // term.element when the user taps the terminal itself, and (b) this
     // component's own auto-focus effects on mount / tab-switch (see the two
-    // term.focus() calls above — desired, do not remove).
+    // term.focus() calls above — desired, do not remove; both are gated by
+    // `keyboardSuppressedRef` since Rodada 2, which suppresses (b) as well).
+    //
+    // Este handler NÃO muda no modo "esconder teclado": com `readOnly` ligado um
+    // blur ou um refoco acidental são inofensivos (nenhum teclado sobe de
+    // qualquer forma), e o `data-terminal-safe-tap` dos controles novos do painel
+    // já os isenta pelo `closest()` abaixo.
     //
     // The bug: once that textarea has focus, tapping anything ELSE in the app
     // (sidebar rows, the settings gear, session tabs, project list — almost
@@ -569,44 +649,45 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
     };
     window.addEventListener('escritorio:sidebar-toggled', onSidebarToggled);
 
-    // 5e. RF03 Tarefa 4 (plano Layout v2, 06-TL.md): iPad on-screen keyboard
-    // shrinks `window.visualViewport` without shrinking `window.innerHeight`
-    // (Safari keeps the layout viewport/100dvh full-height and instead pans
-    // it under the keyboard) — so the wrapper below, which inherits
-    // height:100% from `.app-root`'s 100dvh, stays sized for the keyboard-less
-    // viewport and the actual usable area (and the terminal's fit()ted
-    // rows/cols) ends up wrong/occluded once the keyboard is up. Also listens
-    // on `scroll` because iOS sometimes reports the shrink as the visual
-    // viewport being scrolled/offset rather than resized.
-    const VIEWPORT_TOLERANCE_PX = 2;
+    // 5e. Teclado nativo do iPad: quem encolhe é o CASCO, não este componente.
+    //
+    // Histórico, porque a lição custou duas investigações (o comentário que
+    // estava aqui era da frente da skin e ficou factualmente obsoleto quando a
+    // causa foi corrigida em outro lugar — ele é SUBSTITUÍDO por este, não
+    // apagado):
+    //
+    // Este handler escrevia `wrapper.style.height = vv.height - 2 *
+    // skin.frameInsetPx` quando a visual viewport encolhia. A própria frente da
+    // skin já havia documentado que a linha era provavelmente INERTE, e estava
+    // certa: o wrapper tem `flex: 1` (= `flex: 1 1 0%`) dentro de um container
+    // em coluna, e com `flex-basis` definido a *preferred main size* (`height`)
+    // sai da equação do eixo principal — o `flex-grow` reexpande o nó de
+    // qualquer forma. (Nuance para quem for tentar de novo: o resultado do flex
+    // É clampado por `min-height`/`max-height`, então `height` é inerte e
+    // `maxHeight` não seria. Mesmo assim não é o caminho: resolveria um nó só.)
+    //
+    // E não era só inerte, era o alvo errado. Com `html/body/#root
+    // { overflow: hidden }` a página não rola, então o Safari PANEIA a layout
+    // viewport para manter a textarea visível: `visualViewport.offsetTop > 0` e
+    // o topo do app sai da tela por cima ("preciso rolar pra cima pra ver os
+    // menus"). Encolher um nó de dentro não conserta uma árvore ancorada num
+    // topo empurrado para fora.
+    //
+    // O dono da altura passou a ser hooks/useVisibleViewportShell.js, ligado no
+    // nó raiz do layout v2 (layouts/v2/AppV2.jsx): ele reancora o casco inteiro
+    // contra a visual viewport com `position: fixed` + `left/top/width/height`.
+    // Um dono só. A compensação de `frameInsetPx` deixou de ser necessária aqui
+    // porque ninguém mais escreve altura neste nó — o casco encolhe e o flex
+    // redistribui, com a topbar e o header do chat dentro da área visível.
+    //
+    // O que ESTE handler ainda faz, e por que fica: chamar `fit()`. A área do
+    // terminal muda quando o casco encolhe, e um `fit()` redundante é barato de
+    // verdade — o FitAddon só chama `resize()` quando `cols`/`rows` mudaram de
+    // fato, então sem mudança de geometria nenhum frame `{type:'resize'}` vai
+    // para o WS. `scroll` além de `resize` porque em algumas versões do iOS o
+    // teclado abrindo é reportado como pan da visual viewport, não como resize.
     const onVisualViewportChange = () => {
       if (!visibleRef.current) return;
-      const vv = window.visualViewport;
-      const wrapper = wrapperRef.current;
-      if (!vv || !wrapper) return;
-      const delta = window.innerHeight - vv.height;
-      if (delta > VIEWPORT_TOLERANCE_PX) {
-        // `- 2 * frameInsetPx` desconta o padding que o root ganhou no v2 (4px
-        // em cima e embaixo): o wrapper é filho do root, então a altura que
-        // sobra para ele é a do viewport visual menos esse padding. No v1
-        // frameInsetPx é 0 e a conta continua sendo `vv.height`, idêntica à de
-        // hoje.
-        //
-        // ⚠️ Honestidade sobre o alcance disto (C2 do plano): esta linha é
-        // provavelmente INERTE hoje, nos dois layouts. O wrapper tem
-        // `flex: 1` = `flex: 1 1 0%`, e num container flex em coluna com
-        // `flex-basis` definido a propriedade `height` não é usada para o
-        // tamanho no eixo principal — o `flex-grow` reexpande o wrapper para
-        // preencher o root de qualquer jeito. O que este handler efetivamente
-        // faz é chamar `fit()`. A correção entra porque a aritmética fica
-        // honesta e custa uma linha, NÃO porque conserta o teclado virtual do
-        // iPad. O RF03 de verdade (a altura ignorar o header e a barra de
-        // atalhos do terminal) continua aberto e é outro ticket, com
-        // investigação em hardware.
-        wrapper.style.height = `${vv.height - 2 * skin.frameInsetPx}px`;
-      } else {
-        wrapper.style.height = '';
-      }
       if (fitAddonRef.current) {
         try {
           fitAddonRef.current.fit();
@@ -670,6 +751,47 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
     // WebSocket e a instância do xterm — só identidade de sessão pode
     // dispará-lo.
   }, [sessionKey, projectId, agentId]);
+
+  // Rodada 2, Frente C: o mecanismo do modo "esconder teclado".
+  //
+  // `term.textarea.readOnly` e nada mais. A textarea é API pública do xterm
+  // (`readonly textarea: HTMLTextAreaElement | undefined`), o xterm não escreve
+  // `readonly` nem `inputmode` nela, e o iOS só mostra o teclado de tela para um
+  // campo MUTÁVEL com foco. O que isto preserva, e é o ponto:
+  //  - os 8 atalhos do painel continuam funcionando: eles não passam pela
+  //    textarea, vão direto de sendControlByte -> ws.send -> proc.write;
+  //  - o paste continua funcionando: o evento `paste` dispara mesmo em alvo não
+  //    editável, e o handler do xterm lê de `clipboardData` em vez de esperar o
+  //    UA inserir texto (ele até limpa a textarea depois);
+  //  - o teclado FÍSICO continua digitando — o Bruno usa Magic Keyboard no iPad,
+  //    e o modo existe para o teclado DE TELA.
+  //
+  // NÃO trocar por `term.options.disableStdin = true`: ele faz
+  // `coreService.triggerDataEvent` retornar cedo, e o caminho do paste do xterm
+  // TERMINA em triggerDataEvent — quebraria o paste nativo, o pasteText() do
+  // botão de colar e a digitação do teclado físico, tudo de uma vez.
+  // `inputmode="none"` também está refutado: o Safari mostra o teclado mesmo
+  // assim.
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+    // C-R1: `textarea` é `undefined` antes de open() e depois de dispose().
+    const textarea = term.textarea;
+    if (!textarea) return;
+    textarea.readOnly = keyboardSuppressed;
+    // UM blur, e só na transição para "suprimido". Se a textarea está focada com
+    // o teclado já na tela no instante em que o usuário marca o toggle,
+    // `readOnly` sozinho NÃO retira o teclado que já está aberto — o iOS só o
+    // retira num blur — e um botão "esconder teclado" que não esconde o teclado
+    // no único momento em que o usuário está olhando para ele é pior que não
+    // existir. Depois disso não refocamos nem blurramos mais nada: o próximo
+    // toque no terminal refoca a textarea (já readOnly), o cursor volta a
+    // acender e nenhum teclado sobe. Consequência visível e aceita: o cursor do
+    // xterm fica oco até esse próximo toque.
+    if (keyboardSuppressed && document.activeElement === textarea) {
+      textarea.blur();
+    }
+  }, [keyboardSuppressed]);
 
   // Bug 2 fix: order matters here — reset() must resolve BEFORE the socket is
   // closed. Closing first would let the existing onclose reconnect handler
@@ -814,7 +936,7 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
         foco em silêncio. No v1 `frameClassName` é undefined (React não emite o
         atributo) e o estilo é o literal congelado de sempre.
       */}
-      <div ref={wrapperRef} className={skin.frameClassName} style={skin.frame}>
+      <div className={skin.frameClassName} style={skin.frame}>
         {/*
           `data-terminal-viewport` marca o nó do term.open() para os testes de
           INV-TERM-GEOM: com o Vitest rodando `css: false`, um padding que

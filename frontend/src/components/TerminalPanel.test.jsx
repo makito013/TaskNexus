@@ -10,6 +10,14 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import { isControlFrame, TerminalPanel } from './TerminalPanel.jsx';
 import { FitAddon } from '@xterm/addon-fit';
+// A classe mockada logo abaixo. Importada para alcançar `Terminal.instances` — a
+// instância que o TerminalPanel cria vive num ref interno e não há outro caminho
+// até ela.
+import { Terminal } from '@xterm/xterm';
+import {
+  KEYBOARD_SUPPRESSED_EVENT,
+  KEYBOARD_SUPPRESSED_STORAGE_KEY,
+} from '../hooks/useKeyboardSuppressed.js';
 // Fake compartilhado de window.visualViewport (jsdom não implementa a API).
 // Este arquivo tinha DUAS copias locais de uma versão com só `height` — sem
 // `width`/`offsetLeft`/`offsetTop`, que são as dimensões que expressam o PAN da
@@ -30,12 +38,22 @@ import { FakeVisualViewport } from '../test/fakeVisualViewport.js';
 // term.open() target, actually gaining DOM focus on focus() — for the
 // outside-tap-blur tests further down to exercise the real focus/blur
 // mechanism instead of asserting against a no-op.
+//
+// Rodada 2, Frente C: `paste()` e `Terminal.instances` são acréscimos. A
+// instância real vive num ref interno do TerminalPanel e não há outra forma de
+// alcançá-la para asseverar que `pasteText()` do imperative handle chama
+// `term.paste()` (o que preserva o bracketed paste) e não `ws.send`. Mesmo padrão
+// de `FakeWebSocket.instances` usado pelos describes abaixo; quem lê o array é
+// responsável por resetá-lo no seu beforeEach.
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    static instances = [];
     constructor() {
       this.cols = 80;
       this.rows = 24;
       this.textarea = document.createElement('textarea');
+      this.paste = vi.fn();
+      this.constructor.instances.push(this);
     }
     loadAddon() {}
     open(el) {
@@ -610,18 +628,28 @@ describe('TerminalPanel — sidebar-toggled re-fit (RF02)', () => {
   });
 });
 
-// RF03 Tarefa 4 (plano Layout v2, 06-TL.md): iPad on-screen keyboard shrinks
-// `window.visualViewport` without shrinking `window.innerHeight` (Safari
-// keeps the layout viewport/100dvh full-height and pans it under the
-// keyboard instead). TerminalPanel listens for visualViewport 'resize' and
-// 'scroll' and, when the gap exceeds a small tolerance, pins the terminal
-// wrapper's height to the shrunk visual viewport height and re-fits — see
-// TerminalPanel.jsx ~line 521-556. jsdom doesn't implement
-// window.visualViewport at all, so these tests install a minimal fake
-// EventTarget-like stub for the duration of the block only (every other
-// test in this file exercises the `if (window.visualViewport)` guard's
-// false branch implicitly, by simply not defining it).
-describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
+// Rodada 2, Frente B: o teclado nativo do iPad encolhe `window.visualViewport`
+// sem encolher `window.innerHeight` (o Safari mantém a layout viewport cheia e a
+// PANEIA por baixo do teclado). Este componente deixou de ter opinião sobre
+// altura: quem encolhe é o casco do app, via hooks/useVisibleViewportShell.js
+// ligado no nó raiz do AppV2. O que sobrou aqui é reagir aos eventos da visual
+// viewport com um `fit()`.
+//
+// Por que este bloco foi REESCRITO e não estendido: os 7 testes que estavam aqui
+// asseveravam essencialmente a mesma coisa (`el.style.height === '500px'`) num
+// jsdom sem engine de layout, ou seja, passavam com o bug 100% presente — a
+// escrita de altura era inerte na renderização real por causa do `flex: 1 1 0%`
+// do nó. Pior: só passavam porque montam sem o bootstrap do main.jsx, o que dá a
+// skin v1 e `frameInsetPx = 0`; no v2 real o valor era 492px e nada cobria.
+// Substituir asserção de valor inline por asserção de AUSÊNCIA de valor inline é
+// o que este bloco pode honestamente provar; que o layout de fato encolha só é
+// verificável em dispositivo.
+//
+// jsdom não implementa `window.visualViewport`, daí o fake compartilhado de
+// src/test/fakeVisualViewport.js (todo outro teste deste arquivo exercita o ramo
+// falso do guard `if (window.visualViewport)` implicitamente, por simplesmente
+// não definir a API).
+describe('TerminalPanel — visualViewport keyboard handling', () => {
   class FakeWebSocket {
     static instances = [];
     static CONNECTING = 0;
@@ -683,72 +711,33 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
     });
   });
 
-  it('shrinks the wrapper height and re-fits when the keyboard opens (viewport shrinks)', () => {
+  it('re-fits the terminal when the visual viewport changes', () => {
     const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
-    const { container } = render(
+    render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );
+
+    // Os DOIS eventos no mesmo teste de propósito: o iOS reporta o teclado
+    // abrindo como `resize` em algumas versões e como `scroll` (pan da visual
+    // viewport) em outras, e é justamente essa ambiguidade que faz o componente
+    // escutar os dois. Um teste por evento seria a mesma asserção duas vezes.
+    vv.height = 500; // teclado de tela cobre ~300px
     fitSpy.mockClear();
-
-    vv.height = 500; // on-screen keyboard covers ~300px
     act(() => {
       vv.fire('resize');
     });
-
-    // Locate the wrapper the component actually styles: it's the direct
-    // parent of the xterm container, identified by its inline height style.
-    const styledWrapper = Array.from(container.querySelectorAll('div')).find(
-      (el) => el.style.height === '500px'
-    );
-    expect(styledWrapper).toBeTruthy();
     expect(fitSpy).toHaveBeenCalled();
-  });
 
-  it('resets the wrapper height once the viewport gap is back within tolerance', () => {
-    const vv = new FakeVisualViewport({ height: 500 });
-    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
-
-    const { container } = render(
-      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
-    );
-    act(() => {
-      vv.fire('resize'); // establish the shrunk state first
-    });
-    expect(
-      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '500px')
-    ).toBe(true);
-
-    vv.height = 800; // keyboard dismissed
-    act(() => {
-      vv.fire('resize');
-    });
-
-    expect(
-      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '500px')
-    ).toBe(false);
-  });
-
-  it('also reacts to a scroll event on the visual viewport (iOS offset-instead-of-resize case)', () => {
-    const vv = new FakeVisualViewport({ height: 800 });
-    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
-
-    const { container } = render(
-      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
-    );
-
-    vv.height = 500;
+    fitSpy.mockClear();
     act(() => {
       vv.fire('scroll');
     });
-
-    expect(
-      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '500px')
-    ).toBe(true);
+    expect(fitSpy).toHaveBeenCalled();
   });
 
-  it('ignores viewport changes within the tolerance (no visible height jitter)', () => {
+  it('no longer writes an inline height on the wrapper (the app shell owns the shrink)', () => {
     const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
@@ -756,13 +745,25 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );
 
-    vv.height = 799; // 1px delta, below the 2px tolerance
+    // A moldura é o pai direto do nó do term.open() — o mesmo nó que este
+    // componente pinava com a altura da visual viewport até a Frente B.
+    const frame = container.querySelector('[data-terminal-viewport]').parentElement;
+    const heightBefore = frame.style.height;
+
+    vv.height = 500;
+    vv.offsetTop = 120; // o Safari paneou a layout viewport, além de encolher
     act(() => {
       vv.fire('resize');
     });
 
+    // Nenhuma altura de teclado escrita aqui, e nada mudou em relação ao
+    // repouso: o único dono da altura agora é hooks/useVisibleViewportShell.js,
+    // no nó raiz do AppV2. Se alguém reintroduzir a escrita neste componente,
+    // passa a haver dois donos e a altura oscila entre eles.
+    expect(frame.style.height).toBe(heightBefore);
+    expect(frame.style.height).not.toBe('500px');
     expect(
-      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '799px')
+      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '500px')
     ).toBe(false);
   });
 
@@ -770,7 +771,7 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
     const vv = new FakeVisualViewport({ height: 800 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
 
-    const { container } = render(
+    render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible={false} />
     );
     fitSpy.mockClear();
@@ -780,9 +781,6 @@ describe('TerminalPanel — visualViewport keyboard handling (RF03)', () => {
       vv.fire('resize');
     });
 
-    expect(
-      Array.from(container.querySelectorAll('div')).some((el) => el.style.height === '500px')
-    ).toBe(false);
     expect(fitSpy).not.toHaveBeenCalled();
   });
 
@@ -1143,41 +1141,219 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
     expect(viewport.style.border).toBe('0px');
   });
 
-  // C2 do plano: a aritmética passa a descontar o padding do root. É honesta,
-  // mas provavelmente inerte na renderização real — o wrapper tem
-  // `flex: 1 1 0%` e o flex-grow reexpande a altura de qualquer jeito. Este
-  // teste prova o gate de layout, não a correção do teclado do iPad (que
-  // segue aberta, em outro ticket).
-  it('discounts the root inset from the pinned visual-viewport height', () => {
-    const originalVisualViewport = window.visualViewport;
-    const originalInnerHeight = window.innerHeight;
-    const vv = new FakeVisualViewport({ height: 800 });
-    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
-    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+  // REMOVIDO na Rodada 2, Frente B: havia aqui um
+  // `it('discounts the root inset from the pinned visual-viewport height')` que
+  // asseverava `frame.style.height === '492px'` (= 500 − 2 × frameInsetPx) depois
+  // de um resize da visual viewport. Ele testava a única coisa que a Frente B
+  // apagou: a escrita de altura no nó da moldura, que era INERTE na renderização
+  // real (`flex: 1 1 0%` reexpande o nó) e cujo dono passou a ser
+  // hooks/useVisibleViewportShell.js, no casco do AppV2. Não foi convertido
+  // porque o que ele provava de útil — que o v2 dá 4px de inset ao root — já está
+  // coberto por 'gives the root the 4px inset that separates the frame from the
+  // page', acima, sem depender do teclado. A ausência da escrita é asseverada em
+  // 'no longer writes an inline height on the wrapper'.
+});
 
-    try {
-      const { container } = render(
-        <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
-      );
+// Rodada 2, Frente C: o modo "esconder teclado".
+//
+// O que é ASSEVERÁVEL aqui e o que não é: se o iOS abre ou não o teclado de tela
+// é comportamento do SO, testável só por PROXY (`textarea.readOnly === true`), e
+// o mesmo vale para "o cursor do xterm continua aceso" e para o menu nativo de
+// Colar. O que estes testes cobrem é a mecânica que este componente é dono:
+// aplicar/reverter `readOnly`, não roubar foco quando o modo está ligado, o blur
+// único da transição, e o paste passando por `term.paste()`.
+describe('TerminalPanel — keyboard suppression', () => {
+  class FakeWebSocket {
+    static instances = [];
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
 
-      vv.height = 500;
-      act(() => {
-        vv.fire('resize');
-      });
-
-      const frame = container.querySelector('[data-terminal-viewport]').parentElement;
-      // 500 - 2 * 4. Sob v1 o mesmo cenário continua dando '500px' — é essa
-      // diferença que prova que o gate de layout funcionou.
-      expect(frame.style.height).toBe('492px');
-    } finally {
-      Object.defineProperty(window, 'visualViewport', {
-        value: originalVisualViewport,
-        configurable: true,
-      });
-      Object.defineProperty(window, 'innerHeight', {
-        value: originalInnerHeight,
-        configurable: true,
-      });
+    constructor(url) {
+      this.url = url;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.onopen = null;
+      this.onmessage = null;
+      this.onerror = null;
+      this.onclose = null;
+      FakeWebSocket.instances.push(this);
     }
+
+    send() {}
+
+    close() {
+      this.readyState = FakeWebSocket.CLOSED;
+    }
+  }
+
+  let originalWebSocket;
+  let originalResizeObserver;
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    Terminal.instances = [];
+    originalWebSocket = global.WebSocket;
+    global.WebSocket = FakeWebSocket;
+    originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    localStorage.removeItem(KEYBOARD_SUPPRESSED_STORAGE_KEY);
+  });
+
+  afterEach(() => {
+    cleanup();
+    global.WebSocket = originalWebSocket;
+    global.ResizeObserver = originalResizeObserver;
+    // Limpar nos DOIS lados: um teste que falhe no meio deixaria a preferência
+    // ligada e o próximo passaria (ou falharia) pelo motivo errado.
+    localStorage.removeItem(KEYBOARD_SUPPRESSED_STORAGE_KEY);
+  });
+
+  it('marks the xterm textarea readOnly while suppression is on', () => {
+    localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+
+    // O proxy do "teclado não abre": o iOS só mostra o teclado de tela para um
+    // campo MUTÁVEL com foco.
+    expect(container.querySelector('textarea').readOnly).toBe(true);
+  });
+
+  it('leaves the textarea editable when suppression is off', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+
+    expect(container.querySelector('textarea').readOnly).toBe(false);
+  });
+
+  it('does not focus the terminal on mount while suppression is on', () => {
+    localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+
+    // Gate 3 dos 3 term.focus(). É o que garante que um RELOAD com o modo ligado
+    // não abra o teclado em momento nenhum durante o boot: `keyboardSuppressedRef`
+    // é inicializado no primeiro render, antes do efeito de mount.
+    expect(document.activeElement).not.toBe(container.querySelector('textarea'));
+  });
+
+  it('does not focus the terminal on forceFit() while suppression is on', () => {
+    localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+    const ref = createRef();
+    const { container } = render(
+      <TerminalPanel ref={ref} sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const textarea = container.querySelector('textarea');
+
+    act(() => { ref.current.forceFit(); });
+
+    // Gate 1 dos 3. "Ajustar layout" é justamente o botão que o Bruno usa quando
+    // o layout está torto, e o modo pode estar ligado nesse momento.
+    expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it('blurs a focused textarea when suppression is switched on', () => {
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const textarea = container.querySelector('textarea');
+    expect(document.activeElement).toBe(textarea); // o mount focou (modo desligado)
+
+    // Simula o toque no toggle do painel, que vive em outro ramo da árvore: o
+    // CustomEvent é a ponte, exatamente como `escritorio:sidebar-toggled`.
+    act(() => {
+      localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+      window.dispatchEvent(new CustomEvent(KEYBOARD_SUPPRESSED_EVENT, { detail: true }));
+    });
+
+    // `readOnly` sozinho NÃO retira da tela um teclado que já está aberto — o iOS
+    // só o retira num blur. Daí o blur ÚNICO desta transição.
+    expect(textarea.readOnly).toBe(true);
+    expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it('reverts readOnly when suppression is switched back off', () => {
+    localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+    const { container } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const textarea = container.querySelector('textarea');
+    expect(textarea.readOnly).toBe(true);
+
+    act(() => {
+      localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'false');
+      window.dispatchEvent(new CustomEvent(KEYBOARD_SUPPRESSED_EVENT, { detail: false }));
+    });
+
+    // O modo tem que ser REVERSÍVEL sem reload: um `readOnly` que fica pra sempre
+    // é um terminal que não digita mais, e o usuário não teria como sair de lá.
+    expect(textarea.readOnly).toBe(false);
+  });
+
+  it('applies readOnly to the terminal recreated by a session change', () => {
+    localStorage.setItem(KEYBOARD_SUPPRESSED_STORAGE_KEY, 'true');
+    const { container, rerender } = render(
+      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    expect(Terminal.instances).toHaveLength(1);
+
+    // Trocar de sessão derruba e recria o Terminal (deps do efeito grande). O
+    // efeito de [keyboardSuppressed] NÃO roda de novo, porque o VALOR não mudou —
+    // é exatamente por isso que o readOnly também é aplicado logo depois do
+    // term.open(). Sem essa segunda escrita, o terminal novo nasceria editável e
+    // o teclado voltaria a abrir só depois de trocar de sessão.
+    rerender(
+      <TerminalPanel sessionKey="projB::claude" projectId="projB" agentId="claude" visible />
+    );
+
+    expect(Terminal.instances).toHaveLength(2);
+    // Asseverado na INSTÂNCIA, não em `container.querySelector('textarea')`: o
+    // `dispose()` do mock não desanexa a textarea antiga do DOM (o container é o
+    // mesmo nó, só o Terminal foi recriado), então o querySelector devolveria a
+    // do terminal MORTO e o teste passaria pelo motivo errado.
+    expect(Terminal.instances[1].textarea.readOnly).toBe(true);
+    expect(container.querySelectorAll('textarea')[1]).toBe(Terminal.instances[1].textarea);
+  });
+
+  it('pastes through term.paste so bracketed paste and newline handling are preserved', () => {
+    const ref = createRef();
+    render(
+      <TerminalPanel ref={ref} sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const term = Terminal.instances[0];
+    const ws = FakeWebSocket.instances[0];
+    const sendSpy = vi.spyOn(ws, 'send');
+
+    act(() => { ref.current.pasteText('linha 1\r\nlinha 2'); });
+
+    // term.paste() normaliza \r\n -> \r e envolve em bracketed paste quando o
+    // modo está ligado; a TUI do `claude` LIGA bracketed paste. Mandar os bytes
+    // crus pelo WS (sendControlByte, ou o POST /paste que já existe no repo)
+    // faria um paste de 5 linhas virar 5 submits.
+    expect(term.paste).toHaveBeenCalledWith('linha 1\r\nlinha 2');
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores pasteText for empty or non-string input', () => {
+    const ref = createRef();
+    render(
+      <TerminalPanel ref={ref} sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
+    );
+    const term = Terminal.instances[0];
+
+    act(() => {
+      ref.current.pasteText('');
+      ref.current.pasteText(null);
+      ref.current.pasteText(undefined);
+    });
+
+    expect(term.paste).not.toHaveBeenCalled();
   });
 });

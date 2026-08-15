@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, within } from '@testing-library/react';
+import { installFakeVisualViewport } from '../../test/fakeVisualViewport.js';
 import { AppV2 } from './AppV2.jsx';
 
 vi.mock('../../hooks/useProjects.js', () => ({
@@ -675,5 +676,80 @@ describe('AppV2 — "criar novo chat" a partir do modal mobile chega até startN
     expect(screen.queryByTestId('mobile-menu-screen')).toBeNull();
     expect(screen.queryByText('Chats de Projeto A')).toBeNull();
     expect(screen.getByText('Menu')).toBeTruthy();
+  });
+});
+
+// Rodada 2, Frente B: o casco do v2 acompanha a área visível, para que abrir o
+// teclado nativo do iPad encolha o app ("tela − teclado") em vez de o teclado
+// cobrir o chat e o Safari empurrar a topbar para fora da tela por cima.
+//
+// A mecânica do hook está coberta em hooks/useVisibleViewportShell.test.js. O que
+// só é verificável AQUI é a fronteira: que o nó raiz é `position: fixed`, que as 4
+// propriedades do retângulo estão no estilo inline com os valores de repouso, e
+// que elas são ESTÁTICAS — este último é o teste que pega o risco B-R3 (alguém
+// tornar `top`/`height` dinâmicos e o React passar a brigar com o hook a cada
+// render, fazendo o casco oscilar).
+describe('AppV2 — casco ancorado na visual viewport (Rodada 2, Frente B)', () => {
+  let restoreViewport;
+  let originalInnerHeight;
+
+  beforeEach(() => {
+    originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+  });
+
+  afterEach(() => {
+    if (restoreViewport) restoreViewport();
+    restoreViewport = undefined;
+    Object.defineProperty(window, 'innerHeight', {
+      value: originalInnerHeight,
+      configurable: true,
+    });
+  });
+
+  const renderShell = () =>
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />)
+      .container.firstChild;
+
+  it('is a fixed shell resting on the full viewport rect', () => {
+    const shell = renderShell();
+    expect(shell.style.position).toBe('fixed');
+    // As 4 separadas, nunca o atalho `inset`: o cssstyle do jsdom não implementa
+    // `inset`, então uma asserção sobre ele passaria com o estilo inerte de fato.
+    expect(shell.style.left).toBe('0px');
+    expect(shell.style.top).toBe('0px');
+    expect(shell.style.width).toBe('100%');
+    expect(shell.style.height).toBe('100%');
+  });
+
+  it('shrinks and re-anchors the shell when the visual viewport reports an open keyboard', () => {
+    // Montar com o teclado JÁ aberto: o hook aplica o retângulo sincronamente no
+    // mount, sem esperar evento nenhum.
+    const installed = installFakeVisualViewport({
+      width: 1024,
+      height: 500,
+      offsetTop: 120,
+    });
+    restoreViewport = installed.restore;
+
+    const shell = renderShell();
+    expect(shell.style.top).toBe('120px');
+    expect(shell.style.height).toBe('500px');
+    expect(shell.style.width).toBe('1024px');
+  });
+
+  it('keeps the rect properties static so imperative writes survive a re-render', () => {
+    const shell = renderShell();
+    // Simula o que o hook faz por fora do React.
+    shell.style.top = '120px';
+    shell.style.height = '500px';
+
+    // Um re-render de verdade do AppV2 (troca de aba muda `v2Screen`).
+    goTo('Board');
+
+    // React só reescreve chaves de `style` que mudaram entre renders; como as 4
+    // são estáticas no objeto inline, ele não as toca e o valor imperativo fica.
+    expect(shell.style.top).toBe('120px');
+    expect(shell.style.height).toBe('500px');
   });
 });

@@ -36,8 +36,11 @@
 // pointermove por frame causando re-render seria patológico.
 import { useEffect, useRef, useState } from 'react';
 import { useIsTouchDevice } from '../../hooks/useIsTouchDevice.js';
+import { useKeyboardSuppressed } from '../../hooks/useKeyboardSuppressed.js';
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { useFabPosition } from '../../hooks/useFabPosition.js';
-import { FAB_SIZE_PX, getPanelPlacement } from '../../utils/fabGeometry.js';
+import { FAB_SIZE_PX, FAB_SIZE_TABLET_PX, getPanelPlacement } from '../../utils/fabGeometry.js';
+import { MOBILE_VIEWPORT_QUERY } from '../../utils/viewport.js';
 import { TerminalShortcutsPanel } from './TerminalShortcutsPanel.jsx';
 
 // 280ms, não 500ms: (a) fica ABAIXO do timer de callout/seleção do iOS Safari
@@ -62,12 +65,22 @@ export const FAB_OPACITY_ACTIVE = 1;
 
 export const PANEL_DOM_ID = 'terminal-shortcuts-panel';
 
-const fabStyle = ({ left, top, opacity, armed }) => ({
+// Diâmetro do ponto indicador de "teclado suprimido" no FAB fechado.
+export const SUPPRESSED_DOT_SIZE_PX = 8;
+
+const fabStyle = ({ left, top, opacity, armed, size }) => ({
   position: 'fixed',
   left: `${left}px`,
   top: `${top}px`,
-  width: 'var(--touch-target, 44px)',
-  height: 'var(--touch-target, 44px)',
+  // O tamanho vem de JS, NÃO de `var(--touch-target)`, desde a Rodada 2: o FAB
+  // tem 56px no tablet e 44px no celular, e `--touch-target` governa alvos de
+  // toque de TODO o repo (IpadToolbar, células do painel, banner da skin). Uma
+  // variante do token por media query inflaria tudo em cascata sem aparecer em
+  // teste nenhum. O contrapeso obrigatório: este mesmo `size` tem que chegar ao
+  // useFabPosition, senão os bounds continuam calculados com 44 e o botão para
+  // 12px antes da borda sem motivo visível.
+  width: `${size}px`,
+  height: `${size}px`,
   // 30, NÃO 20: o botão `☰ Menu` (AppV2.jsx:335) também é `position: fixed` e
   // vive no canto superior esquerdo — exatamente um dos cantos pra onde este FAB
   // pode ser arrastado. Empatados em z-index, quem pinta por cima é a ordem no
@@ -83,7 +96,9 @@ const fabStyle = ({ left, top, opacity, armed }) => ({
   border: '1px solid var(--v2-border)',
   background: 'var(--v2-surface-2)',
   color: 'var(--v2-text)',
-  fontSize: '18px',
+  // O glifo `⌨️` a 18px dentro de um círculo de 56px fica visivelmente perdido —
+  // o ícone tem que crescer com o botão, não só o botão.
+  fontSize: size >= FAB_SIZE_TABLET_PX ? '22px' : '18px',
   lineHeight: 1,
   display: 'flex',
   alignItems: 'center',
@@ -120,9 +135,24 @@ const fabStyle = ({ left, top, opacity, armed }) => ({
  */
 export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
   const isTouch = useIsTouchDevice();
+  // Critério de tablet: `isTouch && !isMobile`. SEMPRE via useMediaQuery, NUNCA
+  // `window.matchMedia` cru — o jsdom deste repo não implementa matchMedia e
+  // components/TerminalPanel.test.jsx não instala fallback, então uma chamada
+  // crua derrubaria ~31 testes com TypeError; o guard vive dentro do hook.
+  // Consequência decidida e não-bug: iPhone em PAISAGEM (largura > 640px) entra
+  // no FAB grande. Em paisagem há espaço e o dedo é o mesmo; reverter é 1 linha.
+  const isMobile = useMediaQuery(MOBILE_VIEWPORT_QUERY);
+  const size = isMobile ? FAB_SIZE_PX : FAB_SIZE_TABLET_PX;
+
+  // Rodada 2, Frente C (C-T5): o modo "esconder teclado" persiste entre reloads e
+  // só é visível DENTRO do painel. Com o painel fechado, "meu teclado não abre"
+  // seria um estado silencioso que sobrevive a um reload — o ponto indicador
+  // abaixo é o que o torna visível sem abrir nada.
+  const [keyboardSuppressed] = useKeyboardSuppressed();
+
   const {
     position, viewport, insets, commitPosition, suspendResyncRef,
-  } = useFabPosition();
+  } = useFabPosition({ size });
 
   const [open, setOpen] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -148,15 +178,13 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     dy: 0,                // pra persistir a última posição válida
   });
 
-  // Tamanho real do botão. jsdom devolve offsetWidth 0 (verificado: 29.1.1), e
-  // sem o `|| FAB_SIZE_PX` a matemática de clamp colapsaria em tamanho 0 na
-  // suíte inteira — o fallback é o que permite testar, não cortesia. Escrito no
-  // mount, muito antes de qualquer gesto ou abertura de painel poder acontecer,
-  // então ler o ref durante o render abaixo é determinístico.
-  const sizeRef = useRef(FAB_SIZE_PX);
-  useEffect(() => {
-    sizeRef.current = fabRef.current?.offsetWidth || FAB_SIZE_PX;
-  }, []);
+  // Aqui existia um `sizeRef` medido do DOM (`fabRef.current?.offsetWidth ||
+  // FAB_SIZE_PX`) num efeito de mount. Foi REMOVIDO na Rodada 2 e não deve
+  // voltar: medir o DOM para descobrir um número que nós mesmos escrevemos é
+  // redundante, e um efeito de mount ficaria OBSOLETO agora que `size` pode
+  // mudar (44 <-> 56 numa mudança de breakpoint). O `size` derivado acima é a
+  // única fonte, e passá-lo direto para getPanelPlacement elimina de tabela o
+  // fallback de `offsetWidth === 0` do jsdom.
 
   // Timer de fade. O cleanup NÃO é opcional: AppV2.test.jsx não mocka
   // useIsTouchDevice e instala um matchMedia que responde `matches: true` a
@@ -246,7 +274,7 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     // componente — este guard é o que viabiliza a suíte, não defensividade
     // cosmética; não "limpar" num refactor. No browser real a captura é o que
     // garante que pointermove/pointerup continuem chegando NESTE elemento mesmo
-    // quando o dedo sai da área de 44px dele — sem ela o arrasto morre no
+    // quando o dedo sai da área de 44/56px dele — sem ela o arrasto morre no
     // primeiro pixel fora do botão.
     if (el && typeof el.setPointerCapture === 'function') {
       el.setPointerCapture(e.pointerId);
@@ -362,6 +390,19 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     // outro dá um bug parcial que só aparece no iPadOS — ninguém pega em review.
     // Consequência deliberada: nenhum evento `click` nasce de toque (ver
     // handleClick).
+    //
+    // A ORDEM DESTAS DUAS LINHAS É A INVARIANTE, não estilo. O `preventDefault()`
+    // tem que vir ANTES do guard `if (g.pointerId !== e.pointerId) return`
+    // logo abaixo, porque o "TODO pointerup" acima inclui os pointerup que o
+    // guard descarta. O caso real é multi-toque no iPad: com um dedo já
+    // arrastando o FAB, um SEGUNDO dedo que toque e solte em cima do botão
+    // emite um pointerup com outro `pointerId`. Se o preventDefault ficar
+    // depois do guard, esse evento sai sem ser cancelado, o browser move o foco
+    // do DOM pro <button>, o textarea do xterm perde foco e o teclado do iPad
+    // FECHA — no meio de um arrasto, exatamente quando o usuário estava
+    // ajustando o FAB pra continuar digitando. Nenhum teste fica vermelho se
+    // alguém inverter: jsdom não tem foco de verdade nem teclado virtual, e o
+    // pointerup descartado não muda nenhum estado observável.
     e.preventDefault();
 
     const g = gestureRef.current;
@@ -450,7 +491,7 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
     ? getPanelPlacement({
       left: position.left,
       top: position.top,
-      size: sizeRef.current,
+      size,
       viewport,
       insets,
     })
@@ -462,7 +503,7 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
         ref={fabRef}
         type="button"
         className="v2-fab"
-        style={fabStyle({ left: position.left, top: position.top, opacity, armed })}
+        style={fabStyle({ left: position.left, top: position.top, opacity, armed, size })}
         aria-label={ariaLabel}
         title={ariaLabel}
         aria-expanded={open}
@@ -484,6 +525,57 @@ export function TerminalShortcutsFab({ terminalRef, sessionKey }) {
         onContextMenu={(event) => event.preventDefault()}
       >
         {open ? '✕' : '⌨️'}
+        {!open && keyboardSuppressed && (
+          // Ponto indicador de "teclado suprimido". `<span>` posicionado, e não
+          // um `::after`, porque toda a estilização deste componente é inline e
+          // um pseudo-elemento exigiria uma regra em theme.css para um estado que
+          // já é conhecido em JS.
+          //
+          // `role="img"` + aria-label em vez de aria-hidden: com o painel fechado
+          // este ponto é a ÚNICA superfície que expõe o modo, e um estado que
+          // impede o usuário de digitar não pode ser exclusivamente visual. O
+          // aria-label do FAB fica intocado de propósito (ele descreve a AÇÃO de
+          // abrir/fechar o painel, não este estado).
+          //
+          // `pointerEvents: 'none'` é obrigatório: sem isso o ponto entra como
+          // alvo de `pointerdown`/`pointerup` no meio da máquina de gestos do FAB
+          // e um tap que caia exatamente nele deixaria de alternar o painel.
+          //
+          // DEPENDÊNCIA IMPLÍCITA (e é a razão deste parágrafo existir): o
+          // `position: 'absolute'` abaixo resolve `top`/`right` contra o
+          // ANCESTRAL POSICIONADO mais próximo, e hoje esse ancestral é o
+          // próprio <button> do FAB — não porque alguém o tenha declarado
+          // `relative` para servir de âncora, mas porque `fabStyle` o faz
+          // `position: 'fixed'` para se posicionar contra a viewport, e `fixed`
+          // também estabelece bloco de contenção para descendentes absolutos. É
+          // acidente feliz, não desenho. Se uma rodada futura tirar o `fixed` do
+          // FAB (por exemplo, movendo a geometria para um wrapper), este ponto
+          // deixa de ancorar no botão e salta para o canto superior direito do
+          // primeiro ancestral posicionado que sobrar — ou do bloco inicial, se
+          // não houver nenhum —, virando um pontinho perdido no meio da tela.
+          // Nada disso fica vermelho: jsdom não resolve blocos de contenção
+          // (mesma limitação que obrigou fixedPositioningInvariant.test.js a ler
+          // o FONTE em vez do DOM), e as asserções sobre este <span> só olham as
+          // strings de estilo inline. Quem mexer no `position` do FAB precisa
+          // declarar `position: 'relative'` no botão de forma explícita.
+          <span
+            role="img"
+            aria-label="Teclado suprimido"
+            style={{
+              position: 'absolute',
+              // `top`/`right` separados, nunca o atalho `inset`: o `cssstyle` do
+              // jsdom não implementa `inset` e a asserção passaria com o estilo
+              // inerte.
+              top: '2px',
+              right: '2px',
+              width: `${SUPPRESSED_DOT_SIZE_PX}px`,
+              height: `${SUPPRESSED_DOT_SIZE_PX}px`,
+              borderRadius: '50%',
+              background: 'var(--v2-accent)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
       </button>
 
       {open && (
