@@ -4,6 +4,20 @@ import time
 
 import aiosqlite
 
+# Ceiling on how many devices may be registered at once. This is a personal
+# install: a handful of browsers, never a fleet. The cap is a cost bound, not
+# a quota — send_push_to_all() walks the table SEQUENTIALLY with a
+# PUSH_TIMEOUT_SECONDS (10s) budget per delivery, so N unreachable rows mean
+# N×10s of live background task on every end-of-chat notification.
+MAX_SUBSCRIPTIONS = 20
+
+
+class TooManySubscriptionsError(RuntimeError):
+    """Raised by upsert() when registering a NEW endpoint would push the
+    table past MAX_SUBSCRIPTIONS. Refreshing an endpoint that is already
+    registered never raises: a legitimate device must not lose the ability
+    to renew its keys just because the table happens to be full."""
+
 
 class PushSubscriptionStore:
     """Web Push subscriptions + the server's VAPID keypair (Phase 3 of the
@@ -74,7 +88,13 @@ class PushSubscriptionStore:
         ON CONFLICT DO UPDATE deliberately leaves `created_at` alone: only
         the keys/user agent are refreshed, so re-subscribing the same device
         doesn't look like a brand-new registration.
+
+        Raises TooManySubscriptionsError when a new endpoint would exceed
+        MAX_SUBSCRIPTIONS. The module global is read here, at call time, on
+        purpose — that is what lets a test lower the cap without rewriting
+        the store.
         """
+        await self._reject_if_capped(endpoint)
         await self._conn.execute(
             """
             INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at)
@@ -87,6 +107,38 @@ class PushSubscriptionStore:
             (endpoint, p256dh, auth, user_agent, time.time()),
         )
         await self._conn.commit()
+
+    async def _reject_if_capped(self, endpoint: str) -> None:
+        """Blocks only the registration of a genuinely NEW endpoint.
+
+        The "is this a refresh?" lookup runs only when the table is already
+        full, which is the rare case — the common path stays a single
+        COUNT(*) over a table of at most a couple of dozen rows.
+
+        ⚠️ Known limitation (accepted): the COUNT and the INSERT that follows
+        are not one transaction, so two registrations racing at exactly the
+        cap can both read `total == MAX_SUBSCRIPTIONS - 1` and land, leaving
+        the table one row over. Harmless at this scale — the cap is a cost
+        bound on sequential delivery, not a security boundary — and a single
+        personal install has no concurrent registrations worth serializing a
+        write transaction for.
+        """
+        async with self._conn.execute(
+            "SELECT COUNT(*) FROM push_subscriptions"
+        ) as cursor:
+            (total,) = await cursor.fetchone()
+        if total < MAX_SUBSCRIPTIONS:
+            return
+
+        async with self._conn.execute(
+            "SELECT 1 FROM push_subscriptions WHERE endpoint = ?", (endpoint,)
+        ) as cursor:
+            is_refresh = await cursor.fetchone() is not None
+        if not is_refresh:
+            raise TooManySubscriptionsError(
+                f"limite de {MAX_SUBSCRIPTIONS} dispositivos registrados atingido; "
+                "remova um dispositivo antes de registrar outro"
+            )
 
     async def list_all(self) -> list[dict]:
         rows: list[dict] = []

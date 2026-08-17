@@ -16,7 +16,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 from pydantic import ValidationError
 from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
@@ -24,7 +25,7 @@ from app.task_store import TaskStore
 from app.agent_store import GlobalAgentStore
 from app.card_store import CardStore
 from app.settings_store import SettingsStore
-from app.push_store import PushSubscriptionStore
+from app.push_store import PushSubscriptionStore, TooManySubscriptionsError
 from app.push_payload import build_push_payload
 from app.push_service import send_push_to_all
 from app.vapid_keys import load_or_create_vapid_keys
@@ -450,6 +451,49 @@ async def lifespan(app: FastAPI):
 install_benign_transfer_error_filter()
 install_proactor_connection_lost_patch()
 
+
+class RejectBackslashPathMiddleware:
+    """Rejects any HTTP request whose path contains a backslash with 400.
+
+    Guards against PYSEC-2026-2281 in Starlette 0.38.6. That version is pinned
+    transitively (FastAPI 0.115.0 requires `starlette<0.39.0`), so the flaw
+    cannot be closed by a dependency bump alone. The flaw:
+    `StaticFiles.lookup_path()` builds the target with
+    `os.path.join(directory, path)`, and on Windows a path component shaped
+    like `\\\\attacker-host\\share\\file` makes that join collapse into a UNC
+    path. The `os.path.realpath()` immediately after it opens a real outbound
+    SMB connection to that host, and Windows hands the local account's NTLMv2
+    hash to whoever answers — an OS credential leak, not just an app one. It
+    also stalls the calling thread for the full TCP timeout (~21s measured) in
+    the same anyio worker pool that serves this app's synchronous handlers,
+    so it doubles as a cheap DoS against real API routes.
+
+    Deliberately global instead of scoped to the StaticFiles mounts: one guard
+    covers all four current mounts plus any added later, and a backslash is
+    never legitimate in this app's URLs. Registered as the outermost
+    middleware (Starlette's `add_middleware` prepends), so the request is
+    refused before routing — no handler, no mount, no filesystem lookup ever
+    sees it.
+
+    Inspects `scope["path"]`, which the ASGI server delivers percent-decoded,
+    so `%5C` is rejected along with a literal backslash. `raw_path` would miss
+    the encoded form.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and "\\" in scope.get("path", ""):
+            response = JSONResponse(
+                status_code=400,
+                content={"detail": "Backslash is not allowed in the request path."},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(title="TaskNexus API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
@@ -457,6 +501,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added after CORS on purpose: `add_middleware` inserts at the front of the
+# stack, so the last one registered is the outermost and runs first.
+app.add_middleware(RejectBackslashPathMiddleware)
 
 # CRÍTICO: StaticFiles derruba o processo no boot se o diretório não existir
 # — precisa existir ANTES do app.mount() ser executado (import time, não
@@ -1016,13 +1063,20 @@ async def register_push_subscription(body: PushSubscriptionRequest):
     """Registers this device for push. Idempotent by endpoint (the browser
     hands back the same endpoint for the same device/origin), so two tabs —
     or a re-subscribe after a reload — collapse into a single row instead of
-    doubling the notification."""
-    await push_store.upsert(
-        endpoint=body.endpoint,
-        p256dh=body.keys.p256dh,
-        auth=body.keys.auth,
-        user_agent=body.user_agent,
-    )
+    doubling the notification.
+
+    429 when the device cap is reached: the request is well-formed (so not a
+    422) and re-registering an already known device still succeeds, so what
+    the caller hit is a rate/volume limit, not a bad payload."""
+    try:
+        await push_store.upsert(
+            endpoint=body.endpoint,
+            p256dh=body.keys.p256dh,
+            auth=body.keys.auth,
+            user_agent=body.user_agent,
+        )
+    except TooManySubscriptionsError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     return {"status": "subscribed", "endpoint": body.endpoint}
 
 

@@ -43,7 +43,7 @@ def fake_webpush(monkeypatch):
     return module.webpush
 
 
-def _subscription_body(endpoint="https://push.example/device-a"):
+def _subscription_body(endpoint="https://fcm.googleapis.com/fcm/send/device-a"):
     return {
         "endpoint": endpoint,
         "keys": {"p256dh": "BPublicKeyValue", "auth": "AuthSecretValue"},
@@ -84,7 +84,7 @@ def test_vapid_public_key_route_does_not_return_the_spa_shell(client):
 def test_register_subscription_returns_201(client):
     r = client.post("/api/push/subscriptions", json=_subscription_body())
     assert r.status_code == 201
-    assert r.json()["endpoint"] == "https://push.example/device-a"
+    assert r.json()["endpoint"] == "https://fcm.googleapis.com/fcm/send/device-a"
 
 
 def test_register_subscription_is_idempotent_for_the_same_endpoint(client, fake_webpush):
@@ -99,11 +99,6 @@ def test_register_subscription_is_idempotent_for_the_same_endpoint(client, fake_
     assert fake_webpush.call_count == 1
 
 
-def test_register_subscription_rejects_a_non_http_endpoint(client):
-    body = _subscription_body(endpoint="not-a-url")
-    assert client.post("/api/push/subscriptions", json=body).status_code == 422
-
-
 def test_register_subscription_rejects_blank_keys(client):
     body = _subscription_body()
     body["keys"]["auth"] = "   "
@@ -112,7 +107,7 @@ def test_register_subscription_rejects_blank_keys(client):
 
 def test_register_subscription_rejects_a_missing_keys_object(client):
     assert client.post(
-        "/api/push/subscriptions", json={"endpoint": "https://push.example/x"}
+        "/api/push/subscriptions", json={"endpoint": "https://fcm.googleapis.com/fcm/send/x"}
     ).status_code == 422
 
 
@@ -120,7 +115,7 @@ def test_delete_subscription_removes_it(client, fake_webpush):
     client.post("/api/push/subscriptions", json=_subscription_body())
     r = client.request(
         "DELETE", "/api/push/subscriptions",
-        json={"endpoint": "https://push.example/device-a"},
+        json={"endpoint": "https://fcm.googleapis.com/fcm/send/device-a"},
     )
     assert r.status_code == 200
     _fire_stop_hook(client, "session-x")
@@ -132,6 +127,108 @@ def test_delete_of_an_unknown_endpoint_is_tolerated(client):
         "DELETE", "/api/push/subscriptions", json={"endpoint": "https://push.example/ghost"}
     )
     assert r.status_code == 200
+
+
+def test_delete_is_not_restricted_to_the_push_service_allowlist(client):
+    # Deliberate asymmetry with POST: unsubscribing must keep working for a
+    # row registered before the allowlist existed (or by a host later
+    # removed from it), otherwise a device could never be cleaned up.
+    r = client.request(
+        "DELETE", "/api/push/subscriptions", json={"endpoint": "http://127.0.0.1:8765/legacy"}
+    )
+    assert r.status_code == 200
+
+
+# ─── Endpoint allowlist (security review, finding 1: SSRF) ─────────────────
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://fcm.googleapis.com/fcm/send/token-123",
+    "https://android.googleapis.com/gcm/send/token-123",
+    "https://updates.push.services.mozilla.com/wpush/v2/token-123",
+    "https://web.push.apple.com/token-123",
+    "https://wns2-bl2p.notify.windows.com/w/?token=token-123",
+])
+def test_register_subscription_accepts_a_real_push_service_endpoint(client, endpoint):
+    r = client.post("/api/push/subscriptions", json=_subscription_body(endpoint=endpoint))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.parametrize("endpoint", [
+    "not-a-url",
+    # Web Push is always TLS — no real browser ever hands back http://.
+    "http://fcm.googleapis.com/fcm/send/token-123",
+    "https://push.example/device-a",
+    # Suffix match, not substring: the attacker owns everything to the right.
+    "https://fcm.googleapis.com.evil.com/fcm/send/token-123",
+    # Userinfo can't be used to smuggle an allowed host either.
+    "https://fcm.googleapis.com@evil.com/fcm/send/token-123",
+    "https://evil.com/fcm.googleapis.com/token-123",
+    "https://",
+])
+def test_register_subscription_rejects_an_endpoint_outside_the_allowlist(client, endpoint):
+    r = client.post("/api/push/subscriptions", json=_subscription_body(endpoint=endpoint))
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.parametrize("endpoint", [
+    # The SSRF the allowlist exists for: the loopback hook listener Phase 0
+    # binds on 127.0.0.1 must not be reachable through "deliver this push".
+    "http://127.0.0.1:8765/hooks/stop",
+    "https://127.0.0.1:8765/hooks/stop",
+    "https://localhost/hooks/stop",
+    "https://192.168.0.10/internal",
+    "https://10.0.0.5/internal",
+    "https://169.254.169.254/latest/meta-data/",
+    "https://[::1]/hooks/stop",
+    # Delimiter smuggling: `urlsplit` reads the whole thing as one hostname
+    # (so it used to pass the ".fcm.googleapis.com" suffix check), while
+    # urllib3/requests — under pywebpush, which actually delivers the push —
+    # treat `\` as a path separator and resolve the real host to 127.0.0.1.
+    # Rejected now by the hostname charset gate, not by the suffix match.
+    "https://127.0.0.1\\.fcm.googleapis.com/hooks/stop",
+    "https://10.0.0.5\\.push.apple.com/x",
+    # Same attack percent-encoded — `urlsplit` does not decode the host, so
+    # this reached the suffix check as `127.0.0.1%5c.fcm.googleapis.com` and
+    # passed it too. Covered for the same reason
+    # test_backslash_path_rejection.py covers both forms.
+    "https://127.0.0.1%5C.fcm.googleapis.com/hooks/stop",
+])
+def test_register_subscription_rejects_an_internal_address(client, endpoint):
+    r = client.post("/api/push/subscriptions", json=_subscription_body(endpoint=endpoint))
+    assert r.status_code == 422, r.text
+
+
+# ─── Registration cap (security review, finding 2: amplification) ──────────
+
+
+def test_register_subscription_answers_429_past_the_cap(client, monkeypatch):
+    import app.push_store as push_store_module
+
+    monkeypatch.setattr(push_store_module, "MAX_SUBSCRIPTIONS", 2)
+    for index in range(2):
+        body = _subscription_body(endpoint=f"https://fcm.googleapis.com/fcm/send/dev-{index}")
+        assert client.post("/api/push/subscriptions", json=body).status_code == 201
+
+    body = _subscription_body(endpoint="https://fcm.googleapis.com/fcm/send/dev-overflow")
+    r = client.post("/api/push/subscriptions", json=body)
+    assert r.status_code == 429
+    assert r.json()["detail"]
+
+
+def test_re_registering_a_known_endpoint_works_even_when_the_table_is_full(client, monkeypatch):
+    import app.push_store as push_store_module
+
+    monkeypatch.setattr(push_store_module, "MAX_SUBSCRIPTIONS", 2)
+    for index in range(2):
+        body = _subscription_body(endpoint=f"https://fcm.googleapis.com/fcm/send/dev-{index}")
+        client.post("/api/push/subscriptions", json=body)
+
+    # A browser re-subscribing (new keys, same endpoint) is an UPDATE, so
+    # the cap must not turn it into a permanent 429.
+    body = _subscription_body(endpoint="https://fcm.googleapis.com/fcm/send/dev-1")
+    body["keys"]["p256dh"] = "BRenewedPublicKey"
+    assert client.post("/api/push/subscriptions", json=body).status_code == 201
 
 
 # ─── POST /api/hooks/stop — the dispatch decision ──────────────────────────

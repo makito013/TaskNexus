@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from urllib.parse import urlsplit
+
 from pydantic import BaseModel, field_validator
 
 
@@ -362,14 +365,101 @@ class PushSubscriptionKeys(BaseModel):
         return v
 
 
+# Hosts the browsers' real push services answer on. An endpoint whose host
+# is not one of these is refused at registration, which is what keeps the
+# server from being talked into delivering a "push" to an internal address —
+# most pointedly the loopback hook listener this same feature binds on
+# 127.0.0.1 (HOOK_LOOPBACK_PORT). Blocking by allowlist rather than by
+# "is this IP private?" needs no address parsing and fails closed: loopback,
+# RFC1918, link-local and metadata addresses are all simply not in the list.
+#
+# Source: https://github.com/pushpad/known-push-services (whitelist compiled
+# from ~200M real web push subscriptions):
+#   fcm.googleapis.com                 Chrome, Chromium Edge off Windows,
+#                                      Opera, Brave, Samsung, Firefox Android
+#   android.googleapis.com             legacy GCM, still emitted by old Chrome
+#   updates.push.services.mozilla.com  Firefox desktop
+#   notify.windows.com                 Edge on Windows (WNS), which subscribes
+#                                      through wns2-<region>.notify.windows.com
+#   push.apple.com                     Safari desktop and iOS 16.4+ PWAs,
+#                                      today web.push.apple.com
+# Mozilla's stage/dev autopush hosts and the long-dead jmt17.google.com are
+# deliberately left out: no shipping browser subscribes through them.
+#
+# ⚠️ Known limitation (accepted): `requests`, under pywebpush, follows HTTP
+# redirects by default, so an allowlisted host that answers a delivery with a
+# 302 to an internal address would still be followed at SEND time. Validating
+# here is therefore partial mitigation — combined with the https-only rule —
+# not a complete SSRF fix. Closing it properly means disabling redirects in
+# pywebpush's HTTP client, which its public API does not expose.
+PUSH_SERVICE_HOSTS = (
+    "fcm.googleapis.com",
+    "android.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "notify.windows.com",
+    "push.apple.com",
+)
+
+
+# Every host in PUSH_SERVICE_HOSTS — and every real subdomain browsers
+# subscribe through, `wns2-bl2p.notify.windows.com` included — is plain ASCII
+# letters, digits, dots and hyphens. Anything outside that set is a delimiter
+# some other URL parser may read differently than `urlsplit` does; see
+# _is_known_push_host for why that divergence is exploitable here.
+_ALLOWED_HOST_CHARS = re.compile(r"[a-z0-9.\-]+")
+
+
+def _is_known_push_host(host: str) -> bool:
+    """Exact host or a subdomain of one of the allowed hosts.
+
+    Expects an ALREADY-LOWERCASED host: the charset gate below is
+    lowercase-only, so an uppercase host would simply be refused (fail
+    closed), never wrongly accepted.
+
+    The charset gate has to run BEFORE the suffix match, because `urlsplit`
+    and the HTTP client that later delivers the push do not agree on where a
+    hostname ends. `urlsplit("https://127.0.0.1\\.fcm.googleapis.com/x")`
+    returns the whole `127.0.0.1\\.fcm.googleapis.com` as one hostname, which
+    passes `endswith(".fcm.googleapis.com")` — while urllib3/requests (under
+    pywebpush, which performs the actual delivery) treat `\\` as a WHATWG path
+    separator and resolve the real host to `127.0.0.1`. Allowlisting on a
+    hostname the sender will not agree with is how an "approved" endpoint
+    turns into a request to an internal address. Restricting the charset
+    closes the SSRF class of delimiter smuggling we found — `\\` — along
+    with `@`, `_` and plain spaces. It does NOT close every way to smuggle a
+    junk hostname past the suffix check: `urlsplit` strips tabs/CR/LF before
+    this gate ever sees the host, so `127.0.0.1\t.fcm.googleapis.com`
+    arrives here already as clean-charset `127.0.0.1.fcm.googleapis.com` and
+    passes. That is not SSRF (no HTTP client resolves it back to loopback),
+    only a junk PRIMARY KEY row that would be retried forever — a known,
+    accepted gap, not a silent one.
+
+    The `.` in the suffix check is the other half: a plain substring or
+    `endswith(entry)` test would happily accept `fcm.googleapis.com.evil.com`
+    (or `evilfcm.googleapis.com`), both of which are hosts the attacker owns.
+    """
+    if not _ALLOWED_HOST_CHARS.fullmatch(host):
+        return False
+    return any(
+        host == allowed or host.endswith(f".{allowed}")
+        for allowed in PUSH_SERVICE_HOSTS
+    )
+
+
 class PushSubscriptionRequest(BaseModel):
     """Body of POST /api/push/subscriptions — the browser's PushSubscription
     serialized as-is (`endpoint` + `keys`), plus the optional user agent used
     only to make the device recognizable in the database.
 
-    Rejecting a blank/non-http endpoint at the edge matters: it becomes a
-    PRIMARY KEY, and a junk row would be re-tried on every single push
-    forever with no way for the user to notice."""
+    Validating the endpoint at the edge matters twice over: it becomes a
+    PRIMARY KEY, so a junk row would be re-tried on every single push forever
+    with no way for the user to notice — and it is a URL this server later
+    makes an outbound request to, so an unchecked host is an SSRF sink.
+
+    Note the deliberate asymmetry with PushSubscriptionDeleteRequest, which
+    has no such validation: removing a subscription must keep working for a
+    row registered before this rule existed, or for a host later dropped from
+    PUSH_SERVICE_HOSTS."""
     endpoint: str
     keys: PushSubscriptionKeys
     user_agent: str | None = None
@@ -378,8 +468,19 @@ class PushSubscriptionRequest(BaseModel):
     @classmethod
     def _valid_endpoint(cls, v: str) -> str:
         endpoint = v.strip()
-        if not endpoint.startswith(("https://", "http://")):
-            raise ValueError("endpoint deve ser uma URL http(s)")
+        try:
+            parts = urlsplit(endpoint)
+            host = parts.hostname
+        except ValueError:
+            # Malformed URL (an unclosed IPv6 bracket, for instance) — must
+            # come out as a clean 422, not an exception inside the validator.
+            raise ValueError("endpoint de push malformado") from None
+        # https only: every browser push service is TLS, so accepting http://
+        # buys nothing and gives an attacker a cleartext target to point at.
+        if parts.scheme != "https":
+            raise ValueError("endpoint deve ser uma URL https")
+        if not host or not _is_known_push_host(host.lower()):
+            raise ValueError("endpoint não pertence a um serviço de push conhecido")
         return endpoint
 
 

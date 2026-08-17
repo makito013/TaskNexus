@@ -5,7 +5,12 @@ around each test."""
 import pytest
 import pytest_asyncio
 
-from app.push_store import PushSubscriptionStore
+import app.push_store as push_store_module
+from app.push_store import (
+    MAX_SUBSCRIPTIONS,
+    PushSubscriptionStore,
+    TooManySubscriptionsError,
+)
 
 
 @pytest_asyncio.fixture
@@ -125,6 +130,60 @@ async def test_initialize_twice_does_not_wipe_existing_rows(tmp_path):
         assert len(await store.list_all()) == 1
     finally:
         await store.close()
+
+
+# ─── Registration cap (security review, finding 2) ───────────────────────
+#
+# send_push_to_all() walks the table SEQUENTIALLY with a 10s timeout per
+# delivery, so every junk row costs another 10s of live background task on
+# every single end-of-chat notification. The cap is what bounds that.
+
+
+@pytest.mark.asyncio
+async def test_upsert_accepts_new_endpoints_up_to_the_cap(store, monkeypatch):
+    monkeypatch.setattr(push_store_module, "MAX_SUBSCRIPTIONS", 2)
+    await store.upsert(**_subscription(endpoint="https://fcm.example/one"))
+    await store.upsert(**_subscription(endpoint="https://fcm.example/two"))
+    assert len(await store.list_all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_upsert_rejects_a_new_endpoint_once_the_cap_is_reached(store, monkeypatch):
+    monkeypatch.setattr(push_store_module, "MAX_SUBSCRIPTIONS", 2)
+    await store.upsert(**_subscription(endpoint="https://fcm.example/one"))
+    await store.upsert(**_subscription(endpoint="https://fcm.example/two"))
+    with pytest.raises(TooManySubscriptionsError):
+        await store.upsert(**_subscription(endpoint="https://fcm.example/three"))
+    assert len(await store.list_all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_upsert_still_refreshes_a_known_endpoint_when_the_table_is_full(store, monkeypatch):
+    # The cap must never lock an ALREADY registered device out of renewing
+    # its keys — that device would keep failing to receive pushes with no
+    # way to fix itself.
+    monkeypatch.setattr(push_store_module, "MAX_SUBSCRIPTIONS", 2)
+    await store.upsert(**_subscription(endpoint="https://fcm.example/one"))
+    await store.upsert(**_subscription(endpoint="https://fcm.example/two"))
+
+    await store.upsert(
+        endpoint="https://fcm.example/two", p256dh="pub-renewed", auth="auth-renewed"
+    )
+
+    rows = {row["endpoint"]: row for row in await store.list_all()}
+    assert len(rows) == 2
+    assert rows["https://fcm.example/two"]["p256dh"] == "pub-renewed"
+
+
+@pytest.mark.asyncio
+async def test_the_default_cap_allows_twenty_devices_and_no_more(store):
+    # Pins the value the security review asked for, through real behaviour
+    # rather than an equality assertion on the constant.
+    for index in range(MAX_SUBSCRIPTIONS):
+        await store.upsert(**_subscription(endpoint=f"https://fcm.example/{index}"))
+    assert len(await store.list_all()) == 20
+    with pytest.raises(TooManySubscriptionsError):
+        await store.upsert(**_subscription(endpoint="https://fcm.example/overflow"))
 
 
 # ─── VAPID keypair persistence (Task 3, decision G-1: generated on first
