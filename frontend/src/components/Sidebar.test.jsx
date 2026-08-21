@@ -77,39 +77,38 @@ describe('Sidebar — projects come from a prop, not an internal fetch', () => {
 // sem troca de layout e sem troca de tema — e sem nenhuma forma de ALCANÇAR o
 // v2, onde as funcionalidades novas moram. Recuperação só via API/banco.
 // Por isso o AppearanceSwitch subiu para o rodapé da própria sidebar.
-describe('Sidebar — AppearanceSwitch continua acessível no layout v1', () => {
-  it('renders the layout switch in the sidebar footer, with no modal to open first', () => {
+describe('Sidebar — AppearanceSwitch acessível', () => {
+  it('renders the theme switch in the sidebar footer', () => {
     vi.spyOn(api, 'fetchStatus').mockResolvedValue({ status: 'ok' });
     render(
       <Sidebar
         {...baseProps}
         projects={[projectWithClaudeWork]}
-        initialAppearance={{ layout_version: 'v1', theme_mode: 'dark' }}
+        initialAppearance={{ layout_version: 'v2', theme_mode: 'light' }}
       />
     );
 
     expect(screen.getByText('Aparência')).not.toBeNull();
-    const layoutGroup = screen.getByRole('group', { name: 'Layout' });
-    // O caminho de fuga em si: um botão "v2" clicável já na primeira tela.
-    const v2Button = within(layoutGroup).getByRole('button', { name: 'v2' });
-    expect(v2Button.disabled).toBe(false);
-    expect(within(layoutGroup).getByRole('button', { name: 'v1' }).getAttribute('aria-pressed')).toBe('true');
+    const themeGroup = screen.getByRole('group', { name: 'Tema' });
+    const darkButton = within(themeGroup).getByRole('button', { name: 'Escuro' });
+    expect(darkButton.disabled).toBe(false);
+    expect(within(themeGroup).getByRole('button', { name: 'Claro' }).getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('switching layout persists through api.updateAppearance', async () => {
+  it('switching theme persists through api.updateAppearance', async () => {
     vi.spyOn(api, 'fetchStatus').mockResolvedValue({ status: 'ok' });
     const updateSpy = vi.spyOn(api, 'updateAppearance').mockResolvedValue({});
     render(
       <Sidebar
         {...baseProps}
         projects={[projectWithClaudeWork]}
-        initialAppearance={{ layout_version: 'v1', theme_mode: 'dark' }}
+        initialAppearance={{ layout_version: 'v2', theme_mode: 'light' }}
       />
     );
 
-    fireEvent.click(within(screen.getByRole('group', { name: 'Layout' })).getByRole('button', { name: 'v2' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Tema' })).getByRole('button', { name: 'Escuro' }));
 
-    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ layout_version: 'v2' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ theme_mode: 'dark', layout_version: 'v2' }));
   });
 
   it('no longer offers the old "Configurar agentes" entry point', () => {

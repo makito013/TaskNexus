@@ -1,34 +1,7 @@
 // frontend/src/components/AppearanceSwitch.jsx
-// Milestone 2 (plano Layout v2, 05-TL.md, Tarefa 13): controle de layout/tema
-// compartilhado. Vive em components/ (não em layouts/v2/) e não depende de
-// nada do contexto do v2 (sem useTerminal, sem v2Screen, sem import de
-// dentro de layouts/v2/) — só das props abaixo e do próprio SettingsStore
-// via api.js. Três pontos de montagem: o rodapé de layouts/v2/SidebarV2.jsx,
-// o de layouts/v2/MobileMenuScreen.jsx e o de components/Sidebar.jsx (v1).
-//
-// O ponto de montagem no v1 NÃO é opcional: é o único caminho de UI de quem
-// está no layout v1 para chegar ao v2. Sem ele o v1 vira uma armadilha de
-// mão única, recuperável só via API/banco.
-//
-// Requisito mais importante (achado do TL, risco sinalizado explicitamente):
-// window.location.reload() só pode rodar DEPOIS que o PUT /api/settings/
-// appearance resolver com sucesso. Uma falha de rede/PUT nunca pode recarregar
-// a página — o usuário ficaria preso num layout/tema que o backend não
-// persistiu, sem nem saber que a troca não "colou".
-//
-// Sem botão "Aplicar": cada clique num segmento salva e recarrega na hora
-// (pedido explícito do Bruno — um clique a mais era desnecessário). Por isso
-// não há mais estado "pendente" separado do persistido: o valor exibido é
-// sempre `initialAppearance`, e o controle de Tema só aparece quando o
-// layout PERSISTIDO já é 'v2' (trocar para v2 e escolher o tema viram dois
-// cliques/reloads em vez de um só — aceito em troca de tirar o botão).
 import { useState } from 'react';
 import { api } from '../services/api.js';
 
-// Tokens com fallback explícito para os tokens v1 (--text-primary etc.) e, na
-// ausência de QUALQUER um dos dois (ex.: montado fora de qualquer layout com
-// tema aplicado), uma cor literal — mantém o componente utilizável em
-// qualquer contexto, não só dentro de [data-layout="v2"].
 const colors = {
   text: 'var(--v2-text, var(--text-primary, #e0e0e0))',
   textDim: 'var(--v2-text-dim, var(--text-secondary, #888888))',
@@ -115,21 +88,16 @@ function SegmentedControl({ label, value, options, onChange, ariaLabel, disabled
 }
 
 export function AppearanceSwitch({ initialAppearance }) {
-  const persistedLayout = initialAppearance?.layout_version || 'v1';
-  const persistedTheme = initialAppearance?.theme_mode || 'dark';
+  const persistedTheme = initialAppearance?.theme_mode || 'light';
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-
-  const showTheme = persistedLayout === 'v2';
 
   const applyChange = async (partial) => {
     setSaving(true);
     setError(null);
     try {
       await api.updateAppearance(partial);
-      // Só chega aqui se o PUT resolveu com sucesso — reload é a ÚLTIMA linha
-      // do caminho feliz, nunca roda dentro do catch abaixo.
       window.location.reload();
     } catch {
       setSaving(false);
@@ -137,14 +105,9 @@ export function AppearanceSwitch({ initialAppearance }) {
     }
   };
 
-  const handleLayoutChange = (value) => {
-    if (saving || value === persistedLayout) return;
-    applyChange({ layout_version: value });
-  };
-
   const handleThemeChange = (value) => {
     if (saving || value === persistedTheme) return;
-    applyChange({ theme_mode: value });
+    applyChange({ theme_mode: value, layout_version: 'v2' });
   };
 
   return (
@@ -152,30 +115,16 @@ export function AppearanceSwitch({ initialAppearance }) {
       <div style={styles.heading}>Aparência</div>
 
       <SegmentedControl
-        label="Layout"
-        ariaLabel="Layout"
-        value={persistedLayout}
-        onChange={handleLayoutChange}
+        label="Tema"
+        ariaLabel="Tema"
+        value={persistedTheme}
+        onChange={handleThemeChange}
         disabled={saving}
         options={[
-          { value: 'v1', label: 'v1' },
-          { value: 'v2', label: 'v2' },
+          { value: 'light', label: 'Claro' },
+          { value: 'dark', label: 'Escuro' },
         ]}
       />
-
-      {showTheme && (
-        <SegmentedControl
-          label="Tema"
-          ariaLabel="Tema"
-          value={persistedTheme}
-          onChange={handleThemeChange}
-          disabled={saving}
-          options={[
-            { value: 'dark', label: 'Escuro' },
-            { value: 'light', label: 'Claro' },
-          ]}
-        />
-      )}
 
       {saving && <div style={styles.savingHint}>Salvando…</div>}
       {error && <div role="alert" style={styles.error}>{error}</div>}

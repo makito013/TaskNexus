@@ -13,23 +13,23 @@ async def store(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_returns_defaults_on_fresh_db(store):
-    assert await store.get() == {"layout_version": "v1", "theme_mode": "dark", "projects_root_path": None}
+    assert await store.get() == {"layout_version": "v2", "theme_mode": "light", "projects_root_path": None}
 
 
 @pytest.mark.asyncio
 async def test_partial_update_only_theme_mode_leaves_layout_version_untouched(store):
-    updated = await store.update(theme_mode="light")
-    assert updated == {"layout_version": "v1", "theme_mode": "light", "projects_root_path": None}
+    updated = await store.update(theme_mode="dark")
+    assert updated == {"layout_version": "v2", "theme_mode": "dark", "projects_root_path": None}
 
     # A read afterward reflects the same partial update, not just the
     # return value of update() itself.
-    assert await store.get() == {"layout_version": "v1", "theme_mode": "light", "projects_root_path": None}
+    assert await store.get() == {"layout_version": "v2", "theme_mode": "dark", "projects_root_path": None}
 
 
 @pytest.mark.asyncio
 async def test_partial_update_only_layout_version_leaves_theme_mode_untouched(store):
     updated = await store.update(layout_version="v2")
-    assert updated == {"layout_version": "v2", "theme_mode": "dark", "projects_root_path": None}
+    assert updated == {"layout_version": "v2", "theme_mode": "light", "projects_root_path": None}
 
 
 @pytest.mark.asyncio
@@ -78,15 +78,15 @@ async def test_initialize_twice_does_not_reset_already_persisted_row(tmp_path):
 @pytest.mark.asyncio
 async def test_update_projects_root_path_persists(store):
     updated = await store.update(projects_root_path="/mnt/d/projetos")
-    assert updated == {"layout_version": "v1", "theme_mode": "dark", "projects_root_path": "/mnt/d/projetos"}
-    assert await store.get() == {"layout_version": "v1", "theme_mode": "dark", "projects_root_path": "/mnt/d/projetos"}
+    assert updated == {"layout_version": "v2", "theme_mode": "light", "projects_root_path": "/mnt/d/projetos"}
+    assert await store.get() == {"layout_version": "v2", "theme_mode": "light", "projects_root_path": "/mnt/d/projetos"}
 
 
 @pytest.mark.asyncio
 async def test_update_projects_root_path_does_not_touch_other_fields(store):
-    await store.update(theme_mode="light")
+    await store.update(theme_mode="dark")
     updated = await store.update(projects_root_path="/mnt/d/projetos")
-    assert updated == {"layout_version": "v1", "theme_mode": "light", "projects_root_path": "/mnt/d/projetos"}
+    assert updated == {"layout_version": "v2", "theme_mode": "dark", "projects_root_path": "/mnt/d/projetos"}
 
 
 # -- Notification quiet-hours window ------------------------------------------
@@ -135,7 +135,7 @@ async def test_update_notifications_does_not_touch_appearance_fields(store):
     await store.update(theme_mode="light")
     await store.update_notifications(quiet_hours_enabled=True)
     assert await store.get() == {
-        "layout_version": "v1",
+        "layout_version": "v2",
         "theme_mode": "light",
         "projects_root_path": None,
     }

@@ -24,14 +24,17 @@ class SettingsStore:
         self._conn = await aiosqlite.connect(self.db_path)
         # WAL + busy_timeout: ver conversation_store.py — mesmo sessions.db,
         # conexão própria, evita "readonly database" sob escrita concorrente.
-        await self._conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+        except aiosqlite.OperationalError:
+            pass
         await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS app_settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                layout_version TEXT NOT NULL DEFAULT 'v1',
-                theme_mode TEXT NOT NULL DEFAULT 'dark',
+                layout_version TEXT NOT NULL DEFAULT 'v2',
+                theme_mode TEXT NOT NULL DEFAULT 'light',
                 updated_at REAL
             )
             """
@@ -58,6 +61,10 @@ class SettingsStore:
                 await self._conn.execute(f"ALTER TABLE app_settings ADD COLUMN {column_def}")
             except aiosqlite.OperationalError:
                 pass
+        # Garante migração de 'v1' para 'v2' em bancos de dados já existentes
+        await self._conn.execute(
+            "UPDATE app_settings SET layout_version = 'v2' WHERE layout_version = 'v1'"
+        )
         # INSERT OR IGNORE: garante a linha id=1 com os defaults na primeira
         # vez, e é inofensivo (no-op) em toda chamada seguinte de initialize()
         # — ex: um segundo processo/teste apontando pro mesmo arquivo de DB
@@ -65,7 +72,7 @@ class SettingsStore:
         await self._conn.execute(
             """
             INSERT OR IGNORE INTO app_settings (id, layout_version, theme_mode, updated_at)
-            VALUES (1, 'v1', 'dark', ?)
+            VALUES (1, 'v2', 'light', ?)
             """,
             (time.time(),),
         )

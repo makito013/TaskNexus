@@ -117,6 +117,13 @@
   --v2-scrim: oklch(0.15 0.02 262 / 0.55);
 }
 
+:root[data-layout="v2"],
+:root[data-layout="v2"] body,
+:root[data-layout="v2"] #root {
+  background-color: var(--v2-bg);
+  color: var(--v2-text);
+}
+
 /* Repaginação estética da tela de terminal (PLAN-terminal-skin.md, T2): a
  * moldura do TerminalPanel.
  *

@@ -11,15 +11,15 @@ import { registerServiceWorker } from './hooks/useServiceWorker.js'
 // alternar de layout depois de montado). `.catch()` é obrigatório: o boot
 // nunca pode travar esperando o backend — se o fetch falhar (backend fora do
 // ar), cai pro default v1/dark, o comportamento já validado em produção.
-const DEFAULT_APPEARANCE = { layout_version: 'v1', theme_mode: 'dark' }
+const DEFAULT_APPEARANCE = { layout_version: 'v2', theme_mode: 'light' }
 
 api.fetchAppearance()
   .catch(() => DEFAULT_APPEARANCE)
   .then((appearance) => {
     // Setado ANTES do render — index.css/temas futuros podem ler esses
     // atributos síncronamente no primeiro paint do React.
-    document.documentElement.dataset.layout = appearance.layout_version
-    document.documentElement.dataset.theme = appearance.theme_mode
+    document.documentElement.dataset.layout = 'v2'
+    document.documentElement.dataset.theme = appearance.theme_mode || 'light'
 
     ReactDOM.createRoot(document.getElementById('root')).render(
       <React.StrictMode>

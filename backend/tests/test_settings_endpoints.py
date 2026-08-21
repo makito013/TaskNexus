@@ -27,18 +27,18 @@ def client(tmp_path):
 def test_get_appearance_returns_defaults_on_fresh_db(client):
     r = client.get("/api/settings/appearance")
     assert r.status_code == 200
-    assert r.json() == {"layout_version": "v1", "theme_mode": "dark"}
+    assert r.json() == {"layout_version": "v2", "theme_mode": "light"}
 
 
 def test_put_partial_update_persists_and_reflects_on_next_get(client):
-    r = client.put("/api/settings/appearance", json={"theme_mode": "light"})
+    r = client.put("/api/settings/appearance", json={"theme_mode": "dark"})
     assert r.status_code == 200
     body = r.json()
-    assert body == {"layout_version": "v1", "theme_mode": "light"}
+    assert body == {"layout_version": "v2", "theme_mode": "dark"}
 
     r2 = client.get("/api/settings/appearance")
     assert r2.status_code == 200
-    assert r2.json() == {"layout_version": "v1", "theme_mode": "light"}
+    assert r2.json() == {"layout_version": "v2", "theme_mode": "dark"}
 
 
 def test_put_both_fields_persists_both(client):
@@ -66,7 +66,7 @@ def test_put_empty_body_is_a_noop(client):
     atuais (ver SettingsStore.update)."""
     r = client.put("/api/settings/appearance", json={})
     assert r.status_code == 200
-    assert r.json() == {"layout_version": "v1", "theme_mode": "dark"}
+    assert r.json() == {"layout_version": "v2", "theme_mode": "light"}
 
 
 def test_get_projects_root_returns_env_var_as_resolved_path_when_no_override(client, tmp_path):

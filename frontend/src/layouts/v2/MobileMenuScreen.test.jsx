@@ -113,6 +113,6 @@ describe('MobileMenuScreen — rodapé de aparência', () => {
   it('renderiza o AppearanceSwitch (controle "Aparência") no rodapé', () => {
     render(<MobileMenuScreen {...baseProps()} />);
     expect(screen.getByText('Aparência')).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Layout' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Tema' })).toBeTruthy();
   });
 });
