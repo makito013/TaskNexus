@@ -16,8 +16,23 @@
 // "Prazo" (mencionado na especificação como parte da meta, "quem/prazo se
 // existir"): o modelo de Task (backend/app/task_store.py) não tem nenhum
 // campo de prazo/due date — não inventado aqui (instrução explícita do TL de
-// não expandir schema). A meta mostra só "quem" (session_display_name ou
-// agent_id, mesma fonte que TarefasGlobalView.jsx usa para sua tag).
+// não expandir schema).
+//
+// Cascata de filtro Cliente -> Projeto (Fase 2): mesma `ClienteProjetoFilterBar`
+// /`useClienteProjetoFilter` já em produção em BoardV2.jsx, com estado LOCAL
+// desta tela. `effectiveClienteId` (sidebar ?? seleção local) — e NÃO o prop
+// `selectedClienteId` cru — é o que governa agrupamento, branch de render e
+// mensagem de vazio: o branch não precisa saber se o cliente veio da sidebar
+// ou do select local, e tratá-los igual é o que impede a tela de renderizar
+// todos os grupos por cliente com "Em aberto (0)" quando o cliente foi
+// escolhido localmente.
+//
+// A meta por linha ("quem": session_display_name/agent_id) deu lugar às tags
+// de cliente/projeto (`resolveCardTags`, mesma função que BoardV2 usa nos
+// cards): numa lista agregada, saber a QUAL projeto a tarefa pertence vale
+// mais do que a sessão de origem. No modo "Todos" a tag de cliente é
+// suprimida por linha — o header do grupo já mostra o cliente, repetir seria
+// ruído puro; a tag de projeto continua sempre visível.
 //
 // Feature Clientes em Tarefas v2: filtra/agrupa por CLIENTE
 // (`buildClienteTaskGroups`, utils/taskGroups.js — mesma regra de
@@ -39,6 +54,8 @@
 import { useMemo } from 'react';
 import { useGlobalTasks } from '../../hooks/useGlobalTasks.js';
 import { buildClienteTaskGroups, resolveClienteNome } from '../../utils/taskGroups.js';
+import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { resolveCardTags, useClienteProjetoFilter } from './useClienteProjetoFilter.js';
 
 const styles = {
   page: {
@@ -108,11 +125,20 @@ const styles = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   }),
-  meta: {
+  // Container das tags cliente/projeto — o cap de largura fica AQUI e não em
+  // cada tag, senão duas tags disputariam o mesmo `maxWidth` e ambas seriam
+  // truncadas cedo demais (mesmo par cardMeta+tag de BoardV2.jsx).
+  tags: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
     flexShrink: 0,
+    maxWidth: '200px',
+    overflow: 'hidden',
+  },
+  tag: {
     fontSize: '11px',
     color: 'var(--v2-text-faint)',
-    maxWidth: '140px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -135,9 +161,9 @@ const styles = {
   },
 };
 
-function TaskRow({ task, onToggle }) {
+function TaskRow({ task, onToggle, projects, hideClienteTag }) {
   const done = task.status === 'done';
-  const meta = task.session_display_name || task.agent_id || '';
+  const { clienteNome, projetoNome } = resolveCardTags(task.projeto_id, projects);
   return (
     <div style={styles.row} data-testid={`tarefas-v2-row-${task.id}`}>
       <button
@@ -147,7 +173,12 @@ function TaskRow({ task, onToggle }) {
         onClick={() => onToggle(task)}
       />
       <span style={styles.title(done)}>{task.titulo}</span>
-      {meta && <span style={styles.meta} title={meta}>{meta}</span>}
+      <span style={styles.tags}>
+        {!hideClienteTag && clienteNome && (
+          <span style={styles.tag} title={clienteNome}>{clienteNome}</span>
+        )}
+        {projetoNome && <span style={styles.tag} title={projetoNome}>{projetoNome}</span>}
+      </span>
       <span style={styles.badge(done)}>{done ? 'Concluída' : 'Em aberto'}</span>
     </div>
   );
@@ -157,7 +188,7 @@ function TaskRow({ task, onToggle }) {
 // feito para o array flat, agora reaproveitado tanto no modo "cliente
 // específico" (sem header, 1 grupo só) quanto uma vez por cliente no modo
 // "Todos" (com header acima, ver TarefasV2).
-function OpenDoneSections({ open, done, onToggle }) {
+function OpenDoneSections({ open, done, onToggle, projects, hideClienteTag }) {
   return (
     <>
       <div style={styles.group}>
@@ -167,7 +198,9 @@ function OpenDoneSections({ open, done, onToggle }) {
         {open.length === 0 ? (
           <div style={styles.empty}>Nenhuma tarefa em aberto.</div>
         ) : (
-          open.map((t) => <TaskRow key={t.id} task={t} onToggle={onToggle} />)
+          open.map((t) => (
+            <TaskRow key={t.id} task={t} onToggle={onToggle} projects={projects} hideClienteTag={hideClienteTag} />
+          ))
         )}
       </div>
 
@@ -176,7 +209,9 @@ function OpenDoneSections({ open, done, onToggle }) {
           <div style={styles.groupHeader} data-testid="tarefas-v2-group-header-done">
             Concluídas <span style={styles.groupCount}>({done.length})</span>
           </div>
-          {done.map((t) => <TaskRow key={t.id} task={t} onToggle={onToggle} />)}
+          {done.map((t) => (
+            <TaskRow key={t.id} task={t} onToggle={onToggle} projects={projects} hideClienteTag={hideClienteTag} />
+          ))}
         </div>
       )}
     </>
@@ -186,34 +221,91 @@ function OpenDoneSections({ open, done, onToggle }) {
 export function TarefasV2({ projects = [], selectedClienteId }) {
   const { tasks, loading, completeTask, reopenTask } = useGlobalTasks();
 
+  // Cascata Cliente -> Projeto (estado local desta tela, mesmo hook que
+  // BoardV2.jsx já usa). `effectiveClienteId` (sidebar ?? seleção local) é o
+  // que governa agrupamento, branch de render e mensagem de vazio abaixo —
+  // ver cabeçalho do arquivo.
+  const {
+    clienteSelectEnabled,
+    clientes,
+    effectiveClienteId,
+    localClienteId,
+    setLocalClienteId,
+    subProjetoIds,
+    selectedProjetoId,
+    setSelectedProjetoId,
+    selectedProjectIds,
+  } = useClienteProjetoFilter(projects, selectedClienteId);
+
   const handleToggle = (task) => {
     if (task.status === 'done') reopenTask(task.session_key, task.id);
     else completeTask(task.session_key, task.id);
   };
 
   // Etapa 1: só agrupa por cliente (dados brutos, sem nome/split/ordenação —
-  // ver utils/taskGroups.js).
+  // ver utils/taskGroups.js). Usa `effectiveClienteId`, não o prop cru, senão
+  // uma seleção feita no select LOCAL de cliente (modo "Todos") não teria
+  // efeito nenhum sobre o agrupamento.
   const clienteGroups = useMemo(
-    () => buildClienteTaskGroups(tasks, selectedClienteId),
-    [tasks, selectedClienteId]
+    () => buildClienteTaskGroups(tasks, effectiveClienteId),
+    [tasks, effectiveClienteId]
   );
 
   // Etapa 2: resolve o nome de cada cliente (precisa de `projects`, que a
-  // etapa 1 não recebe), faz o split open/done por grupo, e ordena
-  // alfabeticamente por clienteNome (fallback pro clienteId cru, mesmo
-  // fallback de resolveClienteNome).
+  // etapa 1 não recebe), aplica o filtro Tier 2 (`selectedProjectIds`) SÓ
+  // quando o usuário escolheu um projeto específico no select de Tier 2
+  // (`selectedProjetoId != null`) — faz o split open/done por grupo, e ordena
+  // alfabeticamente por clienteNome.
+  //
+  // Gate em `selectedProjetoId`, não em `effectiveClienteId`: `selectedProjectIds`
+  // só lista nós REAIS presentes em `projects` (collectSubtreeIds, ver
+  // useClienteProjetoFilter.js). Gatear no cliente ativo, como este código
+  // fazia antes, aplicava esse filtro de nós reais o tempo todo — inclusive
+  // com o Tier 2 em "Todos os projetos" — e uma tarefa órfã (projeto
+  // removido/desconhecido do disco) não tem como casar com nenhum id dessa
+  // lista, então sumia da tela assim que QUALQUER cliente específico era
+  // aberto, mesmo sem nenhum projeto escolhido. Gatear no Tier 2 restringe o
+  // filtro de nós reais ao único caso em que ele faz sentido (uma escolha
+  // explícita de projeto); com o Tier 2 em "Todos os projetos", toda tarefa
+  // que `buildClienteTaskGroups` já rolou para este cliente aparece, órfã ou
+  // não — comportamento coberto pelo teste nomeado em TarefasV2.test.jsx.
   const processedGroups = useMemo(() => {
+    const projectIdSet = selectedProjetoId != null ? new Set(selectedProjectIds) : null;
     const withMeta = clienteGroups.map((group) => {
       const clienteNome = resolveClienteNome(group.clienteId, projects);
+      const groupTasks = projectIdSet
+        ? group.tasks.filter((t) => projectIdSet.has(t.projeto_id))
+        : group.tasks;
       return {
         clienteId: group.clienteId,
         clienteNome,
-        open: group.tasks.filter((t) => t.status !== 'done'),
-        done: group.tasks.filter((t) => t.status === 'done'),
+        open: groupTasks.filter((t) => t.status !== 'done'),
+        done: groupTasks.filter((t) => t.status === 'done'),
       };
     });
-    return [...withMeta].sort((a, b) => a.clienteNome.localeCompare(b.clienteNome));
-  }, [clienteGroups, projects]);
+    // Chave de ordenação: `clienteNome` agora pode ser `null` (decisão do
+    // Bruno, ver useClienteProjetoFilter.js/taskGroups.js — cliente sem nome
+    // resolvível não cai mais pro id cru). O sort só precisa de ALGUMA string
+    // comparável e estável, não de um nome de exibição — cai pro clienteId
+    // cru só aqui, internamente, sem renderizar nada.
+    return [...withMeta].sort((a, b) =>
+      (a.clienteNome || a.clienteId).localeCompare(b.clienteNome || b.clienteId)
+    );
+  }, [clienteGroups, projects, selectedProjetoId, selectedProjectIds]);
+
+  const filterBar = (
+    <ClienteProjetoFilterBar
+      clienteSelectEnabled={clienteSelectEnabled}
+      clientes={clientes}
+      localClienteId={localClienteId}
+      onSelectLocalCliente={setLocalClienteId}
+      effectiveClienteId={effectiveClienteId}
+      subProjetoIds={subProjetoIds}
+      selectedProjetoId={selectedProjetoId}
+      onSelectProjeto={setSelectedProjetoId}
+      projects={projects}
+    />
+  );
 
   if (loading) {
     return <div style={styles.page}><div style={styles.empty}>Carregando...</div></div>;
@@ -230,18 +322,30 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
     );
   }
 
-  if (selectedClienteId != null) {
-    // Cliente específico: 0 ou 1 grupo (ver buildClienteTaskGroups). Sem
-    // header — o cliente já está implícito na sidebar.
+  if (effectiveClienteId != null) {
+    // Cliente específico (via sidebar OU via select local): 0 ou 1 grupo (ver
+    // buildClienteTaskGroups). Sem header de cliente por linha — o cliente já
+    // está implícito no contexto, repetir seria ruído puro.
     const group = processedGroups[0];
     return (
       <div style={styles.page}>
         <div style={styles.wrap}>
+          {filterBar}
           {group ? (
-            <OpenDoneSections open={group.open} done={group.done} onToggle={handleToggle} />
+            <OpenDoneSections
+              open={group.open}
+              done={group.done}
+              onToggle={handleToggle}
+              projects={projects}
+              hideClienteTag={false}
+            />
           ) : (
             <div style={styles.empty} data-testid="tarefas-v2-empty-cliente">
-              Nenhuma tarefa para {resolveClienteNome(selectedClienteId, projects)}.
+              {/* Fallback pro clienteId cru: a decisão do Bruno cobre a tag
+                  por linha (já condicional, some sozinha) — não cobre
+                  explicitamente uma mensagem que PRECISA nomear o cliente
+                  pra fazer sentido. Ver "Pontos de atenção" no relatório. */}
+              Nenhuma tarefa para {resolveClienteNome(effectiveClienteId, projects) || effectiveClienteId}.
             </div>
           )}
         </div>
@@ -250,10 +354,12 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
   }
 
   // "Todos": um grupo por cliente com tarefas, já ordenados alfabeticamente,
-  // cada um com seu próprio header antes do markup open/done.
+  // cada um com seu próprio header antes do markup open/done. A tag de
+  // cliente por linha é suprimida aqui — o header do grupo já mostra o nome.
   return (
     <div style={styles.page}>
       <div style={styles.wrap}>
+        {filterBar}
         {processedGroups.map((group) => (
           <div
             key={group.clienteId}
@@ -261,9 +367,20 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
             data-testid={`tarefas-v2-cliente-group-${group.clienteId}`}
           >
             <div style={styles.clienteHeader} data-testid={`tarefas-v2-cliente-header-${group.clienteId}`}>
-              {group.clienteNome}
+              {/* Fallback pro clienteId cru: a decisão do Bruno cobre a tag
+                  por linha (já condicional, some sozinha) — não cobre
+                  explicitamente um HEADER estrutural, que precisa de algum
+                  rótulo pra distinguir grupos na tela "Todos". Ver "Pontos de
+                  atenção" no relatório do Dev. */}
+              {group.clienteNome || group.clienteId}
             </div>
-            <OpenDoneSections open={group.open} done={group.done} onToggle={handleToggle} />
+            <OpenDoneSections
+              open={group.open}
+              done={group.done}
+              onToggle={handleToggle}
+              projects={projects}
+              hideClienteTag
+            />
           </div>
         ))}
       </div>

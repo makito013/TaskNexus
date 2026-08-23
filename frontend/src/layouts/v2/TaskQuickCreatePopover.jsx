@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { resolveProjectName } from '../../components/board/CardFormModal.jsx';
+import { isClienteId } from '../../utils/clientes.js';
 
 const styles = {
   scrim: {
@@ -184,8 +185,10 @@ export function TaskQuickCreatePopover({ open, onClose, sessionKey, projects = [
 
   // "Clientes" = qualquer Project sem "/" no id (cliente-como-projeto e
   // projeto-solto-na-raiz contam como cliente de si mesmos) — mesma regra de
-  // CardFormModal.jsx/BoardView.jsx. Uma linha, não vale extrair util.
-  const clientes = projects.filter((p) => !p.id.includes('/'));
+  // CardFormModal.jsx/BoardView.jsx, centralizada em `isClienteId`
+  // (utils/clientes.js) pra não triplicar a regra (achado do QA na Fase 2,
+  // mesmo padrão de duplicação que causou o bug raiz desta epic).
+  const clientes = projects.filter((p) => isClienteId(p.id));
 
   const canSubmit = titulo.trim() !== '' && !saving;
 

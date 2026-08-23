@@ -18,6 +18,15 @@ export function clienteIdFromProjetoId(projetoId) {
   return (projetoId || '').split('/')[0];
 }
 
+// Um projeto_id é um id de CLIENTE quando é de nível-topo (não tem "/"): a
+// mesma regra que a sidebar v2, a cascata de filtro v2 e os selects de criação
+// usam pra separar "clientes" de sub-projetos. Centralizada aqui pra que a
+// cascata v2 não reescreva `!p.id.includes('/')` inline — divergência entre
+// cópias dessa regra foi a causa-raiz do bug de filtro desta tarefa.
+export function isClienteId(id) {
+  return typeof id === 'string' && id.length > 0 && !id.includes('/');
+}
+
 // Um projeto "tem subprojetos de verdade" quando seu Project.sub_projetos
 // (populado por scan_projects no backend) não é vazio. Usado tanto para
 // decidir se a Tier 2 do filtro/select aparece, quanto para decidir se a

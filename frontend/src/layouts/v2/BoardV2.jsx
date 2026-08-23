@@ -7,21 +7,28 @@
 // views/BoardView.jsx (v1) já usa — só a apresentação muda, conforme
 // instrução do Designer/TL para este milestone.
 //
-// Filtro de listagem/agregação (Fase 2 do plano, fix do Bruno: um card criado
-// dentro de um subprojeto ficava invisível no board sem um chat aberto
-// NAQUELE subprojeto específico): `selectedClienteId` vem do mesmo estado que
+// Filtro de listagem/agregação: `selectedClienteId` vem do mesmo estado que
 // AppV2.jsx já calcula pra sidebar de clientes (`handleSelectCliente`) e já
 // repassa pra TarefasV2 — DESACOPLADO de `selectedProjectId` (o projeto do
-// chat ativo no TerminalContext). `selectedProjectIds` agrega
-// `[selectedClienteId, ...subProjetoIds]` (subprojetos de
-// `projects.find(p => p.id === selectedClienteId)?.sub_projetos`), mesma
-// fórmula de `views/BoardView.jsx` (v1) pro caso "Todos" (null) -> []; "só
-// Cliente" -> cliente + todos os subprojetos. Sem cascata Tier 2 de Projeto
-// específico aqui (isso continua fora do escopo desta tela). Sem cliente
-// selecionado, `useCards([])` busca cards de TODOS os projetos (mesmo
-// comportamento "Todos" de v1) e o card mostra uma tag com o nome do projeto
-// para dar contexto; com exatamente 1 projeto agregado (cliente sem
-// subprojetos), a tag é redundante e some.
+// chat ativo no TerminalContext). A cascata Cliente -> Projeto agora mora em
+// `useClienteProjetoFilter.js` (estado LOCAL desta tela, não toca o estado
+// compartilhado com o chat) e é operada pela `ClienteProjetoFilterBar`: com a
+// sidebar em "Todos", os dois selects aparecem; com um cliente já fixado na
+// sidebar, só o select de Projeto. Sem cliente algum selecionado,
+// `useCards([])` busca cards de TODOS os projetos (mesmo comportamento
+// "Todos" de v1) e cada card mostra as tags de cliente/projeto pra dar
+// contexto.
+//
+// Órfãos (decisão do Bruno, sessão "card/tarefa órfão"): `useCards([])`
+// também é o que roda com um cliente FIXO enquanto o Tier 2 estiver em
+// "Todos os projetos" — a restrição ao cliente vira um filtro de EXIBIÇÃO
+// (client-side, por `clienteIdFromProjetoId`) em vez de ir na query, senão um
+// card de projeto órfão (removido/desconhecido do disco) nunca apareceria
+// (uma query escopada só conhece nós reais de `projects`). Ver comentário
+// junto de `useCards(fetchProjectIds)` abaixo para o detalhe completo, e
+// `useClienteProjetoFilter.js`/`utils/taskGroups.js` para a mesma decisão
+// aplicada ao NOME de um cliente/projeto que não resolve (tag omitida, nunca
+// o id cru).
 //
 // `selectedProjectId` continua existindo à parte, só para o fluxo de CRIAÇÃO
 // de card (`handleCreate` abaixo) — permanece atrelado ao projeto do chat
@@ -42,8 +49,11 @@
 // Não expandido silenciosamente: é um corte de escopo deliberado, não uma
 // lacuna esquecida.
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useCards } from '../../hooks/useCards.js';
+import { clienteIdFromProjetoId } from '../../utils/clientes.js';
+import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { resolveCardTags, useClienteProjetoFilter } from './useClienteProjetoFilter.js';
 
 const STATUSES = ['a_fazer', 'em_andamento', 'em_revisao', 'feito'];
 const STATUS_LABELS = {
@@ -222,11 +232,6 @@ const styles = {
   },
 };
 
-function resolveProjectName(projetoId, projects) {
-  const found = (projects || []).find((p) => p.id === projetoId);
-  return found ? found.nome : projetoId;
-}
-
 // Iniciais do responsável pelo card, a partir de `ultima_atualizacao_por`
 // ("bruno" ou "agente:{agent_id}") — mesma fonte de dado que
 // CardItem.jsx (v1) usa para o badge de origem, aqui reduzida a um avatar de
@@ -277,20 +282,52 @@ function AddCardForm({ onSubmit, onCancel }) {
 }
 
 export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = null }) {
-  // Subprojetos do cliente selecionado (formato de id completo
-  // "cliente/sub", conforme `Project.sub_projetos` já vem do backend) — mesma
-  // fonte usada por BoardView.jsx (v1) pra agregação Tier 1.
-  const subProjetoIds = useMemo(() => {
-    const found = projects.find((p) => p.id === selectedClienteId);
-    return found?.sub_projetos || [];
-  }, [projects, selectedClienteId]);
+  // Cascata Cliente -> Projeto (estado local desta tela). Atenção ao par de
+  // nomes parecidos: `selectedProjectIds` (plural) é o filtro de LISTAGEM que
+  // sai daqui; `selectedProjectId` (singular, prop) é o projeto do chat ativo
+  // e só governa a CRIAÇÃO de card mais abaixo.
+  const {
+    clienteSelectEnabled,
+    clientes,
+    effectiveClienteId,
+    localClienteId,
+    setLocalClienteId,
+    subProjetoIds,
+    selectedProjetoId,
+    setSelectedProjetoId,
+    selectedProjectIds,
+  } = useClienteProjetoFilter(projects, selectedClienteId);
 
-  const selectedProjectIds = useMemo(
-    () => (selectedClienteId == null ? [] : [selectedClienteId, ...subProjetoIds]),
-    [selectedClienteId, subProjetoIds]
-  );
+  // Órfãos (decisão do Bruno, sessão "card/tarefa órfão"): com um cliente
+  // fixo e o Tier 2 em "Todos os projetos", `selectedProjectIds` só lista nós
+  // REAIS presentes em `projects` (collectSubtreeIds, useClienteProjetoFilter.js)
+  // — uma query de servidor escopada a essa lista nunca poderia trazer um
+  // card de projeto órfão (removido/desconhecido do disco), diferente de
+  // TarefasV2.jsx (que já busca tudo via useGlobalTasks e filtra client-side).
+  // Pra igualar o comportamento: com Tier 2 em "Todos os projetos", busca
+  // TUDO (`useCards([])`, mesmo mecanismo "sem filtro" documentado no
+  // cabeçalho de useCards.js) e filtra a EXIBIÇÃO client-side por prefixo de
+  // cliente — mesma função (`clienteIdFromProjetoId`) que TarefasV2/
+  // useClienteProjetoFilter.js já usam. Só quando o Tier 2 já escolheu um
+  // projeto específico a query volta a ser escopada (`selectedProjectIds`):
+  // um projeto órfão nunca aparece nesse dropdown pra ser escolhido, então
+  // esse caso já é consistente com TarefasV2 (que também só derruba a órfã
+  // quando o Tier 2 escolhe um projeto específico).
+  const fetchProjectIds = effectiveClienteId != null && selectedProjetoId == null
+    ? []
+    : selectedProjectIds;
+  const { cards: fetchedCards, createCard, updateCard } = useCards(fetchProjectIds);
 
-  const { cards, createCard, updateCard } = useCards(selectedProjectIds);
+  // Filtro de exibição client-side, sempre que um cliente está fixo — no
+  // ramo "Tier 2 em Todos" acima ele é o que de fato restringe a tela a este
+  // cliente (a busca trouxe tudo); no ramo "Tier 2 escopado" ele é redundante
+  // com a query (todo card já pertence ao cliente), mas inofensivo. Também
+  // filtra fora, de propósito, um card recém-criado via append otimista
+  // (useCards.js) que não pertença ao cliente atual — o append otimista em
+  // si não sabe filtrar por cliente.
+  const cards = effectiveClienteId != null
+    ? fetchedCards.filter((c) => clienteIdFromProjetoId(c.projeto_id) === effectiveClienteId)
+    : fetchedCards;
 
   // Coluna com o formulário de "+ Adicionar card" aberto (null = nenhuma).
   const [addingStatus, setAddingStatus] = useState(null);
@@ -304,6 +341,17 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
 
   return (
     <div style={styles.page}>
+      <ClienteProjetoFilterBar
+        clienteSelectEnabled={clienteSelectEnabled}
+        clientes={clientes}
+        localClienteId={localClienteId}
+        onSelectLocalCliente={setLocalClienteId}
+        effectiveClienteId={effectiveClienteId}
+        subProjetoIds={subProjetoIds}
+        selectedProjetoId={selectedProjetoId}
+        onSelectProjeto={setSelectedProjetoId}
+        projects={projects}
+      />
       <div style={styles.scroller}>
         {STATUSES.map((status) => {
           const columnCards = cards.filter((c) => c.status === status);
@@ -315,37 +363,37 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
               </div>
 
               <div style={styles.columnBody}>
-                {columnCards.map((card) => (
-                  <div key={card.id} style={styles.card} data-testid={`board-v2-card-${card.id}`}>
-                    <div style={styles.cardTitle}>{card.titulo}</div>
-                    {card.descricao && <div style={styles.cardDesc}>{card.descricao}</div>}
-                    <div style={styles.cardFooter}>
-                      <div style={styles.cardMeta}>
-                        <span style={styles.avatar} title={card.ultima_atualizacao_por || 'bruno'}>
-                          {resolveAvatarInitials(card.ultima_atualizacao_por)}
-                        </span>
-                        {/* Redundante quando a agregação atual resolve a exatamente 1
-                            projeto (cliente sem subprojetos, ou "Todos" nunca chega
-                            aqui com length 1) — some nesse único caso; "Todos" (length
-                            0) e cliente com múltiplos subprojetos (length > 1) mantêm a
-                            tag pra desambiguar de qual projeto cada card é. */}
-                        {selectedProjectIds.length !== 1 && (
-                          <span style={styles.tag}>{resolveProjectName(card.projeto_id, projects)}</span>
-                        )}
+                {columnCards.map((card) => {
+                  // Tag de cliente sempre presente; a de projeto só quando o
+                  // projeto é de fato diferente do cliente (um
+                  // cliente-como-projeto repetiria o mesmo nome duas vezes).
+                  const { clienteNome, projetoNome } = resolveCardTags(card.projeto_id, projects);
+                  return (
+                    <div key={card.id} style={styles.card} data-testid={`board-v2-card-${card.id}`}>
+                      <div style={styles.cardTitle}>{card.titulo}</div>
+                      {card.descricao && <div style={styles.cardDesc}>{card.descricao}</div>}
+                      <div style={styles.cardFooter}>
+                        <div style={styles.cardMeta}>
+                          <span style={styles.avatar} title={card.ultima_atualizacao_por || 'bruno'}>
+                            {resolveAvatarInitials(card.ultima_atualizacao_por)}
+                          </span>
+                          {clienteNome && <span style={styles.tag}>{clienteNome}</span>}
+                          {projetoNome && <span style={styles.tag}>{projetoNome}</span>}
+                        </div>
+                        <select
+                          style={styles.statusSelect}
+                          value={card.status}
+                          aria-label={`Mover "${card.titulo}"`}
+                          onChange={(e) => handleMove(card.id, e.target.value)}
+                        >
+                          {STATUSES.map((s) => (
+                            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                          ))}
+                        </select>
                       </div>
-                      <select
-                        style={styles.statusSelect}
-                        value={card.status}
-                        aria-label={`Mover "${card.titulo}"`}
-                        onChange={(e) => handleMove(card.id, e.target.value)}
-                      >
-                        {STATUSES.map((s) => (
-                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                        ))}
-                      </select>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {addingStatus === status ? (

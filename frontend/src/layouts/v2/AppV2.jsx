@@ -29,7 +29,7 @@ import {
   SHELL_BASE_RECT_STYLE,
 } from '../../hooks/useVisibleViewportShell.js';
 import { useTasks } from '../../hooks/useTasks.js';
-import { clienteIdFromProjetoId } from '../../utils/clientes.js';
+import { clienteIdFromProjetoId, isClienteId } from '../../utils/clientes.js';
 import { MOBILE_VIEWPORT_QUERY } from '../../utils/viewport.js';
 import { SidebarV2 } from './SidebarV2.jsx';
 import { ChatSidebarV2 } from './ChatSidebarV2.jsx';
@@ -170,8 +170,10 @@ export function AppV2({ initialAppearance }) {
 
   // "Clientes" candidatos à sidebar: qualquer Project cujo id não tem "/"
   // (cliente-como-projeto e projeto-solto-na-raiz contam como cliente de si
-  // mesmos) — mesma regra usada pelo Tier 1 do filtro de BoardView.jsx.
-  const clientes = useMemo(() => projects.filter((p) => !p.id.includes('/')), [projects]);
+  // mesmos) — mesma regra usada pelo Tier 1 do filtro de BoardView.jsx,
+  // centralizada em `isClienteId` (utils/clientes.js) para não triplicar a
+  // regra (ressalva do Revisor na Fase 1, endereçada aqui na Fase 2).
+  const clientes = useMemo(() => projects.filter((p) => isClienteId(p.id)), [projects]);
 
   // "Todos" (null) é só um filtro da coluna da esquerda: NÃO toca
   // selectedProjectId/activeSessionKey — o chat aberto no ChatV2 continua

@@ -167,36 +167,65 @@ describe('AppV2 — as 4 telas navegam de verdade (não mais placeholder)', () =
 describe('AppV2 — BoardV2 segue o cliente selecionado na sidebar (Fase 2, desacoplado do chat ativo)', () => {
   beforeEach(() => { mockUseCards.mockClear(); });
 
+  // Órfãos (decisão do Bruno, sessão "card/tarefa órfão", endereçada em
+  // BoardV2.jsx): com um cliente fixo e o Tier 2 em "Todos os projetos" —
+  // como em todo teste deste describe, nenhum narrowing de projeto —
+  // BoardV2 agora busca TUDO (`useCards([])`) e filtra a EXIBIÇÃO
+  // client-side, em vez de escopar a query a `[selectedClienteId]`. A query
+  // sozinha não distingue mais "Todos" de "cliente específico" (as duas
+  // viram `useCards([])`), então estes 3 testes passam a provar a
+  // equivalência "BoardV2 recebe selectedClienteId == estado da sidebar"
+  // pela TELA (qual card aparece), não só pelos argumentos da query — a
+  // fórmula de agregação em si continua coberta isoladamente em
+  // BoardV2.test.jsx.
+  function mockTwoClientCards() {
+    mockUseCards.mockImplementation(() => ({
+      cards: [
+        { id: 1, titulo: 'Card Projeto A', descricao: null, projeto_id: 'projA', status: 'a_fazer', ultima_atualizacao_por: 'bruno' },
+        { id: 2, titulo: 'Card Outro Cliente', descricao: null, projeto_id: 'outroCliente', status: 'a_fazer', ultima_atualizacao_por: 'bruno' },
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    }));
+  }
+
   it('on first render, BoardV2 is filtered by the client derived from the active chat project (lazy-init of selectedClienteId)', () => {
+    mockTwoClientCards();
     render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
     goTo('Board');
     // mockUseTerminal (topo do arquivo) tem selectedProjectId: 'projA', que
     // não tem "/" — clienteIdFromProjetoId('projA') === 'projA'.
-    expect(mockUseCards).toHaveBeenCalledWith(['projA']);
+    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(screen.getByText('Card Projeto A')).toBeTruthy();
+    expect(screen.queryByText('Card Outro Cliente')).toBeNull();
   });
 
   it('selecting "Todos" on the sidebar (a board-only, no-op-on-chat action) switches BoardV2 to fetch cards for all projects', () => {
+    mockTwoClientCards();
     render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
     goTo('Board');
-    expect(mockUseCards).toHaveBeenCalledWith(['projA']);
+    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(screen.queryByText('Card Outro Cliente')).toBeNull();
 
-    // "Todos" na ClienteList da SidebarV2 (desktop) — via `title` (não
-    // `getByText`): com "Todos" selecionado, selectedProjectIds vira [] e a
-    // tag de projeto do BoardV2 (Fase 2) passa a mostrar "Projeto A" em cada
-    // card também, então getByText('Projeto A') mais abaixo colidiria.
+    // "Todos" na ClienteList da SidebarV2 (desktop) — via `title`.
     fireEvent.click(screen.getByTitle('Todos'));
 
     expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(screen.getByText('Card Outro Cliente')).toBeTruthy();
   });
 
   it('re-selecting the client on the sidebar switches BoardV2 back to that client\'s cards', () => {
+    mockTwoClientCards();
     render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
     goTo('Board');
     fireEvent.click(screen.getByTitle('Todos'));
     expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(screen.getByText('Card Outro Cliente')).toBeTruthy();
 
     fireEvent.click(screen.getByTitle('Projeto A'));
-    expect(mockUseCards).toHaveBeenLastCalledWith(['projA']);
+    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(screen.getByText('Card Projeto A')).toBeTruthy();
+    expect(screen.queryByText('Card Outro Cliente')).toBeNull();
   });
 });
 

@@ -43,10 +43,14 @@ export function buildClienteTaskGroups(tasks, selectedClienteId) {
   return groups;
 }
 
-// Resolve o nome de exibição de um cliente — mesmo padrão fallback nome->id
-// já usado em clientes.js (resolveClienteBadgeLabel)/ChatSidebarV2.jsx
-// (cliente?.nome || group.clienteId): projeto removido/desconhecido cai pro
-// próprio clienteId cru, sem crash.
+// Resolve o nome de exibição de um cliente. Decisão de produto (Bruno, sessão
+// "tarefa/card órfão"): um cliente sem nome resolvível (projeto
+// removido/desconhecido, sem entrada em `projects`) não mostra o id cru como
+// se fosse nome — retorna `null` e quem consome decide o que fazer com a
+// ausência (tag some sozinha por já ser condicional; um rótulo estrutural,
+// como o header de grupo em TarefasV2.jsx, precisa de um fallback próprio,
+// documentado onde é usado). Antes retornava o `clienteId` cru — esse
+// fallback é exatamente o que a decisão do Bruno pediu para tirar.
 export function resolveClienteNome(clienteId, projects) {
-  return (projects || []).find((p) => p.id === clienteId)?.nome || clienteId;
+  return (projects || []).find((p) => p.id === clienteId)?.nome || null;
 }
