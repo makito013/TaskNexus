@@ -460,6 +460,115 @@ describe('CardFormModal — preview de markdown', () => {
   });
 });
 
+describe('CardFormModal — preview default state', () => {
+  it('opens already rendered (preview) by default when editing a card with an existing descricao', () => {
+    const card = makeCard({ descricao: 'texto **negrito**' });
+    render(
+      <CardFormModal
+        open={true}
+        mode="edit"
+        card={card}
+        projetos={PROJETOS}
+        onSubmit={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onUploadImage={vi.fn()}
+        onDeleteImage={vi.fn()}
+      />
+    );
+
+    const preview = screen.getByTestId('card-descricao-preview');
+    expect(preview.innerHTML).toContain('<strong>negrito</strong>');
+    expect(screen.getByText('Editar')).not.toBeNull();
+    expect(screen.queryByLabelText('Descrição (Markdown)')).toBeNull();
+  });
+
+  it('opens in raw (edit) mode by default when editing a card without a descricao', () => {
+    const card = makeCard({ descricao: '' });
+    render(
+      <CardFormModal
+        open={true}
+        mode="edit"
+        card={card}
+        projetos={PROJETOS}
+        onSubmit={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onUploadImage={vi.fn()}
+        onDeleteImage={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
+    expect(screen.getByText('Visualizar')).not.toBeNull();
+    expect(screen.getByLabelText('Descrição (Markdown)')).not.toBeNull();
+  });
+
+  it('opens in raw (edit) mode by default when creating a new top-level card', () => {
+    render(
+      <CardFormModal
+        open={true}
+        mode="create-top"
+        projetos={PROJETOS}
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
+    expect(screen.getByText('Visualizar')).not.toBeNull();
+  });
+
+  it('starting from the preview default, toggling to "Editar" reveals the textarea pre-filled with the existing descricao', () => {
+    const card = makeCard({ descricao: 'texto **negrito**' });
+    render(
+      <CardFormModal
+        open={true}
+        mode="edit"
+        card={card}
+        projetos={PROJETOS}
+        onSubmit={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onUploadImage={vi.fn()}
+        onDeleteImage={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Editar'));
+
+    expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
+    expect(screen.getByLabelText('Descrição (Markdown)').value).toBe('texto **negrito**');
+    expect(screen.getByText('Visualizar')).not.toBeNull();
+  });
+
+  it('starting from the preview default, editing the raw text and toggling back reflects the change in the rendered preview', () => {
+    const card = makeCard({ descricao: 'texto **negrito**' });
+    render(
+      <CardFormModal
+        open={true}
+        mode="edit"
+        card={card}
+        projetos={PROJETOS}
+        onSubmit={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onUploadImage={vi.fn()}
+        onDeleteImage={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Editar'));
+    fireEvent.change(screen.getByLabelText('Descrição (Markdown)'), {
+      target: { value: 'novo texto *italico*' },
+    });
+    fireEvent.click(screen.getByText('Visualizar'));
+
+    const preview = screen.getByTestId('card-descricao-preview');
+    expect(preview.innerHTML).toContain('<em>italico</em>');
+  });
+});
+
 describe('CardFormModal — estado de envio', () => {
   it('disables the submit button while onSubmit is pending and closes after it resolves', async () => {
     let resolveSubmit;

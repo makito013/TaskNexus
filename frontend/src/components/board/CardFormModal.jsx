@@ -310,7 +310,13 @@ export function CardFormModal({
   const [titulo, setTitulo] = useState(() => card?.titulo || '');
   const [status, setStatus] = useState(() => card?.status || 'a_fazer');
   const [descricao, setDescricao] = useState(() => card?.descricao || '');
-  const [showPreview, setShowPreview] = useState(false);
+  // Abre já renderizado quando editamos um card que já tem descrição —
+  // evita a formatação markdown crua saltando aos olhos ao reabrir um card
+  // existente (Arquiteto: fix de regressão parcial do commit 505a777, que
+  // só cobriu o preview do Board v2, não este modal). Criar um card novo,
+  // ou editar um card sem descrição ainda, continua abrindo cru — nada
+  // para renderizar / nada que já exista para "proteger" da edição crua.
+  const [showPreview, setShowPreview] = useState(() => isEdit && !!card?.descricao);
   const [saving, setSaving] = useState(false);
 
   if (!open) return null;
