@@ -43,13 +43,23 @@
 // reaproveitada, apresentação nova e mínima (a especificação do Designer
 // para este card não pede um menu específico, só que a ação exista).
 //
-// NÃO implementado nesta tela (ver relatório do Dev): subcards/upload de
-// imagem — a especificação de card do Designer para BoardV2 pede apenas
-// título + descrição + avatar + tag, sem contador de subtarefas nem anexos.
-// Não expandido silenciosamente: é um corte de escopo deliberado, não uma
-// lacuna esquecida.
-
+// NÃO implementado nesta tela (ver relatório do Dev): contador de
+// subtarefas/tira de imagens inline no rosto do card — a especificação de
+// card do Designer para BoardV2 pede apenas título + descrição + avatar +
+// tag. Não expandido silenciosamente: é um corte de escopo deliberado, não
+// uma lacuna esquecida.
+//
+// Fase 4 (épico "visualização global de cards presa ao agente aberto"):
+// clicar no título do card abre `CardFormModal` (components/board/, mesmo
+// componente compartilhado que views/BoardView.jsx v1 já monta) em modo
+// 'edit' — reaproveita o fix da Fase 3 (o modal abre a descrição já
+// renderizada quando o card já tem uma) e dá a este layout uma forma de
+// ver/editar a descrição completa e anexar/remover imagem, sem precisar da
+// v1. Continua sem exibir subcards nesta tela (decisão pré-existente acima):
+// o modal em modo 'edit' só usa `card.subcards.length` para a contagem do
+// aviso de exclusão em cascata, nunca renderiza a lista de subcards em si.
 import { useState } from 'react';
+import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
@@ -125,7 +135,21 @@ const styles = {
     flexDirection: 'column',
     gap: '8px',
   },
+  // Reaproveitado por um <button> (título clicável, abre o CardFormModal em
+  // modo 'edit') em vez do <div> original — os resets abaixo (border/
+  // background/padding/margin/textAlign/font/width) fazem o botão se
+  // comportar visualmente como o texto que era antes, sem herdar o chrome
+  // padrão de <button> do browser.
   cardTitle: {
+    display: 'block',
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    margin: 0,
+    textAlign: 'left',
+    font: 'inherit',
+    cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
     color: 'var(--v2-text)',
@@ -316,7 +340,14 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
   const fetchProjectIds = effectiveClienteId != null && selectedProjetoId == null
     ? []
     : selectedProjectIds;
-  const { cards: fetchedCards, createCard, updateCard } = useCards(fetchProjectIds);
+  const {
+    cards: fetchedCards,
+    createCard,
+    updateCard,
+    deleteCard,
+    uploadCardImage,
+    deleteCardImage,
+  } = useCards(fetchProjectIds);
 
   // Filtro de exibição client-side, sempre que um cliente está fixo — no
   // ramo "Tier 2 em Todos" acima ele é o que de fato restringe a tela a este
@@ -332,12 +363,37 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
   // Coluna com o formulário de "+ Adicionar card" aberto (null = nenhuma).
   const [addingStatus, setAddingStatus] = useState(null);
 
+  // Id do card sendo editado no CardFormModal (Fase 4), ou `null` = modal
+  // fechado. Guarda só o id, NÃO um snapshot do card — diferente de
+  // `formState.card` em views/BoardView.jsx v1 (que guarda o objeto e não se
+  // atualiza sozinho enquanto o modal está aberto). Divergência deliberada:
+  // em v1 o rosto do card já tem sua própria `ImageAttachments` sempre
+  // visível, então uma imagem recém-enviada aparece ali mesmo com o modal
+  // "desatualizado". BoardV2 não tem tira de imagem no rosto do card (ver
+  // comentário "NÃO implementado" acima) — o modal é a ÚNICA superfície de
+  // imagem aqui, então ele precisa refletir `uploadCardImage`/
+  // `deleteCardImage` (mutações de `useCards`, que atualizam `cards`) em
+  // tempo real, ou pareceria travado ao enviar uma imagem. Derivar de
+  // `cards` a cada render resolve isso; `CardFormModal` usa `useState` com
+  // inicializador preguiçoso para título/descrição/status, então uma
+  // mudança na referência de `card` entre renders não reseta o que o Bruno
+  // já estiver digitando.
+  const [editingCardId, setEditingCardId] = useState(null);
+  const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
+
   const handleCreate = async (status, titulo) => {
     await createCard({ titulo, projeto_id: selectedProjectId, status });
     setAddingStatus(null);
   };
 
   const handleMove = (cardId, status) => updateCard(cardId, { status });
+
+  const handleEditSubmit = (payload) => updateCard(editingCardId, payload);
+
+  const handleEditDelete = async (cardId) => {
+    await deleteCard(cardId);
+    setEditingCardId(null);
+  };
 
   return (
     <div style={styles.page}>
@@ -370,7 +426,13 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
                   const { clienteNome, projetoNome } = resolveCardTags(card.projeto_id, projects);
                   return (
                     <div key={card.id} style={styles.card} data-testid={`board-v2-card-${card.id}`}>
-                      <div style={styles.cardTitle}>{card.titulo}</div>
+                      <button
+                        type="button"
+                        style={styles.cardTitle}
+                        onClick={() => setEditingCardId(card.id)}
+                      >
+                        {card.titulo}
+                      </button>
                       {card.descricao && <div style={styles.cardDesc}>{card.descricao}</div>}
                       <div style={styles.cardFooter}>
                         <div style={styles.cardMeta}>
@@ -412,6 +474,20 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
           );
         })}
       </div>
+
+      {editingCard && (
+        <CardFormModal
+          open
+          mode="edit"
+          card={editingCard}
+          projetos={projects}
+          onSubmit={handleEditSubmit}
+          onDelete={handleEditDelete}
+          onClose={() => setEditingCardId(null)}
+          onUploadImage={(file) => uploadCardImage(editingCardId, file)}
+          onDeleteImage={(imageId) => deleteCardImage(editingCardId, imageId)}
+        />
+      )}
     </div>
   );
 }

@@ -485,6 +485,120 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
   });
 });
 
+// Fase 4 (épico "visualização global de cards presa ao agente aberto"): o
+// título do card agora abre o CardFormModal (components/board/, componente
+// real, não mockado) em modo 'edit'. Testes novos em inglês (convenção de
+// nomenclatura da persona Dev) — os describes/its acima ficam em português
+// por serem pré-existentes, não migrados nesta fase.
+describe('BoardV2 - CardFormModal integration via the clickable card title', () => {
+  function mockCardsWithActions(cards, overrides = {}) {
+    const actions = {
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn().mockResolvedValue({}),
+      deleteCard: vi.fn().mockResolvedValue({}),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      ...overrides,
+    };
+    mockUseCards.mockReturnValue(actions);
+    return actions;
+  }
+
+  it('opens the edit modal with the clicked card data', () => {
+    mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('Card 1'));
+
+    expect(screen.getByText('Editar Card')).toBeTruthy();
+    expect(screen.getByLabelText('Título').value).toBe('Card 1');
+  });
+
+  it('submitting the form calls updateCard with the edited card id and the new payload', async () => {
+    const { updateCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('Card 1'));
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Card 1 edited' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(updateCard).toHaveBeenCalled());
+    expect(updateCard).toHaveBeenCalledWith(1, expect.objectContaining({ titulo: 'Card 1 edited', id: 1 }));
+  });
+
+  it('deleting the card calls deleteCard and closes the modal', async () => {
+    const { deleteCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('Card 1'));
+    fireEvent.click(screen.getByText('Excluir'));
+
+    await waitFor(() => expect(deleteCard).toHaveBeenCalledWith(1));
+    expect(screen.queryByText('Editar Card')).toBeNull();
+  });
+
+  it('closing the modal without saving ("x" button) does not call updateCard', () => {
+    const { updateCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('Card 1'));
+    fireEvent.click(screen.getByLabelText('Fechar'));
+
+    expect(screen.queryByText('Editar Card')).toBeNull();
+    expect(updateCard).not.toHaveBeenCalled();
+  });
+
+  // QA edge case: `editingCardId` only stores the id, not a snapshot — the
+  // edited card is derived via `cards.find(...)` on every render (see comment
+  // above `editingCardId` in BoardV2.jsx). If the card disappears from
+  // `cards` while the modal is open — deleted from another tab/session, or
+  // dropped by the Cliente/Projeto display filter — `cards.find` returns
+  // `undefined` and the `{editingCard && <CardFormModal ... />}` guard must
+  // unmount the modal instead of handing `card={undefined}` to
+  // CardFormModal (which dereferences `card.id`/`card.subcards` once
+  // `isEdit` is true).
+  it('closes the modal by itself, without crashing, if the card being edited disappears from the list', () => {
+    const actions = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    const { rerender } = render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('Card 1'));
+    expect(screen.getByText('Editar Card')).toBeTruthy();
+
+    // Simulates the card vanishing from `cards` — e.g. deleted elsewhere, or
+    // filtered out by a Cliente/Projeto change while the modal stays open.
+    mockUseCards.mockReturnValue({ ...actions, cards: [] });
+    expect(() => {
+      rerender(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    }).not.toThrow();
+
+    expect(screen.queryByText('Editar Card')).toBeNull();
+  });
+
+  it('binds image upload/delete to the card actually being edited, not a stale id from a previous modal', () => {
+    const card1 = fakeCard({ id: 1, titulo: 'Card 1', imagens: [{ id: 'img-1', url: '/x/1.png' }] });
+    const card2 = fakeCard({ id: 2, titulo: 'Card 2', imagens: [] });
+    const { uploadCardImage, deleteCardImage } = mockCardsWithActions([card1, card2]);
+    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+
+    // Open card 1, delete its existing image — must go out bound to card 1's id.
+    fireEvent.click(screen.getByText('Card 1'));
+    fireEvent.click(screen.getByLabelText('Excluir imagem'));
+    expect(deleteCardImage).toHaveBeenCalledWith(1, 'img-1');
+
+    // Close and reopen on card 2 — the closure must now point at card 2, not
+    // the previously edited card 1.
+    fireEvent.click(screen.getByLabelText('Fechar'));
+    fireEvent.click(screen.getByText('Card 2'));
+
+    const file = new File(['x'], 'photo.png', { type: 'image/png' });
+    const fileInput = screen.getByTestId('image-attachments-input-2');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(uploadCardImage).toHaveBeenCalledWith(2, file);
+  });
+});
+
 describe('BoardV2 — tags de cliente e projeto no card', () => {
   it('shows the client tag on every card, including in "Todos"', () => {
     const multiProjects = [
