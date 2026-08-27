@@ -201,8 +201,31 @@ def _pretrust_projects() -> None:
         return
 
 
+def normalize_cross_platform_path(path: str | None) -> str | None:
+    if not path:
+        return path
+    path_str = str(path).strip()
+    if sys.platform == "win32":
+        if path_str.startswith("/mnt/") and len(path_str) >= 6 and path_str[6:7] in ("/", "\\", ""):
+            drive_letter = path_str[5:6].upper()
+            rest = path_str[6:].replace("/", "\\")
+            return f"{drive_letter}:{rest}"
+    else:
+        if len(path_str) >= 2 and path_str[1] == ":" and path_str[0].isalpha():
+            drive_letter = path_str[0].lower()
+            rest = path_str[2:].replace("\\", "/")
+            return f"/mnt/{drive_letter}{rest}"
+    return path_str
+
+
 def _resolve_projects_root_value(settings: dict) -> str:
-    return settings.get("projects_root_path") or os.getenv("PROJECTS_ROOT") or os.path.expanduser("~/projetos")
+    raw = settings.get("projects_root_path") or os.getenv("PROJECTS_ROOT") or os.path.expanduser("~/projetos")
+    normalized = normalize_cross_platform_path(raw)
+    if normalized and os.path.isdir(normalized):
+        return normalized
+    if raw and os.path.isdir(raw):
+        return raw
+    return normalized or raw or os.path.expanduser("~/projetos")
 
 
 async def _reload_projects_root() -> None:
@@ -669,18 +692,17 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
         "markers": (),
         "exit_is_failure": True,
     },
-    "antigravity": {
-        "markers": (b"No session found", b"Session not found"),
-        "exit_is_failure": False,
-    },
-    "gemini": {
-        "markers": (b"No session found", b"Session not found"),
-        "exit_is_failure": False,
-    },
-    "agy": {
-        "markers": (b"No session found", b"Session not found"),
-        "exit_is_failure": False,
-    },
+    # antigravity/gemini/agy have deliberately NO entry here (same spirit as
+    # "terminal", which also has none): resume means `--continue` ("most
+    # recent conversation"), verified experimentally (2026-08-26) to never
+    # fail — with zero prior conversations it just starts a fresh one
+    # silently, with no error text to key a probe on. A `signature` dict
+    # with empty markers would still be truthy and make the caller run the
+    # up-to-5s probe loop for nothing, blocking the user's input the whole
+    # time (ws_to_pty() only starts after the probe returns) — pure cost,
+    # zero detection. Omitting the entry makes `.get()` return None, so
+    # `if resume and signature:` below skips the probe entirely and goes
+    # straight to full-duplex streaming.
 }
 
 
@@ -795,29 +817,29 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
     ia="cursor" always resumes an existing chat — ver o ramo abaixo para o
     porquê de `--resume` vir por último e de `system_prompt` ser ignorado.
 
-    Other agent types (Gemini/Antigravity's `agy`) now get the same
-    session-id contract as claude: a fresh spawn passes `--session-id
-    <session_id>` (the id WE generate, same as claude), and `resume=True`
-    passes `--resume <session_id>` explicitly — not `--continue` ("resume the
-    most recent conversation"), which stays unused here precisely because it
-    is ambiguous across a project's multiple concurrent agy instances
-    (multi-chat): a cold reconnect (PTY killed by the grace-period cleanup,
-    or a reload/server restart) could silently resume a DIFFERENT tab's
-    conversation if we relied on "most recent" instead of an explicit id.
-    `system_prompt`, when present on a fresh session, is passed via
-    `--prompt-interactive` (agy's flag — NOT --append-system-prompt, that is
-    claude-specific).
+    Other agent types (Gemini/Antigravity's `agy`) do NOT have an explicit
+    session-id contract: verified experimentally (2026-08-26) against the
+    real `agy` binary that `--session-id` and `--resume` are simply not
+    recognized flags (Go flag parser: "flags provided but not defined"),
+    which made every antigravity/gemini spawn die on startup — that was the
+    actual bug. `--conversation <id>` is agy's real resume flag, but it does
+    NOT accept externally-assigned ids either: passing a made-up id always
+    prints `warning: conversation "<id>" not found` and starts a brand new
+    conversation, proving agy owns its own id space and there is no way for
+    us to pin a conversation to an id we generate.
 
-    ASSUMPTION NOT VERIFIED EXPERIMENTALLY: this assumes the real `agy` CLI
-    actually accepts `--session-id <id>` on a fresh session and later accepts
-    that same id back via `--resume <id>` to reattach the right conversation
-    (i.e. explicit-id resume, with the same semantics as claude's
-    --session-id/--resume pair). This was not spiked against the real agy
-    binary in this change — if that contract turns out to be wrong (e.g. agy
-    silently ignores --session-id, or --resume only accepts "most recent"
-    despite taking an argument), the multi-chat ambiguity this docstring
-    used to warn about would resurface silently. Treat this as the current
-    intended behavior, not a confirmed fact.
+    So this branch falls back to agy's own "most recent" semantics:
+    `resume=True` passes `--continue` (confirmed to work even with zero
+    prior conversations — it just starts fresh, no error). This reintroduces
+    the multi-chat ambiguity a prior version of this docstring warned about
+    (a cold reconnect could resume a DIFFERENT tab's conversation in the
+    same project) — that is a known, accepted limitation until agy exposes
+    a real explicit-id resume contract, not an oversight.
+    `--dangerously-skip-permissions` is restored here (it was dropped when
+    this branch was split out from the generic fallback below, silently
+    losing auto-approve for these agents). `system_prompt`, only on a fresh
+    session, is passed via `--prompt-interactive` (agy's flag — NOT
+    --append-system-prompt, that is claude-specific).
     """
     if agent is None or agent.ia == "claude":
         return _build_pty_cmd(session_id, resume, system_prompt, base_cmd=agent.cmd if agent else None)
@@ -855,13 +877,11 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
         # responder. Mesma paridade do `agy`.
         return list(agent.cmd) + ["--trust", "--resume", session_id]
     if agent.ia in ("antigravity", "gemini", "agy"):
-        cmd = list(agent.cmd)
+        cmd = list(agent.cmd) + ["--dangerously-skip-permissions"]
         if resume:
-            cmd += ["--resume", session_id]
-        else:
-            cmd += ["--session-id", session_id]
-            if system_prompt:
-                cmd += ["--prompt-interactive", system_prompt]
+            cmd += ["--continue"]
+        elif system_prompt:
+            cmd += ["--prompt-interactive", system_prompt]
         return cmd
     cmd = list(agent.cmd) + ["--dangerously-skip-permissions"]
     if system_prompt:

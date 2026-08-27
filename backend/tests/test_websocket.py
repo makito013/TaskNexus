@@ -319,10 +319,11 @@ def test_build_agent_cmd_delegates_to_claude_contract_for_none_or_claude_agent(c
 
 def test_build_agent_cmd_uses_agent_cmd_for_non_claude_agent():
     """Non-claude agents (e.g. Gemini/agy) must launch their own cmd, never
-    'claude', and use the explicit --session-id contract (same shape as
-    claude's own --session-id/--resume pair) — NOT the generic
-    --dangerously-skip-permissions fallback that unlisted ia types get,
-    since antigravity/gemini/agy have their own branch in _build_agent_cmd."""
+    'claude', with --dangerously-skip-permissions (verified experimentally
+    2026-08-26: the real agy binary has no --session-id flag at all — it
+    rejects it as unrecognized and dies on startup, which is exactly the
+    "antigravity won't open" bug this test now guards against; --session-id
+    must never reappear here)."""
     from app.main import _build_agent_cmd
     from app.models import Agent
 
@@ -331,9 +332,8 @@ def test_build_agent_cmd_uses_agent_cmd_for_non_claude_agent():
     fresh = _build_agent_cmd(gemini_agent, "sid-1", resume=False, system_prompt="You are agent X")
     assert fresh[0] == "agy"
     assert "claude" not in fresh
-    assert "--dangerously-skip-permissions" not in fresh
-    assert "--session-id" in fresh
-    assert fresh[fresh.index("--session-id") + 1] == "sid-1"
+    assert "--dangerously-skip-permissions" in fresh
+    assert "--session-id" not in fresh
     assert "--prompt-interactive" in fresh
     assert fresh[fresh.index("--prompt-interactive") + 1] == "You are agent X"
 
@@ -341,27 +341,28 @@ def test_build_agent_cmd_uses_agent_cmd_for_non_claude_agent():
     assert "--prompt-interactive" not in fresh_no_prompt
 
 
-def test_build_agent_cmd_uses_explicit_resume_for_non_claude_agent():
-    """resume=True must translate to an explicit `--resume <session_id>` for
-    non-claude agents with the new contract (antigravity/gemini/agy) — never
-    `--continue` ("resume the most recent conversation [in this project]"),
-    which stays deliberately unused: `--continue` would be ambiguous when a
-    project has several concurrent agy instances (multi-chat), since a cold
-    reconnect (PTY killed by the grace-period cleanup, or a reload/server
-    restart) could silently resume a DIFFERENT tab's conversation. An
-    explicit id, mirroring claude's --resume, has no such ambiguity.
-    system_prompt is only ever attached on a fresh session (again mirroring
-    claude's --append-system-prompt contract) — on resume the agent already
-    has it, so --prompt-interactive must NOT appear here."""
+def test_build_agent_cmd_uses_continue_resume_for_non_claude_agent():
+    """resume=True must translate to `--continue` for non-claude agents
+    (antigravity/gemini/agy) — NOT `--resume <session_id>`. Verified
+    experimentally (2026-08-26) that agy has no --resume flag, and that its
+    real resume flag, --conversation <id>, does not honor externally
+    generated ids anyway (a made-up id always logs "conversation not found"
+    and starts a new conversation instead of attaching to ours) — so there
+    is no way to pin a conversation to an id we control, and --continue
+    ("most recent") is the only working resume semantics available, despite
+    the multi-chat ambiguity that implies. system_prompt is only ever
+    attached on a fresh session — on resume the agent already has it, so
+    --prompt-interactive must NOT appear here."""
     from app.main import _build_agent_cmd
     from app.models import Agent
 
     gemini_agent = Agent(id="gemini", nome="Gemini", papel="Assistente", ia="gemini", cmd=["agy"])
 
     resumed = _build_agent_cmd(gemini_agent, "sid-1", resume=True, system_prompt="You are agent X")
-    assert "--continue" not in resumed
-    assert "--resume" in resumed
-    assert resumed[resumed.index("--resume") + 1] == "sid-1"
+    assert "--continue" in resumed
+    assert "--resume" not in resumed
+    assert "--session-id" not in resumed
+    assert "--dangerously-skip-permissions" in resumed
     assert "--prompt-interactive" not in resumed
     assert "You are agent X" not in resumed
 
@@ -1292,30 +1293,31 @@ def test_build_pty_cmd_never_includes_dangerously_skip_permissions():
 
 def test_terminate_endpoint_success_on_active_session(client):
     """POST /api/sessions/{key}/terminate returns 200 and terminates the PTY for a known session."""
-    # Spawn a PTY session via the WebSocket endpoint (which runs inside the TestClient loop)
-    with client.websocket_connect("/ws/pty/test-proj::claude") as ws:
-        ws.send_json({
-            "type": "init",
-            "project_id": "meu-projeto",
-            "agent_id": None,
-            "cols": 80,
-            "rows": 24,
-        })
-        # Let the process start
-        import time; time.sleep(0.2)
+    fake_cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
+    with patch("app.main._build_pty_cmd", return_value=fake_cmd):
+        with client.websocket_connect("/ws/pty/test-proj::claude") as ws:
+            ws.send_json({
+                "type": "init",
+                "project_id": "meu-projeto",
+                "agent_id": None,
+                "cols": 80,
+                "rows": 24,
+            })
+            # Let the process start
+            import time; time.sleep(0.2)
 
-    # Session should now exist in the manager
-    import app.main as main_mod
-    assert main_mod.pty_manager.get("test-proj::claude") is not None
+            # Session should now exist in the manager
+            import app.main as main_mod
+            assert main_mod.pty_manager.get("test-proj::claude") is not None
 
-    r = client.post("/api/sessions/test-proj::claude/terminate")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "terminated"
-    assert body["session_key"] == "test-proj::claude"
+            r = client.post("/api/sessions/test-proj::claude/terminate")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["status"] == "terminated"
+            assert body["session_key"] == "test-proj::claude"
 
-    # Process should be gone from manager
-    assert main_mod.pty_manager.get("test-proj::claude") is None
+            # Process should be gone from manager
+            assert main_mod.pty_manager.get("test-proj::claude") is None
 
 
 # ==========================================================================
@@ -1426,20 +1428,21 @@ def test_resume_failure_signatures_cursor_falls_back_to_exit_code():
     assert isinstance(cursor["markers"], tuple)
 
 
-def test_agent_types_with_new_resume_semantics_have_a_probe():
-    """antigravity/gemini/agy gained an explicit --session-id/--resume
-    contract in _build_agent_cmd (same shape as claude's), so they now DO
-    need a resume-failure probe to detect a stale/unknown session id — the
-    three share the same placeholder markers because the real agy CLI's
-    failure output was not confirmed experimentally (see _build_agent_cmd's
-    docstring); exit_is_failure=False matches claude's approach (dying by
-    itself isn't proof of a failed resume, the marker text is)."""
+def test_agent_types_with_continue_resume_have_no_probe():
+    """antigravity/gemini/agy resume via `--continue` ("most recent
+    conversation"), not an explicit id — verified experimentally
+    (2026-08-26) that this never produces failure text: with zero prior
+    conversations agy just starts a fresh one silently. There being no
+    string to ever key a probe on means these three must have NO entry in
+    the registry at all (like "terminal") rather than an entry with empty
+    markers: a present-but-empty dict is still truthy, so the caller (see
+    `if resume and signature:` in pty_endpoint) would run the up-to-5s probe
+    loop for nothing, blocking the user's input the whole time for zero
+    detection benefit."""
     from app.main import _RESUME_FAILURE_SIGNATURES
 
     for ia in ("antigravity", "gemini", "agy"):
-        entry = _RESUME_FAILURE_SIGNATURES[ia]
-        assert entry["markers"] == (b"No session found", b"Session not found")
-        assert entry["exit_is_failure"] is False
+        assert ia not in _RESUME_FAILURE_SIGNATURES
 
 
 def test_agent_types_without_resume_semantics_have_no_probe():

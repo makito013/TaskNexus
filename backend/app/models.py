@@ -15,15 +15,17 @@ class Agent(BaseModel):
     papel: str
     # Tipo do agente. Deliberadamente `str` livre (sem Literal/Enum): o campo é
     # a chave de dispatch de main._build_agent_cmd, que tem ramo próprio para
-    # "claude", "terminal" e "cursor" e trata qualquer outro valor pelo ramo
-    # genérico (--dangerously-skip-permissions/--prompt-interactive, hoje usado
-    # pelo "gemini"/agy). Ou seja: um valor novo é cadastrável pela UI e já
+    # "claude", "terminal", "cursor" e "antigravity"/"gemini"/"agy", e trata
+    # qualquer outro valor pelo ramo genérico (--dangerously-skip-permissions/
+    # --prompt-interactive). Ou seja: um valor novo é cadastrável pela UI e já
     # funciona, sem migração de schema. Valores em uso hoje:
-    #   "claude"   -> contrato --session-id/--resume + hook Stop + MCP
-    #   "gemini"   -> ramo genérico
-    #   "terminal" -> shell puro, nenhuma flag acrescentada
-    #   "cursor"   -> id de sessão provisionado por `cursor-agent create-chat`
-    #                 (app/session_provisioner.py) e retomado com --resume
+    #   "claude"      -> contrato --session-id/--resume + hook Stop + MCP
+    #   "antigravity"/"gemini"/"agy" -> --dangerously-skip-permissions +
+    #                     --continue no resume (agy não aceita id externo,
+    #                     ver docstring de _build_agent_cmd)
+    #   "terminal"    -> shell puro, nenhuma flag acrescentada
+    #   "cursor"      -> id de sessão provisionado por `cursor-agent create-chat`
+    #                     (app/session_provisioner.py) e retomado com --resume
     ia: str
     cmd: list[str] = ["claude"]  # comando executado no PTY
     env: dict[str, str] = {}   # variáveis de ambiente extras aplicadas ao spawn do PTY
