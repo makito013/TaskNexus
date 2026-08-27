@@ -11,7 +11,8 @@ __pycache__/
 *.pyc
 dist/
 .DS_Store
-backend/.venv/
+backend/.venv*/
+.venv*/
 logs/
 .superpowers/
 .mcp.json
