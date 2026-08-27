@@ -170,11 +170,11 @@ describe('MobileChatSheet — botão "+ Novo chat" (footer fixo)', () => {
     expect(btn.disabled).toBe(false);
   });
 
-  it('desabilitado em modo "Todos" (nenhum cliente selecionado), com tooltip explicativo', () => {
+  it('habilitado em modo "Todos" (nenhum cliente selecionado), com tooltip de "escolha o cliente"', () => {
     render(<MobileChatSheet {...baseProps({ selectedClienteId: null })} />);
     const btn = getFooterNewChatButton();
-    expect(btn.disabled).toBe(true);
-    expect(btn.title).toMatch(/Selecione um cliente/);
+    expect(btn.disabled).toBe(false);
+    expect(btn.title).toMatch(/escolha o cliente/);
   });
 
   it('desabilitado quando o cliente selecionado é órfão (não existe em `projects`)', () => {
@@ -184,10 +184,29 @@ describe('MobileChatSheet — botão "+ Novo chat" (footer fixo)', () => {
     expect(btn.title).toMatch(/não encontrado em projects/i);
   });
 
-  it('clicar no botão desabilitado (modo "Todos") não abre o NewChatSheet nem quebra', () => {
-    render(<MobileChatSheet {...baseProps({ selectedClienteId: null })} />);
+  it('clicar no botão desabilitado (cliente órfão) não abre o NewChatSheet nem quebra', () => {
+    render(<MobileChatSheet {...baseProps({ selectedClienteId: 'cliente-removido' })} />);
     fireEvent.click(getFooterNewChatButton());
     expect(screen.queryByText(/^Novo chat em/)).toBeNull();
+  });
+});
+
+describe('MobileChatSheet — "criar novo chat" em modo "Todos" (select de Cliente dentro do sheet)', () => {
+  it('clicar em "+ Novo chat" em "Todos" abre o sheet com título genérico e select de Cliente', () => {
+    render(<MobileChatSheet {...baseProps({ selectedClienteId: null })} />);
+    fireEvent.click(getFooterNewChatButton());
+    expect(screen.getByText('Novo chat')).toBeTruthy();
+    expect(screen.getByLabelText('Cliente')).toBeTruthy();
+  });
+
+  it('escolher um cliente no picker e submeter chama onStartNewChat(clienteEscolhido.id, agentId)', () => {
+    const onStartNewChat = vi.fn();
+    render(<MobileChatSheet {...baseProps({ selectedClienteId: null, onStartNewChat })} />);
+    fireEvent.click(getFooterNewChatButton());
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1', 'claude');
   });
 });
 
@@ -318,12 +337,15 @@ describe('MobileChatSheet — reset do NewChatSheet ao fechar "por fora" (prop o
 });
 
 // Segunda via de desmontagem abrupta (achado do Analista, retrabalho):
-// o wrapper `{selectedCliente ? <NewChatSheet/> : null}` também desmonta o
-// NewChatSheet quando `selectedCliente` fica falsy — deselecionado ou órfão
-// — enquanto `open` continua `true`. Esse caminho não passava pelo guard de
-// `open` acima, então `newChatSheetOpen` sobrevivia e o sheet reaparecia
-// sozinho quando o cliente voltasse a ser válido.
-describe('MobileChatSheet — reset do NewChatSheet quando o cliente selecionado fica indisponível (open continua true)', () => {
+// o wrapper `{!clienteOrfao ? <NewChatSheet/> : null}` desmonta o
+// NewChatSheet quando o cliente selecionado fica ÓRFÃO (removido de
+// `projects` depois de selecionado) enquanto `open` continua `true`. Esse
+// caminho não passava pelo guard de `open` acima, então `newChatSheetOpen`
+// sobrevivia e o sheet reaparecia sozinho quando o cliente voltasse a ser
+// válido. Nota: desselecionar pra "Todos" NÃO passa mais por esse guard —
+// "Todos" virou um alvo válido do sheet (modo "escolher cliente"), não um
+// estado órfão — ver describe dedicado acima.
+describe('MobileChatSheet — reset do NewChatSheet quando o cliente selecionado fica órfão (open continua true)', () => {
   it('cliente selecionado vira órfão (removido de `projects`) e depois volta a existir: NewChatSheet não reaparece sozinho', () => {
     const { rerender } = render(
       <MobileChatSheet {...baseProps({ selectedClienteId: 'cliente_projeto_1' })} />
@@ -345,7 +367,7 @@ describe('MobileChatSheet — reset do NewChatSheet quando o cliente selecionado
     expect(screen.getByText('Chats de Cliente 1')).toBeTruthy();
   });
 
-  it('cliente é desselecionado (selectedClienteId vira null) e depois reselecionado: NewChatSheet não reaparece sozinho', () => {
+  it('cliente é desselecionado (selectedClienteId vira null): sheet continua aberto, agora em modo "Todos" (escolher cliente) — não é mais um caso de "órfão" desde que "Todos" passou a ser um alvo válido', () => {
     const { rerender } = render(
       <MobileChatSheet {...baseProps({ selectedClienteId: 'cliente_projeto_1' })} />
     );
@@ -353,14 +375,12 @@ describe('MobileChatSheet — reset do NewChatSheet quando o cliente selecionado
     fireEvent.click(getFooterNewChatButton());
     expect(screen.getByText('Novo chat em Cliente 1')).toBeTruthy();
 
-    // Desseleciona o cliente (modo "Todos") sem fechar o MobileChatSheet.
+    // Desseleciona o cliente (modo "Todos") sem fechar o MobileChatSheet: o
+    // NewChatSheet não fecha mais sozinho (não é mais um estado inválido),
+    // só troca pro título genérico com o select de Cliente.
     rerender(<MobileChatSheet {...baseProps({ selectedClienteId: null })} />);
     expect(screen.queryByText('Novo chat em Cliente 1')).toBeNull();
-    expect(screen.getByText('Todos os chats')).toBeTruthy();
-
-    // Reseleciona o mesmo cliente.
-    rerender(<MobileChatSheet {...baseProps({ selectedClienteId: 'cliente_projeto_1' })} />);
-    expect(screen.queryByText('Novo chat em Cliente 1')).toBeNull();
-    expect(screen.getByText('Chats de Cliente 1')).toBeTruthy();
+    expect(screen.getByText('Novo chat')).toBeTruthy();
+    expect(screen.getByLabelText('Cliente')).toBeTruthy();
   });
 });

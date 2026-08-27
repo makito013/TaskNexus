@@ -6,6 +6,11 @@
 // undefined/string vazia), lista de agentes vazia/carregando, e o reset de
 // seleção ao fechar (Cancelar/ESC/scrim — todos passam pelo mesmo
 // `handleClose`, que é o `onClose` repassado ao BottomSheet).
+//
+// Modo "Todos": quando `cliente` vem null e `clientes` é
+// passado no lugar, cobre o select extra de Cliente (primeiro campo), o
+// select de Projeto só aparecendo depois de escolher um cliente, e o submit
+// resolvendo a partir do cliente escolhido no picker.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -113,6 +118,103 @@ describe('NewChatSheet — submit', () => {
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('NewChatSheet — modo "Todos" (sem cliente fixo, select de Cliente)', () => {
+  const clientes = [clienteSemSub, clienteComSub];
+
+  it('cliente=null, clientes=[...]: mostra o select de Cliente como primeiro campo, título genérico, sem select de Projeto ainda', () => {
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Novo chat')).not.toBeNull();
+    const clienteSelect = screen.getByLabelText('Cliente');
+    expect(clienteSelect).not.toBeNull();
+    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
+    expect(screen.queryByText(/não tem subprojetos/)).toBeNull();
+    expect(screen.getByText('Criar chat').closest('button').disabled).toBe(true);
+  });
+
+  it('escolher um cliente SEM sub_projetos: título atualiza, mostra o hint de raiz, sem select de Projeto', () => {
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'podesubir' } });
+    expect(screen.getByText('Novo chat em Pode Subir')).not.toBeNull();
+    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
+    expect(screen.getByText(/raiz de Pode Subir/)).not.toBeNull();
+  });
+
+  it('escolher um cliente COM sub_projetos: título atualiza e o select de Projeto aparece filtrado por esse cliente', () => {
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    expect(screen.getByText('Novo chat em Cliente 1')).not.toBeNull();
+    expect(screen.getByLabelText('Projeto (opcional)')).not.toBeNull();
+    expect(screen.getByText('Nenhum (usa a raiz de Cliente 1)')).not.toBeNull();
+  });
+
+  it('submit sem sub-projeto: onSubmit(clienteEscolhido.id, agentId)', () => {
+    const onSubmit = vi.fn();
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'gemini' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onSubmit).toHaveBeenCalledWith('cliente_projeto_1', 'gemini');
+  });
+
+  it('submit com sub-projeto escolhido: onSubmit(subProjetoId, agentId)', () => {
+    const onSubmit = vi.fn();
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onSubmit).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude');
+  });
+
+  it('trocar o cliente escolhido reseta o sub-projeto selecionado anteriormente', () => {
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'podesubir' } });
+    // 'podesubir' não tem sub_projetos — se a seleção anterior não tivesse
+    // sido resetada, o select nem existiria mais, mas o valor "vazado" não
+    // pode aparecer se o usuário escolher outro cliente com sub_projetos.
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('');
+  });
+
+  it('clicar em "Criar chat" sem escolher cliente não chama onSubmit, mesmo com agente escolhido', () => {
+    const onSubmit = vi.fn();
+    render(<NewChatSheet open cliente={null} clientes={clientes} onClose={vi.fn()} onSubmit={onSubmit} />);
+    // Sem cliente escolhido "IA / Agente" nem chega a aparecer no fluxo real,
+    // mas o guard de handleSubmit é testado diretamente via clique no botão
+    // desabilitado (mesmo padrão dos outros testes de submit deste arquivo).
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('clientes=[] (nenhum cliente disponível): mostra hint em vez de select vazio', () => {
+    render(<NewChatSheet open cliente={null} clientes={[]} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.queryByLabelText('Cliente')).toBeNull();
+    expect(screen.getByText('Nenhum cliente disponível.')).not.toBeNull();
+  });
+
+  it('Cancelar reseta o cliente escolhido no picker (não vaza pra próxima abertura)', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<NewChatSheet open cliente={null} clientes={clientes} onClose={onClose} onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    expect(screen.getByText('Novo chat em Cliente 1')).not.toBeNull();
+
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    rerender(<NewChatSheet open cliente={null} clientes={clientes} onClose={onClose} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Novo chat')).not.toBeNull();
+    expect(screen.getByLabelText('Cliente').value).toBe('');
+  });
+
+  it('cliente prop preenchido ignora `clientes` — comportamento fixo de sempre, sem select de Cliente', () => {
+    render(<NewChatSheet open cliente={clienteComSub} clientes={clientes} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.queryByLabelText('Cliente')).toBeNull();
+    expect(screen.getByText('Novo chat em Cliente 1')).not.toBeNull();
   });
 });
 

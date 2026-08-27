@@ -154,9 +154,13 @@ describe('ChatSidebarV2 — same data/handlers as Sidebar.jsx v1, grouped by cli
     expect(screen.getByText('Novo chat em Outro Projeto')).toBeTruthy();
   });
 
-  it('"+ Novo chat" is disabled in modo "Todos" (nenhum cliente selecionado)', () => {
+  it('"+ Novo chat" fica habilitado em modo "Todos" (nenhum cliente selecionado) — abre o sheet com select de Cliente', () => {
     render(<ChatSidebarV2 {...chatSidebarBaseProps} selectedClienteId={null} />);
-    expect(screen.getByText('+ Novo chat').closest('button').disabled).toBe(true);
+    const btn = screen.getByText('+ Novo chat').closest('button');
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    expect(screen.getByText('Novo chat')).toBeTruthy();
+    expect(screen.getByLabelText('Cliente')).toBeTruthy();
   });
 
   it('renders an empty state when there are no persisted sessions anywhere (modo "Todos")', () => {
@@ -169,10 +173,10 @@ describe('ChatSidebarV2 — same data/handlers as Sidebar.jsx v1, grouped by cli
     expect(screen.getByText(/Nenhum chat aberto para Outro Projeto/)).toBeTruthy();
   });
 
-  it('"+ Novo chat" desabilitado em "Todos" tem o tooltip explicativo (title)', () => {
+  it('"+ Novo chat" em "Todos" tem o tooltip de "escolha o cliente" (não mais o de desabilitado)', () => {
     render(<ChatSidebarV2 {...chatSidebarBaseProps} selectedClienteId={null} />);
     const btn = screen.getByText('+ Novo chat').closest('button');
-    expect(btn.title).toMatch(/Selecione um cliente/);
+    expect(btn.title).toMatch(/escolha o cliente/);
   });
 
   it('falls back to the raw agentId as the chat label when the agent was deleted from the global registry (edge case)', () => {
@@ -224,6 +228,22 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude-work' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude-work');
+  });
+
+  it('modo "Todos": escolher um cliente no sheet e submeter chama onStartNewChat(clienteEscolhido.id, agentId)', () => {
+    const onStartNewChat = vi.fn();
+    render(
+      <ChatSidebarV2
+        {...propsComCliente}
+        selectedClienteId={null}
+        onStartNewChat={onStartNewChat}
+      />
+    );
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1', 'claude');
   });
 
   it('registro global de agentes vazio: select some, "Criar chat" preso em disabled (caso de borda #5)', () => {

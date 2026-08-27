@@ -18,6 +18,16 @@
 // partir do id (só recebe o objeto `cliente` já resolvido), então usa o
 // próprio id como texto da opção, mesmo fallback que CardFormModal usaria se
 // não achasse o projeto na lista.
+//
+// Modo "Todos": quando o chamador não tem um cliente fixo
+// pra passar (`cliente` null — sidebar filtrada em "Todos"), passa `clientes`
+// (a lista inteira) em vez disso. Aí este sheet ganha um select de CLIENTE
+// como primeiro campo; escolher um resolve `activeCliente` localmente
+// (`selectedTodosClienteId`) e o resto do formulário (select de Projeto,
+// submit) segue exatamente a mesma lógica de antes, só que a partir do
+// cliente escolhido em vez do fixo. Quando `cliente` vem preenchido (fluxo
+// de sempre, cliente específico já selecionado na sidebar), `clientes` é
+// ignorado e nada muda.
 import { useState } from 'react';
 import { BottomSheet } from './BottomSheet.jsx';
 import { useAgentSettings } from '../../hooks/useAgentSettings.js';
@@ -86,57 +96,97 @@ const styles = {
   }),
 };
 
-export function NewChatSheet({ open, onClose, cliente, onSubmit }) {
+export function NewChatSheet({ open, onClose, cliente, clientes, onSubmit }) {
   const { agents, loading } = useAgentSettings();
+  const [selectedTodosClienteId, setSelectedTodosClienteId] = useState('');
   const [selectedProjetoId, setSelectedProjetoId] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');
 
-  const hasSubprojetos = (cliente?.sub_projetos || []).length > 0;
-  const canSubmit = selectedAgentId !== '';
+  // Modo "Todos": sem `cliente` fixo, mas com uma lista pra escolher de. Só
+  // faz sentido mostrar o select quando há o que escolher — lista vazia (ex.
+  // nenhum projeto cadastrado ainda) cai no mesmo hint informativo que os
+  // outros campos já usam, em vez de um select sem opções.
+  const showClienteSelect = !cliente && Array.isArray(clientes);
+  const activeCliente = cliente || (clientes || []).find((c) => c.id === selectedTodosClienteId) || null;
+  const hasSubprojetos = (activeCliente?.sub_projetos || []).length > 0;
+  const canSubmit = selectedAgentId !== '' && !!activeCliente;
 
   const handleClose = () => {
     // Reseta a seleção pra próxima abertura não herdar a escolha anterior
     // (cada abertura do sheet é um formulário novo, não uma sessão que
     // continua de onde parou).
+    setSelectedTodosClienteId('');
     setSelectedProjetoId('');
     setSelectedAgentId('');
     onClose();
   };
 
+  const handleTodosClienteChange = (e) => {
+    setSelectedTodosClienteId(e.target.value);
+    // Um sub-projeto escolhido pro cliente anterior não existe no novo.
+    setSelectedProjetoId('');
+  };
+
   const handleSubmit = () => {
     // Defesa em profundidade: ChatSidebarV2 já garante que não monta/abre
-    // este sheet sem um `cliente` válido, mas se algo mudar isso no futuro
-    // (ou este componente for reusado em outro lugar), evita o TypeError de
-    // `cliente.id` com `cliente` null/undefined derrubando a árvore inteira.
-    if (!canSubmit || !cliente) return;
-    onSubmit(selectedProjetoId || cliente.id, selectedAgentId);
+    // este sheet sem `cliente`/`clientes` válidos, mas se algo mudar isso no
+    // futuro (ou este componente for reusado em outro lugar), evita o
+    // TypeError de `activeCliente.id` com `activeCliente` null derrubando a
+    // árvore inteira.
+    if (!canSubmit || !activeCliente) return;
+    onSubmit(selectedProjetoId || activeCliente.id, selectedAgentId);
     handleClose();
   };
 
   return (
     <BottomSheet open={open} onClose={handleClose}>
-      <div style={styles.title}>Novo chat em {cliente?.nome}</div>
-
-      <div style={styles.field}>
-        <span style={styles.label}>Projeto (opcional)</span>
-        {hasSubprojetos ? (
-          <select
-            style={styles.select}
-            value={selectedProjetoId}
-            onChange={(e) => setSelectedProjetoId(e.target.value)}
-            aria-label="Projeto (opcional)"
-          >
-            <option value="">Nenhum (usa a raiz de {cliente.nome})</option>
-            {cliente.sub_projetos.map((subId) => (
-              <option key={subId} value={subId}>{subId}</option>
-            ))}
-          </select>
-        ) : (
-          <span style={styles.hint}>
-            Este cliente não tem subprojetos — o chat abre na raiz de {cliente?.nome}.
-          </span>
-        )}
+      <div style={styles.title}>
+        {activeCliente ? `Novo chat em ${activeCliente.nome}` : 'Novo chat'}
       </div>
+
+      {showClienteSelect && (
+        <div style={styles.field}>
+          <span style={styles.label}>Cliente</span>
+          {clientes.length === 0 ? (
+            <span style={styles.hint}>Nenhum cliente disponível.</span>
+          ) : (
+            <select
+              style={styles.select}
+              value={selectedTodosClienteId}
+              onChange={handleTodosClienteChange}
+              aria-label="Cliente"
+            >
+              <option value="">Selecione um cliente</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      {activeCliente && (
+        <div style={styles.field}>
+          <span style={styles.label}>Projeto (opcional)</span>
+          {hasSubprojetos ? (
+            <select
+              style={styles.select}
+              value={selectedProjetoId}
+              onChange={(e) => setSelectedProjetoId(e.target.value)}
+              aria-label="Projeto (opcional)"
+            >
+              <option value="">Nenhum (usa a raiz de {activeCliente.nome})</option>
+              {activeCliente.sub_projetos.map((subId) => (
+                <option key={subId} value={subId}>{subId}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={styles.hint}>
+              Este cliente não tem subprojetos — o chat abre na raiz de {activeCliente.nome}.
+            </span>
+          )}
+        </div>
+      )}
 
       <div style={styles.field}>
         <span style={styles.label}>IA / Agente</span>

@@ -6,9 +6,10 @@
 // contrato `fixedFooter` de BottomSheet.jsx.
 //
 // Reaproveita a MESMA lógica de `newChatDisabled` que já vive em
-// ChatSidebarV2.jsx (cliente nulo OU órfão desabilita) — não inventa
-// verificação nova, só a duplica aqui já que este componente não tem acesso
-// ao estado interno de ChatSidebarV2.
+// ChatSidebarV2.jsx (só cliente ÓRFÃO desabilita — "Todos" abre o sheet no
+// modo "escolher cliente") — não inventa verificação nova,
+// só a duplica aqui já que este componente não tem acesso ao estado interno
+// de ChatSidebarV2.
 //
 // `escapeEnabled={!newChatSheetOpen}` no BottomSheet externo: mitiga ESC
 // fechando as duas sheets empilhadas de uma vez quando o NewChatSheet
@@ -18,6 +19,7 @@ import { useEffect, useState } from 'react';
 import { BottomSheet } from './BottomSheet.jsx';
 import { ChatList } from './ChatList.jsx';
 import { NewChatSheet } from './NewChatSheet.jsx';
+import { isClienteId } from '../../utils/clientes.js';
 
 const styles = {
   header: {
@@ -101,13 +103,15 @@ export function MobileChatSheet({
   const [newChatSheetOpen, setNewChatSheetOpen] = useState(false);
 
   const projectsById = Object.fromEntries(projects.map((p) => [p.id, p]));
+  const clientes = projects.filter((p) => isClienteId(p.id));
   const selectedCliente = selectedClienteId != null ? (projectsById[selectedClienteId] || null) : null;
 
-  // Mesma lógica de ChatSidebarV2.jsx: cliente nulo ("Todos") OU órfão
-  // (selecionado mas ausente de `projects`) desabilita "+ Novo chat".
+  // Mesma lógica de ChatSidebarV2.jsx: só cliente ÓRFÃO (selecionado mas
+  // ausente de `projects`) desabilita "+ Novo chat" — "Todos" abre o sheet
+  // no modo "escolher cliente".
   const noClienteSelecionado = selectedClienteId == null;
   const clienteOrfao = !noClienteSelecionado && !selectedCliente;
-  const newChatDisabled = noClienteSelecionado || clienteOrfao;
+  const newChatDisabled = clienteOrfao;
 
   // Achado da Segurança (etapa 9, retrabalho): `open` indo pra `false` fecha
   // o BottomSheet externo (que apenas retorna null — ver BottomSheet.jsx),
@@ -189,10 +193,10 @@ export function MobileChatSheet({
           onClick={handleNewChatClick}
           disabled={newChatDisabled}
           title={
-            noClienteSelecionado
-              ? 'Selecione um cliente para iniciar um novo chat'
-              : clienteOrfao
+            clienteOrfao
               ? 'Cliente selecionado não encontrado em projects'
+              : noClienteSelecionado
+              ? 'Novo chat — escolha o cliente'
               : `Novo chat em ${selectedCliente?.nome || selectedClienteId}`
           }
         >
@@ -200,11 +204,12 @@ export function MobileChatSheet({
         </button>
       </div>
 
-      {selectedCliente ? (
+      {!clienteOrfao ? (
         <NewChatSheet
           open={newChatSheetOpen}
           onClose={() => setNewChatSheetOpen(false)}
           cliente={selectedCliente}
+          clientes={clientes}
           onSubmit={onStartNewChat}
         />
       ) : null}

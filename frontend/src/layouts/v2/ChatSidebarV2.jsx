@@ -34,9 +34,10 @@
 //
 // "+ Novo chat" não abre mais um dropdown inline de agente nem spawna direto
 // quando o projeto tem só 1 agente — sempre abre o NewChatSheet (bottom
-// sheet) quando um cliente está selecionado; fica desabilitado (com
-// tooltip explicando) em "Todos", já que não há um cliente-alvo pro chat
-// nascer.
+// sheet). Em "Todos" o sheet abre do mesmo jeito, só que
+// com um select extra de CLIENTE como primeiro campo (ver NewChatSheet.jsx)
+// — só fica desabilitado quando o cliente selecionado é órfão (não existe
+// mais em `projects`), caso em que não há como montar um sheet coerente.
 //
 // Etapa 7 (plano de fix, RF02): coluna vira recolhível pra um "rail" estreito
 // — mesmo padrão 240px<->68px (aqui 280px<->68px) que SidebarV2 já usa hoje,
@@ -60,6 +61,7 @@ import { useState } from 'react';
 import { NewChatSheet } from './NewChatSheet.jsx';
 import { ChatList } from './ChatList.jsx';
 import { COLLAPSED_WIDTH, SIDEBAR_TRANSITION } from './collapseLayout.js';
+import { isClienteId } from '../../utils/clientes.js';
 
 const EXPANDED_WIDTH = '280px';
 
@@ -127,6 +129,7 @@ export function ChatSidebarV2({
 }) {
   const [newChatSheetOpen, setNewChatSheetOpen] = useState(false);
   const projectsById = Object.fromEntries(projects.map((p) => [p.id, p]));
+  const clientes = projects.filter((p) => isClienteId(p.id));
 
   const selectedCliente = selectedClienteId != null ? (projectsById[selectedClienteId] || null) : null;
 
@@ -135,10 +138,12 @@ export function ChatSidebarV2({
   // mount, sem refetch, então a lista pode ficar desatualizada em relação à
   // seleção. Sem essa checagem, `selectedCliente` fica null e o sheet abre
   // sem cliente válido (handleSubmit do NewChatSheet faz `cliente.id`, que
-  // derrubaria a árvore inteira com TypeError). Achado do QA.
+  // derrubaria a árvore inteira com TypeError). Achado do QA. "Todos"
+  // (`noClienteSelecionado`) NÃO conta mais como desabilitado — vira o modo
+  // "escolher cliente dentro do sheet".
   const noClienteSelecionado = selectedClienteId == null;
   const clienteOrfao = !noClienteSelecionado && !selectedCliente;
-  const newChatDisabled = noClienteSelecionado || clienteOrfao;
+  const newChatDisabled = clienteOrfao;
 
   const handleNewChatClick = () => {
     if (newChatDisabled) return;
@@ -155,10 +160,10 @@ export function ChatSidebarV2({
             onClick={handleNewChatClick}
             disabled={newChatDisabled}
             title={
-              noClienteSelecionado
-                ? 'Selecione um cliente para iniciar um novo chat'
-                : clienteOrfao
+              clienteOrfao
                 ? 'Cliente selecionado não encontrado em projects'
+                : noClienteSelecionado
+                ? 'Novo chat — escolha o cliente'
                 : `Novo chat em ${selectedCliente?.nome || selectedClienteId}`
             }
           >
@@ -189,11 +194,12 @@ export function ChatSidebarV2({
         collapsed={collapsed}
       />
 
-      {selectedCliente ? (
+      {!clienteOrfao ? (
         <NewChatSheet
           open={newChatSheetOpen}
           onClose={() => setNewChatSheetOpen(false)}
           cliente={selectedCliente}
+          clientes={clientes}
           onSubmit={onStartNewChat}
         />
       ) : null}
