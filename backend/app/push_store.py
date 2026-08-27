@@ -44,7 +44,10 @@ class PushSubscriptionStore:
 
     async def initialize(self) -> None:
         self._conn = await aiosqlite.connect(self.db_path)
-        await self._conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+        except aiosqlite.OperationalError:
+            pass
         await self._conn.execute("PRAGMA busy_timeout=5000")
         # endpoint as PRIMARY KEY is what makes registration idempotent: the
         # browser hands back the SAME endpoint URL for the same

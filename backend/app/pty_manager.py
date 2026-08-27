@@ -1,4 +1,5 @@
 # backend/app/pty_manager.py
+from __future__ import annotations
 import os, subprocess, asyncio, errno, sys
 import struct
 import signal

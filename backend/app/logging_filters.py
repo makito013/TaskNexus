@@ -96,7 +96,10 @@ def _is_benign_disconnect(exc: BaseException | None) -> bool:
     if isinstance(exc, _BENIGN_EXC_TYPES):
         return True
     if isinstance(exc, OSError):
-        return getattr(exc, "winerror", None) in _BENIGN_WINERRORS
+        winerr = getattr(exc, "winerror", None)
+        if winerr is None and len(getattr(exc, "args", ())) >= 4:
+            winerr = exc.args[3]
+        return winerr in _BENIGN_WINERRORS
     return False
 
 

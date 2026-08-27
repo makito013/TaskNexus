@@ -19,7 +19,10 @@ class TaskStore:
         self._conn = await aiosqlite.connect(self.db_path)
         # WAL + busy_timeout: ver conversation_store.py — mesmo sessions.db,
         # conexão própria, evita "readonly database" sob escrita concorrente.
-        await self._conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+        except aiosqlite.OperationalError:
+            pass
         await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._conn.execute(
             """

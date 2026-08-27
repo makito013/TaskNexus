@@ -14,13 +14,16 @@ class ConversationStore:
         # um com sua própria conexão/thread (ConversationStore, TaskStore,
         # GlobalAgentStore, CardStore) — sem isso, escritas concorrentes
         # entre elas podem estourar "attempt to write a readonly database".
-        await self._conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+        except aiosqlite.OperationalError:
+            pass
         await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_key TEXT PRIMARY KEY,
                 claude_session_id TEXT NOT NULL,
-                updated_at REAL DEFAULT (unixepoch('now', 'subsec'))
+                updated_at REAL DEFAULT ((julianday('now') - 2440587.5) * 86400.0)
             )
         """)
         # Fase 4 (D-01): colunas adicionadas via ALTER TABLE em bancos já existentes.
@@ -156,7 +159,7 @@ class ConversationStore:
         pausa desta sessão precisa poder tocar o som local de novo caso o
         push não seja disparado (ex: dispositivo desregistrado no meio)."""
         await self._conn.execute(
-            "UPDATE sessions SET needs_attention = 0, push_notified = 0, last_activity_seen_at = unixepoch('now', 'subsec') WHERE session_key = ?",
+            "UPDATE sessions SET needs_attention = 0, push_notified = 0, last_activity_seen_at = ((julianday('now') - 2440587.5) * 86400.0) WHERE session_key = ?",
             (session_key,),
         )
         await self._conn.commit()

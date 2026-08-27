@@ -8,6 +8,8 @@ este módulo — está registrado como spin-off separado. Acoplar os testes daqu
 ele faria este arquivo falhar por um motivo que não é sobre ele.
 """
 
+from __future__ import annotations
+
 import subprocess
 import sys
 

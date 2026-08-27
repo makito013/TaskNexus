@@ -269,6 +269,9 @@ def test_paste_endpoint_writes_to_active_pty(client):
         "    m = ctypes.c_uint32()\n"
         "    k.GetConsoleMode(h, ctypes.byref(m))\n"
         "    k.SetConsoleMode(h, m.value & ~0x0002 & ~0x0004)\n"
+        "else:\n"
+        "    import termios, tty\n"
+        "    tty.setraw(0)\n"
         "data = os.read(0, 4096)\n"
         "os.write(1, b'GOT:' + data)\n",
     ]
