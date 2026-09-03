@@ -13,14 +13,22 @@ describe('AppLauncherHeader — current system label', () => {
     expect(screen.getByText('Escritório')).not.toBeNull();
   });
 
-  it('shows "Board" for currentPath="/board"', () => {
-    render(<AppLauncherHeader currentPath="/board" onNavigate={vi.fn()} />);
-    expect(screen.getByText('Board')).not.toBeNull();
-  });
-
   it('shows "Tarefas" for currentPath="/tarefas"', () => {
     render(<AppLauncherHeader currentPath="/tarefas" onNavigate={vi.fn()} />);
     expect(screen.getByText('Tarefas')).not.toBeNull();
+  });
+
+  // `/board` was retired along with the v1 board screen, so
+  // `getSystemByRoute('/board')` now returns `undefined`. An old bookmark still
+  // reaches this header with that path, and it must fall back to the product
+  // name instead of dereferencing the missing entry.
+  it('falls back to the product name, without throwing, on the retired /board route', () => {
+    expect(() => {
+      render(<AppLauncherHeader currentPath="/board" onNavigate={vi.fn()} />);
+    }).not.toThrow();
+
+    expect(screen.getByText('TaskNexus', { selector: 'span' })).not.toBeNull();
+    expect(screen.queryByText('Board')).toBeNull();
   });
 });
 
@@ -33,7 +41,7 @@ describe('AppLauncherHeader — dropdown open/close', () => {
 
     fireEvent.click(trigger);
     expect(screen.getByRole('menu')).not.toBeNull();
-    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2);
 
     fireEvent.click(trigger);
     expect(screen.queryByRole('menu')).toBeNull();
@@ -71,9 +79,9 @@ describe('AppLauncherHeader — navigation via dropdown', () => {
     render(<AppLauncherHeader currentPath="/" onNavigate={onNavigate} />);
 
     fireEvent.click(screen.getByRole('button'));
-    fireEvent.click(screen.getByText('Board'));
+    fireEvent.click(screen.getByText('Tarefas'));
 
-    expect(onNavigate).toHaveBeenCalledWith('/board');
+    expect(onNavigate).toHaveBeenCalledWith('/tarefas');
     expect(screen.queryByRole('menu')).toBeNull();
   });
 });

@@ -5,7 +5,7 @@
 //
 // Componente "burro"/reutilizável: não conhece useCards.js — recebe
 // `onUpload`/`onDelete` via props, já vinculadas ao `cardId` pelo componente
-// pai (ex.: CardItem/CardFormModal chamando `(file) => uploadCardImage(cardId,
+// pai (ex.: CardFormModal chamando `(file) => uploadCardImage(cardId,
 // file)`). `cardId` aqui só é usado para compor ids/testids estáveis (input
 // de arquivo, mensagens), nunca passado para onUpload/onDelete.
 //

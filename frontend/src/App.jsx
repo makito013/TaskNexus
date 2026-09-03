@@ -1,7 +1,6 @@
 import { TerminalProvider } from './components/TerminalContext.jsx';
 import { useRoute } from './hooks/useRoute.js';
 import { AppLauncherHeader } from './components/AppLauncherHeader.jsx';
-import { BoardView } from './views/BoardView.jsx';
 import { TarefasGlobalView } from './views/TarefasGlobalView.jsx';
 import { AppV2 } from './layouts/v2/AppV2.jsx';
 
@@ -23,9 +22,10 @@ export default function App({ initialAppearance = DEFAULT_APPEARANCE } = {}) {
           <AppLauncherHeader currentPath={path} onNavigate={navigate} />
         )}
         <div className="app-shell-routed-content" style={{ flex: 1, overflow: 'hidden' }}>
-          {path === '/board' ? (
-            <BoardView navigate={navigate} />
-          ) : path === '/tarefas' ? (
+          {/* Two named routes; anything else falls through to AppV2, which is
+              also what the retired `/board` route now hits when someone opens
+              an old bookmark. */}
+          {path === '/tarefas' ? (
             <TarefasGlobalView navigate={navigate} />
           ) : (
             <AppV2 initialAppearance={initialAppearance} />

@@ -1,11 +1,14 @@
 // frontend/src/layouts/v2/BoardV2.jsx
 // Milestone 3 (plano Layout v2, 05-TL.md, Tarefa 15): versão v2 do Board —
 // kanban horizontal com scroll-x, uma coluna FIXA de 300px por status (não
-// por projeto — diferente de KanbanBoard.jsx v1, que agrupa em swimlanes por
-// projeto). Reaproveita `useCards` (frontend/src/hooks/useCards.js) tal como
-// está: mesmo hook, mesmas ações (createCard, updateCard) que
-// views/BoardView.jsx (v1) já usa — só a apresentação muda, conforme
-// instrução do Designer/TL para este milestone.
+// por projeto). Reaproveita `useCards` (frontend/src/hooks/useCards.js) tal
+// como está: mesmo hook, mesmas ações (createCard, updateCard) — só a
+// apresentação muda, conforme instrução do Designer/TL para este milestone.
+//
+// Esta é a ÚNICA tela de Board do app: a rota `/board` e toda a árvore de
+// componentes v1 que a servia foram removidas (decisão do Bruno, sessão
+// "cards/board v2"), e o que só existia lá — "Limpar concluídos" — foi
+// portado para cá (ver `clearTargetId` abaixo).
 //
 // Filtro de listagem/agregação: `selectedClienteId` vem do mesmo estado que
 // AppV2.jsx já calcula pra sidebar de clientes (`handleSelectCliente`) e já
@@ -39,11 +42,10 @@
 // chat at all ("Selecione um projeto na barra lateral"). Bruno now picks
 // Cliente/Projeto inside the modal itself.
 //
-// Decisão — "mover card": em vez de reaproveitar `MoveCardMenu.jsx` (v1,
-// estilizado com tokens `--*`), o controle de mover é um `<select>` nativo
-// simples chamando `updateCard(cardId, { status })` diretamente — mesma ação
-// reaproveitada, apresentação nova e mínima (a especificação do Designer
-// para este card não pede um menu específico, só que a ação exista).
+// Decisão — "mover card": o controle de mover é um `<select>` nativo simples
+// chamando `updateCard(cardId, { status })` diretamente — apresentação nova e
+// mínima (a especificação do Designer para este card não pede um menu
+// específico, só que a ação exista).
 //
 // NÃO implementado nesta tela (ver relatório do Dev): contador de
 // subtarefas/tira de imagens inline no rosto do card — a especificação de
@@ -52,17 +54,16 @@
 // uma lacuna esquecida.
 //
 // Fase 4 (épico "visualização global de cards presa ao agente aberto"):
-// clicar no título do card abre `CardFormModal` (components/board/, mesmo
-// componente compartilhado que views/BoardView.jsx v1 já monta) em modo
-// 'edit' — reaproveita o fix da Fase 3 (o modal abre a descrição já
-// renderizada quando o card já tem uma) e dá a este layout uma forma de
-// ver/editar a descrição completa e anexar/remover imagem, sem precisar da
-// v1. Continua sem exibir subcards nesta tela (decisão pré-existente acima):
+// clicar no título do card abre `CardFormModal` (components/board/) em modo
+// 'edit' — dá a este layout a forma de ver/editar a descrição completa e
+// anexar/remover imagem, que antes só existia na tela v1 removida.
+// Continua sem exibir subcards nesta tela (decisão pré-existente acima):
 // o modal em modo 'edit' só usa `card.subcards.length` para a contagem do
 // aviso de exclusão em cascata, nunca renderiza a lista de subcards em si.
 import { useState } from 'react';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
+import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
 import {
   CARD_TIPO_COLORS,
@@ -72,7 +73,11 @@ import {
 } from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
-import { resolveCardTags, useClienteProjetoFilter } from './useClienteProjetoFilter.js';
+import {
+  resolveCardTags,
+  resolveProjectName,
+  useClienteProjetoFilter,
+} from './useClienteProjetoFilter.js';
 
 const STATUSES = ['a_fazer', 'em_andamento', 'em_revisao', 'feito'];
 const STATUS_LABELS = {
@@ -90,6 +95,44 @@ const styles = {
     overflow: 'hidden',
     background: 'var(--v2-bg)',
   },
+  // Header row of this screen only: the shared ClienteProjetoFilterBar on the
+  // left, this board's own actions on the right. The bar is NOT the owner of
+  // this row — it returns `null` whenever the sidebar fixed a client with no
+  // subprojects, and it is also mounted by TarefasV2, where a card action
+  // would make no sense. Neither box carries the row's bottom rule: each
+  // carries its own, and `headerActions` grows to fill whatever the bar leaves
+  // (including the whole row when the bar renders nothing), so the two borders
+  // read as one continuous line either way.
+  headerRow: {
+    display: 'flex',
+    alignItems: 'stretch',
+    flexWrap: 'wrap',
+    flexShrink: 0,
+  },
+  headerActions: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: '8px',
+    padding: '10px 16px',
+    borderBottom: '1px solid var(--v2-border)',
+  },
+  clearBtn: (disabled) => ({
+    flexShrink: 0,
+    padding: '5px 10px',
+    borderRadius: '6px',
+    border: '1px solid var(--v2-border)',
+    background: 'var(--v2-surface-3)',
+    color: 'var(--v2-text-dim)',
+    fontSize: '12px',
+    whiteSpace: 'nowrap',
+    // The inline color/background would otherwise override the UA's greying of
+    // a disabled control — same reason the filter bar's selects dim themselves.
+    opacity: disabled ? 0.5 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  }),
   scroller: {
     flex: 1,
     display: 'flex',
@@ -258,9 +301,8 @@ const styles = {
 };
 
 // Iniciais do responsável pelo card, a partir de `ultima_atualizacao_por`
-// ("bruno" ou "agente:{agent_id}") — mesma fonte de dado que
-// CardItem.jsx (v1) usa para o badge de origem, aqui reduzida a um avatar de
-// 2 letras em vez de um badge com texto completo.
+// ("bruno" ou "agente:{agent_id}") — reduzida aqui a um avatar de 2 letras em
+// vez de um badge com o texto completo.
 function resolveAvatarInitials(ultimaAtualizacaoPor) {
   if (!ultimaAtualizacaoPor || ultimaAtualizacaoPor === 'bruno') return 'BR';
   const agentId = ultimaAtualizacaoPor.startsWith('agente:')
@@ -310,6 +352,8 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
     deleteCard,
     uploadCardImage,
     deleteCardImage,
+    previewClearFinished,
+    clearFinished,
   } = useCards(fetchProjectIds);
 
   // Filtro de exibição client-side, sempre que um cliente está fixo — no
@@ -336,22 +380,36 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   const [creatingStatus, setCreatingStatus] = useState(null);
 
   // Id do card sendo editado no CardFormModal (Fase 4), ou `null` = modal
-  // fechado. Guarda só o id, NÃO um snapshot do card — diferente de
-  // `formState.card` em views/BoardView.jsx v1 (que guarda o objeto e não se
-  // atualiza sozinho enquanto o modal está aberto). Divergência deliberada:
-  // em v1 o rosto do card já tem sua própria `ImageAttachments` sempre
-  // visível, então uma imagem recém-enviada aparece ali mesmo com o modal
-  // "desatualizado". BoardV2 não tem tira de imagem no rosto do card (ver
-  // comentário "NÃO implementado" acima) — o modal é a ÚNICA superfície de
-  // imagem aqui, então ele precisa refletir `uploadCardImage`/
-  // `deleteCardImage` (mutações de `useCards`, que atualizam `cards`) em
-  // tempo real, ou pareceria travado ao enviar uma imagem. Derivar de
-  // `cards` a cada render resolve isso; `CardFormModal` usa `useState` com
+  // fechado. Guarda só o id, NÃO um snapshot do card: um snapshot não se
+  // atualiza sozinho enquanto o modal está aberto, e este board não tem tira
+  // de imagem no rosto do card (ver comentário "NÃO implementado" acima) — o
+  // modal é a ÚNICA superfície de imagem aqui, então ele precisa refletir
+  // `uploadCardImage`/`deleteCardImage` (mutações de `useCards`, que
+  // atualizam `cards`) em tempo real, ou pareceria travado ao enviar uma
+  // imagem. Derivar de `cards` a cada render resolve isso;
+  // `CardFormModal` usa `useState` com
   // inicializador preguiçoso para título/descrição/status, então uma
   // mudança na referência de `card` entre renders não reseta o que o Bruno
   // já estiver digitando.
   const [editingCardId, setEditingCardId] = useState(null);
   const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
+
+  // "Limpar concluídos" — ported from the v1 board, the only surface this
+  // action used to have. The endpoint deletes by ONE `projeto_id` at a time,
+  // so the target is the most specific tier the filter currently holds: the
+  // Tier 2 project if one is picked, else the active client. With
+  // neither (sidebar and local select both on "Todos") there is nothing to
+  // address — the button is disabled and says why, exactly as v1 did.
+  //
+  // The enable rule is the TIER ALONE, deliberately narrower than v1's
+  // `mostSpecificProjectId != null && projectHasFinished(...)`: with no card
+  // done yet, ClearFinishedModal already resolves its preview to the 'empty'
+  // phase and says "Nenhum card concluído neste projeto ainda". Gating on a
+  // local card count would also make the button lie whenever the board is
+  // showing a filtered subset of what the target project actually holds.
+  const clearTargetId = selectedProjetoId ?? effectiveClienteId;
+  const clearEnabled = clearTargetId != null;
+  const [clearFinishedOpen, setClearFinishedOpen] = useState(false);
 
   // The target (`projeto_id` OR `cliente_id`) comes from the modal's payload
   // now, not from a prop: the modal owns the Cliente/Projeto choice.
@@ -368,17 +426,30 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
 
   return (
     <div style={styles.page}>
-      <ClienteProjetoFilterBar
-        clienteSelectEnabled={clienteSelectEnabled}
-        clientes={clientes}
-        localClienteId={localClienteId}
-        onSelectLocalCliente={setLocalClienteId}
-        effectiveClienteId={effectiveClienteId}
-        subProjetoIds={subProjetoIds}
-        selectedProjetoId={selectedProjetoId}
-        onSelectProjeto={setSelectedProjetoId}
-        projects={projects}
-      />
+      <div style={styles.headerRow}>
+        <ClienteProjetoFilterBar
+          clienteSelectEnabled={clienteSelectEnabled}
+          clientes={clientes}
+          localClienteId={localClienteId}
+          onSelectLocalCliente={setLocalClienteId}
+          effectiveClienteId={effectiveClienteId}
+          subProjetoIds={subProjetoIds}
+          selectedProjetoId={selectedProjetoId}
+          onSelectProjeto={setSelectedProjetoId}
+          projects={projects}
+        />
+        <div style={styles.headerActions}>
+          <button
+            type="button"
+            disabled={!clearEnabled}
+            style={styles.clearBtn(!clearEnabled)}
+            title={clearEnabled ? undefined : 'Selecione um cliente ou projeto para limpar concluídos'}
+            onClick={() => setClearFinishedOpen(true)}
+          >
+            Limpar concluídos
+          </button>
+        </div>
+      </div>
       <div style={styles.scroller}>
         {STATUSES.map((status) => {
           const columnCards = cards.filter((c) => c.status === status);
@@ -479,6 +550,25 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           onClose={() => setEditingCardId(null)}
           onUploadImage={(file) => uploadCardImage(editingCardId, file)}
           onDeleteImage={(imageId) => deleteCardImage(editingCardId, imageId)}
+        />
+      )}
+
+      {/* `clearTargetId` is re-checked here, not just on the button: the
+          filter can drop back to "Todos" (sidebar change, client reset) while
+          the sheet is open, and the modal dereferences `projetoId` on every
+          preview. Falling back to the raw id for the name matters in a
+          DESTRUCTIVE confirmation — `resolveProjectName` returns `null` for an
+          id the project list cannot resolve, which would render the sheet
+          title as the literal "null". */}
+      {clearFinishedOpen && clearTargetId != null && (
+        <ClearFinishedModal
+          open
+          projetoId={clearTargetId}
+          projetoNome={resolveProjectName(clearTargetId, projects) || clearTargetId}
+          onPreview={previewClearFinished}
+          onExecute={clearFinished}
+          onClose={() => setClearFinishedOpen(false)}
+          onSuccess={() => {}}
         />
       )}
     </div>

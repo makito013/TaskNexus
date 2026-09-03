@@ -1,7 +1,7 @@
 // frontend/src/utils/taskGroups.js
 // Agrupamento por CLIENTE das tarefas globais (TarefasV2.jsx) — mesma regra
 // de derivação de cliente_id (`clienteIdFromProjetoId`, utils/clientes.js)
-// já usada por ChatSidebarV2.jsx/BoardView.jsx, aplicada aqui à lista bruta
+// já usada por ChatSidebarV2.jsx/BoardV2.jsx, aplicada aqui à lista bruta
 // de `useGlobalTasks`. Puramente de dados: NÃO faz split open/done (isso
 // continua responsabilidade de quem consome, em TarefasV2.jsx, exatamente
 // como já era feito antes pro array flat) e NÃO ordena (ordenação alfabética

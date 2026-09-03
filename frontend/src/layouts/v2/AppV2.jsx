@@ -161,8 +161,8 @@ export function AppV2({ initialAppearance }) {
   // criado num subprojeto era invisível no board sem um chat aberto NAQUELE
   // subprojeto específico) — recebe `selectedClienteId` abaixo pra filtrar
   // pelo cliente da sidebar, exatamente como TarefasV2 já fazia. `null` =
-  // "Todos" — mesmo sentinel que BoardView.jsx/ClienteFilterBar (v1) já
-  // usam. Lazy-init a partir do projeto atualmente selecionado, pra abrir já
+  // "Todos" — mesmo sentinel que a cascata de filtro das telas v2 já usa.
+  // Lazy-init a partir do projeto atualmente selecionado, pra abrir já
   // filtrado no cliente certo em vez de sempre cair em "Todos" no 1º render.
   const [selectedClienteId, setSelectedClienteId] = useState(
     () => (selectedProjectId ? clienteIdFromProjetoId(selectedProjectId) : null)
@@ -170,7 +170,7 @@ export function AppV2({ initialAppearance }) {
 
   // "Clientes" candidatos à sidebar: qualquer Project cujo id não tem "/"
   // (cliente-como-projeto e projeto-solto-na-raiz contam como cliente de si
-  // mesmos) — mesma regra usada pelo Tier 1 do filtro de BoardView.jsx,
+  // mesmos) — mesma regra usada pelo Tier 1 da cascata de filtro,
   // centralizada em `isClienteId` (utils/clientes.js) para não triplicar a
   // regra (ressalva do Revisor na Fase 1, endereçada aqui na Fase 2).
   const clientes = useMemo(() => projects.filter((p) => isClienteId(p.id)), [projects]);

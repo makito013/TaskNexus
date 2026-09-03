@@ -74,8 +74,8 @@ describe('NewChatSheet — select de Projeto condicional', () => {
     // Documenta o comportamento atual apontado pelo Dev: NewChatSheet só
     // recebe o objeto `cliente` já resolvido (sub_projetos é list[str] de
     // ids, ver Project.sub_projetos em backend/app/models.py), sem a lista
-    // completa de `projetos` para fazer lookup de nome bonito — diferente de
-    // KanbanBoard/BoardView, que sempre resolvem projeto_id -> nome via
+    // completa de `projetos` para fazer lookup de nome bonito — diferente das
+    // telas de Board/Tarefas, que sempre resolvem projeto_id -> nome via
     // `projetos`. Este teste FIXA o comportamento atual (ids crus, com o
     // prefixo do próprio cliente repetido) para que qualquer mudança futura
     // seja deliberada, não um efeito colateral silencioso.

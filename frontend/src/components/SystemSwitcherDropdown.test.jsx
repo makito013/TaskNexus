@@ -9,16 +9,17 @@ afterEach(() => {
 });
 
 describe('SystemSwitcherDropdown — listing', () => {
-  it('lists the 3 systems in the order defined by SYSTEMS (Tarefas, Board, Escritório)', () => {
+  it('lists the 2 systems in the order defined by SYSTEMS (Tarefas, Escritório)', () => {
     render(<SystemSwitcherDropdown currentPath="/" onNavigate={vi.fn()} onClose={vi.fn()} />);
     const items = screen.getAllByRole('menuitem');
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(2);
     expect(items.map((el) => el.textContent)).toEqual([
       expect.stringContaining('Tarefas'),
-      expect.stringContaining('Board'),
       expect.stringContaining('Escritório'),
     ]);
-    expect(SYSTEMS.map((s) => s.nome)).toEqual(['Tarefas', 'Board', 'Escritório']);
+    expect(SYSTEMS.map((s) => s.nome)).toEqual(['Tarefas', 'Escritório']);
+    // The retired v1 board must not come back as a launcher entry.
+    expect(screen.queryByText('Board')).toBeNull();
   });
 });
 
@@ -29,20 +30,17 @@ describe('SystemSwitcherDropdown — navigation', () => {
     const onClose = vi.fn(() => calls.push(['onClose']));
 
     render(<SystemSwitcherDropdown currentPath="/" onNavigate={onNavigate} onClose={onClose} />);
-    fireEvent.click(screen.getByText('Board'));
+    fireEvent.click(screen.getByText('Tarefas'));
 
-    expect(onNavigate).toHaveBeenCalledWith('/board');
+    expect(onNavigate).toHaveBeenCalledWith('/tarefas');
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(calls).toEqual([['onNavigate', '/board'], ['onClose']]);
+    expect(calls).toEqual([['onNavigate', '/tarefas'], ['onClose']]);
   });
 
-  it('calls onNavigate with "/tarefas" and "/" for the other two items', () => {
+  it('calls onNavigate with "/" for the Escritório item', () => {
     const onNavigate = vi.fn();
     const onClose = vi.fn();
-    render(<SystemSwitcherDropdown currentPath="/board" onNavigate={onNavigate} onClose={onClose} />);
-
-    fireEvent.click(screen.getByText('Tarefas'));
-    expect(onNavigate).toHaveBeenCalledWith('/tarefas');
+    render(<SystemSwitcherDropdown currentPath="/tarefas" onNavigate={onNavigate} onClose={onClose} />);
 
     fireEvent.click(screen.getByText('Escritório'));
     expect(onNavigate).toHaveBeenCalledWith('/');
@@ -51,15 +49,13 @@ describe('SystemSwitcherDropdown — navigation', () => {
 
 describe('SystemSwitcherDropdown — current route highlight', () => {
   it('marks the item matching currentPath with a check, others with a chevron', () => {
-    render(<SystemSwitcherDropdown currentPath="/board" onNavigate={vi.fn()} onClose={vi.fn()} />);
+    render(<SystemSwitcherDropdown currentPath="/tarefas" onNavigate={vi.fn()} onClose={vi.fn()} />);
     const items = screen.getAllByRole('menuitem');
 
-    const boardItem = items.find((el) => el.textContent.includes('Board'));
     const tarefasItem = items.find((el) => el.textContent.includes('Tarefas'));
     const escritorioItem = items.find((el) => el.textContent.includes('Escritório'));
 
-    expect(boardItem.textContent).toContain('✓');
-    expect(tarefasItem.textContent).toContain('›');
+    expect(tarefasItem.textContent).toContain('✓');
     expect(escritorioItem.textContent).toContain('›');
   });
 });

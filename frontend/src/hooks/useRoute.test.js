@@ -13,10 +13,10 @@ describe('useRoute — initial state', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   it('reflects window.location.pathname on mount', () => {
-    window.history.pushState({}, '', '/board');
+    window.history.pushState({}, '', '/tarefas');
     const { result } = renderHook(() => useRoute());
     const [path] = result.current;
-    expect(path).toBe('/board');
+    expect(path).toBe('/tarefas');
   });
 });
 
@@ -28,12 +28,12 @@ describe('useRoute — navigate', () => {
     const pushStateSpy = vi.spyOn(window.history, 'pushState');
     const { result } = renderHook(() => useRoute());
 
-    act(() => { result.current[1]('/board'); });
+    act(() => { result.current[1]('/tarefas'); });
 
     const [path] = result.current;
-    expect(path).toBe('/board');
-    expect(pushStateSpy).toHaveBeenCalledWith({}, '', '/board');
-    expect(window.location.pathname).toBe('/board');
+    expect(path).toBe('/tarefas');
+    expect(pushStateSpy).toHaveBeenCalledWith({}, '', '/tarefas');
+    expect(window.location.pathname).toBe('/tarefas');
   });
 });
 
@@ -44,8 +44,8 @@ describe('useRoute — popstate (browser back/forward)', () => {
   it('updates the path when a popstate event fires, without calling navigate', () => {
     const { result } = renderHook(() => useRoute());
 
-    act(() => { result.current[1]('/board'); });
-    expect(result.current[0]).toBe('/board');
+    act(() => { result.current[1]('/tarefas'); });
+    expect(result.current[0]).toBe('/tarefas');
 
     // Simulate the browser back button: history moves back to '/' and fires
     // popstate WITHOUT any navigate() call from app code.

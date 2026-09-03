@@ -172,6 +172,11 @@ export const api = {
     return r.json()
   },
 
+  // MCP/agent-only endpoint — no UI calls this any more, and it must NOT be
+  // deleted as dead code. Subcards stopped being creatable from the app when
+  // the `create-subcard` mode left CardFormModal and the v1 board was removed;
+  // the agent path (`criar_card` with `parent_id`) is the only caller left, and
+  // it is live. See the matching note in hooks/useCards.js.
   async createSubcard(parentId, { titulo, status, descricao }) {
     const r = await fetch(`${BASE}/cards/${parentId}/subcards`, {
       method: 'POST',

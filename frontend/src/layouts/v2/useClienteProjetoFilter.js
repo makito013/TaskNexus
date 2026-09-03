@@ -96,13 +96,14 @@ export function useClienteProjetoFilter(projects, sidebarClienteId) {
         ? selectedProjetoId
         : effectiveClienteId;
 
-    const subtree = collectSubtreeIds(rootId, projects);
-    // Client-only cards/tasks (attached directly to the client, with no
-    // specific project) must stay visible even when a specific project is
-    // selected — definitive product behavior, not a bug.
-    const ids = rootId !== effectiveClienteId
-      ? Array.from(new Set([effectiveClienteId, ...subtree]))
-      : subtree;
+    // Picking a specific project narrows to THAT project's subtree and
+    // nothing else: client-only cards/tasks (attached directly to the client,
+    // with no specific project) disappear. Product decision (Bruno, "filtro de
+    // projeto deixa passar cards sem projeto" session) reversing the earlier
+    // rule, which unioned `effectiveClienteId` back in and made a project
+    // filter unable to exclude anything. Applies to BOTH v2 screens that share
+    // this hook (BoardV2 and TarefasV2), deliberately and without a flag.
+    const ids = collectSubtreeIds(rootId, projects);
 
     // An empty array means "no filter at all" to useCards (it drops the query
     // param and fetches EVERY project), so never return one while a client is

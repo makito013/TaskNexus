@@ -13,7 +13,7 @@
 // configurado por projeto).
 //
 // Resolução de nome de sub-projeto: `cliente.sub_projetos` é só uma lista de
-// ids (mesmo shape usado por CardFormModal.jsx/BoardView.jsx) — este arquivo
+// ids (mesmo shape usado por CardFormModal.jsx) — este arquivo
 // não tem acesso à lista completa de `projetos` pra resolver nome bonito a
 // partir do id (só recebe o objeto `cliente` já resolvido), então usa o
 // próprio id como texto da opção, mesmo fallback que CardFormModal usaria se

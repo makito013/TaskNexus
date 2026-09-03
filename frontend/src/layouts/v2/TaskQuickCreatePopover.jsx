@@ -188,7 +188,7 @@ export function TaskQuickCreatePopover({ open, onClose, sessionKey, projects = [
 
   // "Clientes" = qualquer Project sem "/" no id (cliente-como-projeto e
   // projeto-solto-na-raiz contam como cliente de si mesmos) — mesma regra de
-  // CardFormModal.jsx/BoardView.jsx, centralizada em `isClienteId`
+  // CardFormModal.jsx, centralizada em `isClienteId`
   // (utils/clientes.js) pra não triplicar a regra (achado do QA na Fase 2,
   // mesmo padrão de duplicação que causou o bug raiz desta epic).
   const clientes = projects.filter((p) => isClienteId(p.id));

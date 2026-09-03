@@ -1,8 +1,7 @@
 // frontend/src/layouts/v2/BoardV2.test.jsx
 // Milestone 3 (plano Layout v2, 05-TL.md, Tarefa 15): cobre a apresentação
 // v2 do Board — 4 colunas fixas por status (não por projeto), reaproveitando
-// useCards tal como está (mockado aqui, mesmo padrão de App.test.jsx para
-// BoardView.jsx v1).
+// useCards tal como está (mockado aqui).
 //
 // Fase atual (cascata Cliente -> Projeto): a filtragem passou a sair de
 // `useClienteProjetoFilter` (estado local desta tela) em vez de um cálculo
@@ -381,17 +380,20 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
     fireEvent.change(projetoSelect, { target: { value: 'clienteC/proj' } });
 
-    // ...mas o filtro por trás traz o neto junto.
+    // ...mas o filtro por trás traz o neto junto (subárvore inteira do projeto
+    // escolhido — e nada acima dele, ver o teste de cards cliente-only abaixo).
     expect(lastFetchedProjectIds()).toContain('clienteC/proj/neto');
   });
 
-  it('keeps client-only cards visible when a specific project is selected (definitive product behavior)', () => {
+  it('drops client-only cards when a specific project is selected — the filter narrows to that subtree only', () => {
     mockNoCards();
     render(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" />);
 
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
-    expect(lastFetchedProjectIds()).toEqual(['clienteC', 'clienteC/proj', 'clienteC/proj/neto']);
+    // No 'clienteC' in the list: a card attached straight to the client, with
+    // no specific project, is out of scope once a project is picked.
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj', 'clienteC/proj/neto']);
   });
 
   it('resets the selected project when the effective client changes', () => {
@@ -517,7 +519,9 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
     fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'clienteC' } });
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
-    expect(lastFetchedProjectIds()).toEqual(['clienteC', 'clienteC/proj', 'clienteC/proj/neto']);
+    // Same rule as the "drops client-only cards" test above: the subtree of
+    // the picked project, and only it.
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj', 'clienteC/proj/neto']);
     const card = screen.getByTestId('board-v2-card-9');
     expect(card.textContent).toContain('Card do neto');
     expect(card.textContent).toContain('Cliente C');
@@ -683,6 +687,89 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
     fireEvent.change(fileInput, { target: { files: [file] } });
 
     expect(uploadCardImage).toHaveBeenCalledWith(2, file);
+  });
+});
+
+// "Limpar concluídos" — ported from the deleted v1 board, which was its only
+// surface. Divergence D-5 of the plan: the button does NOT live inside
+// `ClienteProjetoFilterBar`. That bar returns `null` whenever the sidebar
+// fixed a client with no subprojects — exactly the case where clearing is most
+// useful — and it is shared with TarefasV2, where a card action makes no
+// sense. It lives in BoardV2's own header row instead, and the test named for
+// the null case below is what keeps someone from "simplifying" that back.
+describe('BoardV2 - clear finished cards', () => {
+  function mockCardsWithClear(cards = [], overrides = {}) {
+    const actions = {
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      previewClearFinished: vi.fn().mockResolvedValue({ cards: 3, imagens: 2 }),
+      clearFinished: vi.fn().mockResolvedValue({ cards: 3, imagens: 2 }),
+      ...overrides,
+    };
+    mockUseCards.mockReturnValue(actions);
+    return actions;
+  }
+
+  it('disables the button, with an explanatory title, while no client or project is selected', () => {
+    mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} />);
+
+    const button = screen.getByText('Limpar concluídos');
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('Selecione um cliente ou projeto para limpar concluídos');
+  });
+
+  it('still renders the button for a fixed client WITHOUT subprojects, where the filter bar renders nothing at all', () => {
+    mockCardsWithClear();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // The shared bar is genuinely absent here — that is the whole point.
+    expect(screen.queryByTestId('cliente-projeto-filter-bar')).toBeNull();
+    expect(screen.getByText('Limpar concluídos').disabled).toBe(false);
+  });
+
+  it('opens the sheet on the client tier when no specific project is picked', async () => {
+    const { previewClearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    await waitFor(() => expect(previewClearFinished).toHaveBeenCalledWith('clienteB'));
+    expect(screen.getByRole('dialog', { name: 'Limpar concluídos — Cliente B' })).toBeTruthy();
+  });
+
+  it('targets the most specific tier: the Tier 2 project once one is picked', async () => {
+    const { previewClearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteB/sub1' } });
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    await waitFor(() => expect(previewClearFinished).toHaveBeenCalledWith('clienteB/sub1'));
+    expect(previewClearFinished).not.toHaveBeenCalledWith('clienteB');
+  });
+
+  it('confirming the sheet calls clearFinished with the same target and closes it', async () => {
+    const { clearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+    fireEvent.click(await screen.findByText('Apagar permanentemente'));
+
+    await waitFor(() => expect(clearFinished).toHaveBeenCalledWith('clienteB'));
+    await waitFor(() => expect(screen.queryByText('Apagar permanentemente')).toBeNull());
+  });
+
+  it('never titles the sheet "null" for a client the project list cannot resolve', async () => {
+    mockCardsWithClear();
+    // `projects` has no entry for 'clienteB' — resolveProjectName returns null
+    // by design, and the raw id has to stand in inside a destructive dialog.
+    render(<BoardV2 projects={[]} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    expect(await screen.findByRole('dialog', { name: 'Limpar concluídos — clienteB' })).toBeTruthy();
   });
 });
 
