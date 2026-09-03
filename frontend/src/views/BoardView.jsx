@@ -327,7 +327,7 @@ export function BoardView({ navigate }) {
   // Busca /api/projects uma vez ao montar — usada para resolver projeto_id
   // -> nome de exibição (nos chips, nos grupos da Lista, nas lanes do
   // Board via KanbanBoard) e para popular o select de projeto do
-  // CardFormModal em modo create-top.
+  // CardFormModal em modo create.
   useEffect(() => {
     let cancelled = false;
     api.fetchProjects()
@@ -404,11 +404,17 @@ export function BoardView({ navigate }) {
   }, []);
 
   // Estado do CardFormModal: null = fechado; caso contrário
-  // { mode: 'create-top' | 'create-subcard' | 'edit', card?, parentId? }.
+  // { mode: 'create' | 'create-subcard' | 'edit', card?, parentId? }.
+  //
+  // ⚠️ 'create-subcard' NÃO existe mais no CardFormModal (subcards viraram
+  // MCP-only) — este ramo é resíduo da v1, que sai inteira na Fase 3. Abrir
+  // "+ Subtarefa" aqui renderiza o modal sem título de modo. Não vale
+  // consertar uma tela agendada para deleção; 'create' e 'edit', que são os
+  // caminhos vivos desta view, continuam funcionando.
   const [formState, setFormState] = useState(null);
   const closeForm = useCallback(() => setFormState(null), []);
 
-  const openCreateTop = useCallback(() => setFormState({ mode: 'create-top' }), []);
+  const openCreateTop = useCallback(() => setFormState({ mode: 'create' }), []);
   const openCreateSubcard = useCallback(
     (parentId) => setFormState({ mode: 'create-subcard', parentId }),
     []
@@ -424,13 +430,12 @@ export function BoardView({ navigate }) {
   // onSubmit do CardFormModal: o próprio modal chama onClose() depois que a
   // promise resolve (ver CardFormModal.jsx handleSubmit) — não preciso
   // fechar o form aqui de novo. Os payloads extras que o modal injeta
-  // (`projeto_id` fora do modo create-top, `parent_id`, `id`) são ignorados
-  // sem problema pelos destructurings de api.js (createCard/updateCard/
-  // createSubcard só leem os campos que usam).
+  // (`id` no modo edit) são ignorados sem problema pelos destructurings de
+  // api.js (createCard/updateCard/createSubcard só leem os campos que usam).
   const handleSubmit = useCallback(
     async (payload) => {
       if (!formState) return;
-      if (formState.mode === 'create-top') {
+      if (formState.mode === 'create') {
         await createCard(payload);
       } else if (formState.mode === 'create-subcard') {
         await createSubcard(formState.parentId, payload);

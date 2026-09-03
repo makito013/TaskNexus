@@ -30,12 +30,14 @@
 // aplicada ao NOME de um cliente/projeto que não resolve (tag omitida, nunca
 // o id cru).
 //
-// `selectedProjectId` continua existindo à parte, só para o fluxo de CRIAÇÃO
-// de card (`handleCreate` abaixo) — permanece atrelado ao projeto do chat
-// ativo de propósito (fora de escopo desta fase desenhar uma UI de "criar
-// card cliente-only"), não é contraditório com `selectedClienteId` cuidar da
-// listagem: são dois propósitos diferentes que só coincidem quando o chat
-// ativo e o cliente da sidebar são o mesmo projeto.
+// Card creation: each column's "+ Adicionar card" opens the `CardFormModal`
+// in 'create' mode, with defaults taken from THIS screen's ACTIVE FILTER
+// (`effectiveClienteId`/`selectedProjetoId`) and the status of the clicked
+// column. The `selectedProjectId` prop (the active chat's project), once the
+// only source of the creation target, is gone from the signature: it tied
+// creation to the open chat and disabled the whole button when there was no
+// chat at all ("Selecione um projeto na barra lateral"). Bruno now picks
+// Cliente/Projeto inside the modal itself.
 //
 // Decisão — "mover card": em vez de reaproveitar `MoveCardMenu.jsx` (v1,
 // estilizado com tokens `--*`), o controle de mover é um `<select>` nativo
@@ -60,7 +62,14 @@
 // aviso de exclusão em cascata, nunca renderiza a lista de subcards em si.
 import { useState } from 'react';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
+import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
 import { useCards } from '../../hooks/useCards.js';
+import {
+  CARD_TIPO_COLORS,
+  CARD_TIPO_LABELS,
+  formatPrazo,
+  isPrazoAtrasado,
+} from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
 import { resolveCardTags, useClienteProjetoFilter } from './useClienteProjetoFilter.js';
@@ -217,43 +226,35 @@ const styles = {
     cursor: 'pointer',
     flexShrink: 0,
   },
-  addForm: {
-    margin: '2px 10px 10px',
+  // Meta row at the top of the card face: copyable id + client on the left,
+  // tipo chip on the right. A card with no tipo gets no placeholder — the row
+  // just shrinks.
+  cardMetaRow: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    minWidth: 0,
+  },
+  tipoChip: (tipo) => ({
+    padding: '2px 7px',
+    borderRadius: '5px',
+    background: CARD_TIPO_COLORS[tipo].soft,
+    color: CARD_TIPO_COLORS[tipo].strong,
+    fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '9px',
+    fontWeight: 700,
+    letterSpacing: '.06em',
+    whiteSpace: 'nowrap',
     flexShrink: 0,
-  },
-  addInput: {
-    width: '100%',
-    boxSizing: 'border-box',
-    padding: '8px 10px',
-    borderRadius: '8px',
-    border: '1px solid var(--v2-border)',
-    background: 'var(--v2-surface-2)',
-    color: 'var(--v2-text)',
-    fontSize: '12px',
-  },
-  addFormActions: {
-    display: 'flex',
-    gap: '6px',
-  },
-  addFormBtn: (primary) => ({
-    flex: 1,
-    padding: '7px',
-    borderRadius: '6px',
-    border: primary ? 'none' : '1px solid var(--v2-border)',
-    background: primary ? 'var(--v2-accent)' : 'transparent',
-    color: primary ? 'var(--v2-bg)' : 'var(--v2-text-dim)',
-    fontSize: '11px',
-    fontWeight: 600,
-    cursor: 'pointer',
   }),
-  hint: {
-    padding: '10px 14px',
-    fontSize: '11px',
-    color: 'var(--v2-text-faint)',
-  },
+  prazo: (atrasado) => ({
+    fontSize: '10px',
+    fontWeight: atrasado ? 700 : 400,
+    color: atrasado ? 'var(--v2-danger)' : 'var(--v2-text-faint)',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  }),
 };
 
 // Iniciais do responsável pelo card, a partir de `ultima_atualizacao_por`
@@ -268,48 +269,10 @@ function resolveAvatarInitials(ultimaAtualizacaoPor) {
   return (agentId || '?').slice(0, 2).toUpperCase();
 }
 
-function AddCardForm({ onSubmit, onCancel }) {
-  const [titulo, setTitulo] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    const trimmed = titulo.trim();
-    if (!trimmed) return;
-    setSaving(true);
-    try {
-      await onSubmit(trimmed);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div style={styles.addForm}>
-      <input
-        autoFocus
-        style={styles.addInput}
-        placeholder="Título do card"
-        value={titulo}
-        onChange={(e) => setTitulo(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
-      />
-      <div style={styles.addFormActions}>
-        <button type="button" style={styles.addFormBtn(false)} onClick={onCancel} disabled={saving}>
-          Cancelar
-        </button>
-        <button type="button" style={styles.addFormBtn(true)} onClick={handleSubmit} disabled={saving || !titulo.trim()}>
-          {saving ? 'Salvando…' : 'Adicionar'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = null }) {
-  // Cascata Cliente -> Projeto (estado local desta tela). Atenção ao par de
-  // nomes parecidos: `selectedProjectIds` (plural) é o filtro de LISTAGEM que
-  // sai daqui; `selectedProjectId` (singular, prop) é o projeto do chat ativo
-  // e só governa a CRIAÇÃO de card mais abaixo.
+export function BoardV2({ projects = [], selectedClienteId = null }) {
+  // Cliente -> Projeto cascade (local state of this screen). `selectedProjectIds`
+  // (plural) is the LISTING filter; `selectedProjetoId` (singular) is the
+  // chosen Tier 2, which also becomes the create modal's default project.
   const {
     clienteSelectEnabled,
     clientes,
@@ -360,8 +323,17 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
     ? fetchedCards.filter((c) => clienteIdFromProjetoId(c.projeto_id) === effectiveClienteId)
     : fetchedCards;
 
-  // Coluna com o formulário de "+ Adicionar card" aberto (null = nenhuma).
-  const [addingStatus, setAddingStatus] = useState(null);
+  // Status of the column whose "+ Adicionar card" was clicked (null = create
+  // modal closed). Holds the STATUS, not a boolean: it is the modal's
+  // `defaultStatus`, and it is what makes the card land in the right column.
+  //
+  // ⚠️ The modal is mounted CONDITIONALLY (see the JSX at the end of the file),
+  // both here and in edit mode. `CardFormModal` runs `if (!open) return null`
+  // AFTER the `useState` calls, and the initialisers are lazy: keeping it
+  // mounted with `open={false}` would freeze the create defaults
+  // (client/project from the filter) at the first render — open, close, switch
+  // client in the filter, reopen, and the old client comes back.
+  const [creatingStatus, setCreatingStatus] = useState(null);
 
   // Id do card sendo editado no CardFormModal (Fase 4), ou `null` = modal
   // fechado. Guarda só o id, NÃO um snapshot do card — diferente de
@@ -381,10 +353,9 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
   const [editingCardId, setEditingCardId] = useState(null);
   const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
 
-  const handleCreate = async (status, titulo) => {
-    await createCard({ titulo, projeto_id: selectedProjectId, status });
-    setAddingStatus(null);
-  };
+  // The target (`projeto_id` OR `cliente_id`) comes from the modal's payload
+  // now, not from a prop: the modal owns the Cliente/Projeto choice.
+  const handleCreateSubmit = (payload) => createCard(payload);
 
   const handleMove = (cardId, status) => updateCard(cardId, { status });
 
@@ -424,8 +395,15 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
                   // projeto é de fato diferente do cliente (um
                   // cliente-como-projeto repetiria o mesmo nome duas vezes).
                   const { clienteNome, projetoNome } = resolveCardTags(card.projeto_id, projects);
+                  const atrasado = isPrazoAtrasado(card.prazo, card.status);
                   return (
                     <div key={card.id} style={styles.card} data-testid={`board-v2-card-${card.id}`}>
+                      <div style={styles.cardMetaRow}>
+                        <CardIdBadge id={card.id} clienteNome={clienteNome} variant="card" />
+                        {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
+                          <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
+                        )}
+                      </div>
                       <button
                         type="button"
                         style={styles.cardTitle}
@@ -439,8 +417,16 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
                           <span style={styles.avatar} title={card.ultima_atualizacao_por || 'bruno'}>
                             {resolveAvatarInitials(card.ultima_atualizacao_por)}
                           </span>
-                          {clienteNome && <span style={styles.tag}>{clienteNome}</span>}
-                          {projetoNome && <span style={styles.tag}>{projetoNome}</span>}
+                          {/* The client tag moved out of here: it now lives in
+                              the meta row, next to the id. Only the project tag
+                              stays, and only when the project differs from the
+                              client. */}
+                          {projetoNome && (
+                            <span data-testid="card-tag" style={styles.tag}>{projetoNome}</span>
+                          )}
+                          {card.prazo && (
+                            <span style={styles.prazo(atrasado)}>{formatPrazo(card.prazo)}</span>
+                          )}
                         </div>
                         <select
                           style={styles.statusSelect}
@@ -458,22 +444,29 @@ export function BoardV2({ projects = [], selectedProjectId, selectedClienteId = 
                 })}
               </div>
 
-              {addingStatus === status ? (
-                <AddCardForm
-                  onSubmit={(titulo) => handleCreate(status, titulo)}
-                  onCancel={() => setAddingStatus(null)}
-                />
-              ) : selectedProjectId ? (
-                <button type="button" style={styles.addBtn} onClick={() => setAddingStatus(status)}>
-                  + Adicionar card
-                </button>
-              ) : (
-                <div style={styles.hint}>Selecione um projeto na barra lateral para adicionar cards.</div>
-              )}
+              {/* Always visible: the old "Selecione um projeto na barra
+                  lateral" blocker is gone along with the `selectedProjectId`
+                  prop. The card's Cliente/Projeto is chosen inside the modal. */}
+              <button type="button" style={styles.addBtn} onClick={() => setCreatingStatus(status)}>
+                + Adicionar card
+              </button>
             </div>
           );
         })}
       </div>
+
+      {creatingStatus && (
+        <CardFormModal
+          open
+          mode="create"
+          projetos={projects}
+          defaultClienteId={effectiveClienteId}
+          defaultProjetoId={selectedProjetoId}
+          defaultStatus={creatingStatus}
+          onSubmit={handleCreateSubmit}
+          onClose={() => setCreatingStatus(null)}
+        />
+      )}
 
       {editingCard && (
         <CardFormModal

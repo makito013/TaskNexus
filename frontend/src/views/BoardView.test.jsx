@@ -544,10 +544,16 @@ describe('BoardView — editar card existente', () => {
     expect(await screen.findByText('Editar Card')).not.toBeNull();
     expect(screen.getByDisplayValue('Subtarefa X')).not.toBeNull();
 
+    // Touch the title so the edit is not a no-op: the modal now gates a
+    // Salvar click that changed nothing (empty-body PATCH would steal the
+    // attribution). What this test is actually about is the recursive lookup
+    // finding subcard 99 — the id in the update call is what proves it.
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Subtarefa X (revisada)' } });
     fireEvent.click(screen.getByText('Salvar'));
 
     await waitFor(() => expect(updateCard).toHaveBeenCalledWith(99, expect.objectContaining({
-      titulo: 'Subtarefa X',
+      id: 99,
+      titulo: 'Subtarefa X (revisada)',
     })));
   });
 });

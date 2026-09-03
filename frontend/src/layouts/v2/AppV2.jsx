@@ -364,7 +364,6 @@ export function AppV2({ initialAppearance }) {
           {v2Screen === 'board' && (
             <BoardV2
               projects={projects}
-              selectedProjectId={selectedProjectId}
               selectedClienteId={selectedClienteId}
             />
           )}

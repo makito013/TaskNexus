@@ -225,6 +225,8 @@ export function useCards(selectedProjectIds) {
         titulo: updated.titulo,
         descricao: updated.descricao,
         status: updated.status,
+        tipo: updated.tipo,
+        prazo: updated.prazo,
         ultima_atualizacao_por: updated.ultima_atualizacao_por,
         atualizado_em: updated.atualizado_em,
         // imagens/subcards/subcards_resumo propositalmente NÃO vêm de
