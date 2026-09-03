@@ -76,6 +76,15 @@ _CONNECTIVITY_ERROR_TEXT = (
     "Não foi possível conectar ao backend do Escritório para processar esta ação."
 )
 
+# Manual copy of models.CARD_TIPOS: the literal list of valid tipo values
+# announced in the inputSchema. This adapter is pure-stdlib Python 3.9 and runs
+# as a child process of the `claude` CLI, so it cannot import from `app/` —
+# hence the copy. When a 4th tipo is added, update models.CARD_TIPOS, this
+# _TIPO_ENUM, and both assertions in test_mcp_card_adapter.py (criar_card and
+# editar_card) together: a value forgotten here fails silently (the agent
+# never gets it). Defined up here because TOOL_CRIAR_CARD already references it.
+_TIPO_ENUM = ["bug", "hotfix", "historia"]
+
 TOOL_CRIAR_CARD = {
     "name": "criar_card",
     "description": (
@@ -91,6 +100,14 @@ TOOL_CRIAR_CARD = {
             "titulo": {"type": "string"},
             "status": {"type": "string", "enum": ["a_fazer", "em_andamento"]},
             "descricao": {"type": "string"},
+            "tipo": {
+                "type": "string",
+                "enum": _TIPO_ENUM,
+                "description": (
+                    "Campo informativo (bug/hotfix/historia). Não altera o "
+                    "fluxo do agente."
+                ),
+            },
             "parent_id": {"type": "integer"},
             "projeto_id": {
                 "type": "string",
@@ -131,11 +148,11 @@ _STATUS_ENUM = ["a_fazer", "em_andamento", "em_revisao", "feito"]
 TOOL_EDITAR_CARD = {
     "name": "editar_card",
     "description": (
-        "Edita o conteúdo de um card existente: título, descrição e/ou status. "
-        "Campos omitidos ficam inalterados. Use para corrigir ou completar o "
-        "texto de um card já criado. Só é possível editar cards do mesmo "
-        "cliente da conversa atual — cards de outro cliente não podem ser "
-        "editados."
+        "Edita o conteúdo de um card existente: título, descrição, status "
+        "e/ou tipo. Campos omitidos ficam inalterados; `tipo` com string "
+        "vazia limpa o campo. Use para corrigir ou completar o texto de um "
+        "card já criado. Só é possível editar cards do mesmo cliente da "
+        "conversa atual — cards de outro cliente não podem ser editados."
     ),
     "inputSchema": {
         "type": "object",
@@ -144,6 +161,14 @@ TOOL_EDITAR_CARD = {
             "titulo": {"type": "string"},
             "descricao": {"type": "string"},
             "status": {"type": "string", "enum": _STATUS_ENUM},
+            "tipo": {
+                "type": "string",
+                "enum": _TIPO_ENUM,
+                "description": (
+                    "Campo informativo (bug/hotfix/historia). Não altera o "
+                    "fluxo do agente."
+                ),
+            },
         },
         "required": ["card_id"],
     },
@@ -297,6 +322,7 @@ def _handle_criar_card(arguments: dict) -> str:
         "titulo": arguments.get("titulo"),
         "status": arguments.get("status", "a_fazer"),
         "descricao": arguments.get("descricao"),
+        "tipo": arguments.get("tipo"),
         "parent_id": arguments.get("parent_id"),
         # Opcional (Tarefa 6): sub-projeto do mesmo cliente. Só entra no corpo
         # quando o agente informa — omitido -> backend usa o projeto da
@@ -330,6 +356,7 @@ def _handle_editar_card(arguments: dict) -> str:
         "titulo": arguments.get("titulo"),
         "descricao": arguments.get("descricao"),
         "status": arguments.get("status"),
+        "tipo": arguments.get("tipo"),
     }
     result = _post_json(HOOK_UPDATE_URL, body)
     return _format_result(result, "Card editado com sucesso.")

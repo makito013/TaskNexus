@@ -340,3 +340,105 @@ def test_app_boots_and_serves_uploads_even_when_board_uploads_dir_is_missing(
     r = client.get(uploaded["url"])
     assert r.status_code == 200
     assert r.content == PNG_BYTES
+
+
+# -- tipo / prazo (Cards Board v2, Phase 1) ------------------------------------
+
+
+def test_create_card_with_tipo_and_prazo_roundtrips_through_http_body(client):
+    """Discriminating test D-1/D-2: the HTTP RESPONSE body (not the store
+    dict) must contain tipo/prazo, both on the POST and on the following GET.
+    Catches R1 + C1 + C2 + C4 at once — if the Card model drops the fields
+    (extra='ignore'), this goes red."""
+    r = client.post("/api/cards", json={
+        "titulo": "x", "cliente_id": "c", "tipo": "bug", "prazo": "2026-09-15",
+    })
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["tipo"] == "bug"
+    assert created["prazo"] == "2026-09-15"
+
+    listed = client.get("/api/cards").json()
+    card = next(c for c in listed if c["id"] == created["id"])
+    assert card["tipo"] == "bug"
+    assert card["prazo"] == "2026-09-15"
+
+
+def test_patch_card_sets_tipo_in_response_body(client):
+    created = _create_card(client, titulo="Sem tipo ainda")
+    r = client.patch(f"/api/cards/{created['id']}", json={"tipo": "historia"})
+    assert r.status_code == 200
+    assert r.json()["tipo"] == "historia"
+
+
+def test_patch_card_empty_string_tipo_clears_it_via_ui_path(client):
+    created = _create_card(client, titulo="Com tipo", tipo="bug")
+    assert created["tipo"] == "bug"
+    r = client.patch(f"/api/cards/{created['id']}", json={"tipo": ""})
+    assert r.status_code == 200
+    assert r.json()["tipo"] is None
+
+
+def test_patch_card_invalid_tipo_returns_422(client):
+    """Proves the D-3 Literal is real — if it comes back 200, the AD-2 no-op
+    union survived."""
+    created = _create_card(client, titulo="X")
+    r = client.patch(f"/api/cards/{created['id']}", json={"tipo": "xpto"})
+    assert r.status_code == 422
+
+
+def test_create_card_empty_string_tipo_is_rejected_by_the_create_contract(client):
+    """Deliberate asymmetry (D-3): "" is the clear sentinel ONLY on the PATCH.
+    On create there is no "clear" — the modal in `create` mode (Phase 2) must
+    send null / omit the field, never "". Here that is a 422."""
+    r = client.post("/api/cards", json={
+        "titulo": "x", "cliente_id": "c", "tipo": "",
+    })
+    assert r.status_code == 422
+
+
+def test_create_card_uppercase_tipo_is_rejected_no_case_normalization(client):
+    """No case normalization this round (not asked for; it would create a
+    second rule to maintain). "Bug" != "bug"."""
+    r = client.post("/api/cards", json={
+        "titulo": "x", "cliente_id": "c", "tipo": "Bug",
+    })
+    assert r.status_code == 422
+
+
+def test_create_subcard_with_tipo_returns_201_with_field(client):
+    parent = _create_card(client, titulo="Pai")
+    r = client.post(
+        f"/api/cards/{parent['id']}/subcards",
+        json={"titulo": "Filho", "tipo": "hotfix"},
+    )
+    assert r.status_code == 201
+    assert r.json()["tipo"] == "hotfix"
+
+
+def test_patch_card_prazo_accepts_any_string_this_round(client):
+    """AD-11: no prazo format validation this round. A test that DOCUMENTS the
+    decision (it is not an oversight) — a free-form value is accepted."""
+    created = _create_card(client, titulo="X")
+    r = client.patch(f"/api/cards/{created['id']}", json={"prazo": "amanhã"})
+    assert r.status_code == 200
+    assert r.json()["prazo"] == "amanhã"
+
+
+def test_get_cards_embeds_subcard_tipo_in_the_nested_array(client):
+    """Same class as the D-1 silent drop, but on the nested path
+    (Card.subcards: list["Card"]): GET /api/cards must carry `tipo` on an
+    embedded subcard, not only on the top-level card. Subcard hydration is a
+    separate path (CardStore._list_active_subcards has its own SELECT), so a
+    field can be right on the top-level card and silently missing on the
+    nested one."""
+    parent = _create_card(client, titulo="Pai")
+    sub = client.post(
+        f"/api/cards/{parent['id']}/subcards",
+        json={"titulo": "Filho", "tipo": "hotfix"},
+    )
+    assert sub.status_code == 201
+
+    listed = client.get("/api/cards").json()
+    top = next(c for c in listed if c["id"] == parent["id"])
+    assert top["subcards"][0]["tipo"] == "hotfix"

@@ -38,6 +38,7 @@ from app.pty_manager import PTYManager
 from app.session_provisioner import provision_session_id
 from app.quiet_hours import current_utc_offset_minutes, is_within_quiet_hours
 from app.models import (
+    CARD_TIPOS,
     InitFrame,
     ResizeFrame,
     RenameFrame,
@@ -1626,6 +1627,8 @@ async def create_card(body: CardCreateRequest):
             origem="bruno",
             ultima_atualizacao_por="bruno",
             descricao=body.descricao,
+            tipo=body.tipo,
+            prazo=body.prazo,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1645,6 +1648,7 @@ async def create_subcard(card_id: int, body: SubcardCreateRequest):
             origem="bruno",
             ultima_atualizacao_por="bruno",
             descricao=body.descricao,
+            tipo=body.tipo,
             parent_id=card_id,
         )
     except ValueError as e:
@@ -1797,11 +1801,27 @@ def _agent_same_cliente(card: dict, own_projeto_id: str) -> bool:
     )
 
 
+def _validate_card_tipo(tipo: str | None) -> str | None:
+    """Validate `tipo` on the AGENT PATH (hooks). Returns the error message,
+    or None if valid. `None` = field absent; `""` = the "clear" sentinel
+    (both pass). A `raise HTTPException` here would turn into a "connectivity
+    error" in the MCP adapter (_post_json swallows the 422) — so the handler
+    returns {"success": False, "error": ...} carrying this string instead."""
+    if tipo is not None and tipo != "" and tipo not in CARD_TIPOS:
+        return f"tipo inválido: '{tipo}'. Use bug, hotfix ou historia."
+    return None
+
+
 @app.post("/api/hooks/cards/create")
 async def hook_cards_create(body: HookCardCreateRequest):
     session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
     if not session_key:
         return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    # Cheap failure first: validate `tipo` before resolving project/parent.
+    tipo_erro = _validate_card_tipo(body.tipo)
+    if tipo_erro is not None:
+        return {"success": False, "error": tipo_erro}
 
     own_projeto_id, _, agent_id = session_key.partition("::")
 
@@ -1863,6 +1883,7 @@ async def hook_cards_create(body: HookCardCreateRequest):
             ultima_atualizacao_por=origem,
             parent_id=body.parent_id,
             session_key=session_key,
+            tipo=body.tipo,
         )
     except ValueError as e:
         return {"success": False, "error": str(e)}
@@ -1920,11 +1941,18 @@ async def hook_cards_update(body: HookCardUpdateRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
+    tipo_erro = _validate_card_tipo(body.tipo)
+    if tipo_erro is not None:
+        return {"success": False, "error": tipo_erro}
+
     # Um update sem nenhum campo de conteúdo ainda toca atualizado_em e
     # ultima_atualizacao_por — mesmo comportamento do PATCH REST (update_card),
     # mantido por paridade em vez de virar uma rejeição que o plano não pediu.
+    # `tipo` is in the include; `prazo` is left out on purpose (AD-11 — outside
+    # the MCP). exclude_none still lets the "" sentinel through (CardStore.update
+    # turns it into NULL).
     campos = body.model_dump(
-        include={"titulo", "descricao", "status"}, exclude_none=True
+        include={"titulo", "descricao", "status", "tipo"}, exclude_none=True
     )
     updated = await card_store.update(
         body.card_id,

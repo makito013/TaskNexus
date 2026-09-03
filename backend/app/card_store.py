@@ -47,10 +47,27 @@ class CardStore:
                 session_key TEXT,
                 criado_em REAL NOT NULL,
                 atualizado_em REAL NOT NULL,
-                deleted_at REAL
+                deleted_at REAL,
+                tipo TEXT,
+                prazo TEXT
             )
             """
         )
+        # `tipo` and `prazo` were added after the original table shipped. The
+        # CREATE TABLE above already lists them, so a brand-new sessions.db
+        # gets them from the start; the ALTER TABLE block below is
+        # belt-and-suspenders for a pre-existing sessions.db, where CREATE
+        # TABLE IF NOT EXISTS is a no-op that never touches a table that
+        # already exists. On a new DB the columns are already present, so the
+        # PRAGMA check skips both ALTERs. Same style (PRAGMA table_info + set)
+        # as agent_store.py. No DEFAULT, no backfill, no index: nullable
+        # columns at the end of the table.
+        async with self._conn.execute("PRAGMA table_info(cards)") as cursor:
+            card_columns = {row[1] async for row in cursor}
+        if "tipo" not in card_columns:
+            await self._conn.execute("ALTER TABLE cards ADD COLUMN tipo TEXT")
+        if "prazo" not in card_columns:
+            await self._conn.execute("ALTER TABLE cards ADD COLUMN prazo TEXT")
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS card_images (
@@ -96,12 +113,14 @@ class CardStore:
             "criado_em": row[9],
             "atualizado_em": row[10],
             "deleted_at": row[11],
+            "tipo": row[12],
+            "prazo": row[13],
         }
 
     _CARD_COLUMNS = (
         "id, titulo, projeto_id, parent_id, status, origem, "
         "ultima_atualizacao_por, descricao, session_key, criado_em, "
-        "atualizado_em, deleted_at"
+        "atualizado_em, deleted_at, tipo, prazo"
     )
 
     async def _list_images(self, card_id: int) -> list[dict]:
@@ -161,6 +180,8 @@ class CardStore:
         parent_id: int | None = None,
         session_key: str | None = None,
         cliente_id: str | None = None,
+        tipo: str | None = None,
+        prazo: str | None = None,
     ) -> int:
         """Cria um card de topo (parent_id=None) ou um subcard.
 
@@ -201,14 +222,22 @@ class CardStore:
                 "É necessário informar projeto_id ou cliente_id para criar um card"
             )
 
+        # `"" -> None` on the way in: the "clear" sentinel only makes sense on
+        # update; on create, an empty string is just an absent value. Without
+        # this the INSERT would store "" and the database would end up with
+        # two representations of "no tipo" (NULL and "") — any future
+        # `WHERE tipo IS NULL` would get it wrong.
+        tipo = tipo or None
+        prazo = prazo or None
+
         now = time.time()
         cursor = await self._conn.execute(
             """
             INSERT INTO cards (
                 titulo, projeto_id, parent_id, status, origem,
                 ultima_atualizacao_por, descricao, session_key,
-                criado_em, atualizado_em
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                criado_em, atualizado_em, tipo, prazo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 titulo,
@@ -221,6 +250,8 @@ class CardStore:
                 session_key,
                 now,
                 now,
+                tipo,
+                prazo,
             ),
         )
         await self._conn.commit()
@@ -323,9 +354,12 @@ class CardStore:
         self, card_id: int, *, ultima_atualizacao_por: str, **fields
     ) -> dict | None:
         """PATCH genérico — serve card de topo e subcard indistintamente.
-        Aceita titulo/descricao/status como chaves de `fields`; só as chaves
-        presentes E não-None são aplicadas (chaves ausentes ou None são
-        tratadas como "não veio no PATCH", não como "limpar o campo").
+        Aceita titulo/descricao/status/tipo/prazo como chaves de `fields`; só
+        as chaves presentes E não-None são aplicadas (chaves ausentes ou None
+        são tratadas como "não veio no PATCH", não como "limpar o campo").
+        Exception: for `tipo` and `prazo`, the empty string "" IS the "clear"
+        sentinel and writes NULL — `titulo=""` is still dropped (titulo never
+        had clear semantics and the modal blocks an empty submit).
         `ultima_atualizacao_por` é um argumento nomeado separado (não faz
         parte de `**fields`) porque toda atualização precisa setá-lo,
         diferente dos demais campos que são todos opcionais. Retorna o dict
@@ -334,13 +368,21 @@ class CardStore:
         if current is None or current["deleted_at"] is not None:
             return None
 
-        allowed_columns = ("titulo", "descricao", "status")
+        allowed_columns = ("titulo", "descricao", "status", "tipo", "prazo")
         set_clauses = []
         values: list = []
         for column in allowed_columns:
-            if fields.get(column) is not None:
-                set_clauses.append(f"{column} = ?")
-                values.append(fields[column])
+            # The guard tests the RECEIVED value (None => field absent from the
+            # PATCH); the "" -> None normalization applies to the BOUND value.
+            # Normalizing before the guard would turn "" into None and drop the
+            # field itself — "clear" would become a no-op returning 200.
+            value = fields.get(column)
+            if value is None:
+                continue
+            if column in ("tipo", "prazo") and value == "":
+                value = None
+            set_clauses.append(f"{column} = ?")
+            values.append(value)
 
         now = time.time()
         set_clauses.append("atualizado_em = ?")
