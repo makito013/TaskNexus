@@ -928,3 +928,130 @@ def test_hook_cards_list_empty_projeto_id_lists_whole_cliente(client, tmp_path):
     body = r.json()
     assert body["success"] is True
     assert sorted(c["id"] for c in body["cards"]) == sorted([id_aadmin, id_outro])
+
+
+# -- tipo / prazo on the agent path (Cards Board v2, Phase 1) ----------------
+
+
+def test_hook_cards_update_accepts_valid_tipo(client):
+    """Catches U3 (the easiest point to forget): the hook accepts `tipo` and
+    the field shows up on the returned card."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000001")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card",
+    }).json()
+    card_id = created["card_id"]
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "tipo": "bug",
+    })
+    body = r.json()
+    assert body["success"] is True
+    assert body["card"]["tipo"] == "bug"
+    assert _get_card(client, card_id)["tipo"] == "bug"
+
+
+def test_hook_cards_update_invalid_tipo_returns_exact_error_string(client):
+    """The exact string matters — it is the text the agent reads. And never a
+    422 (which the adapter would translate into a "connectivity error")."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000002")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card",
+    }).json()
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": created["card_id"],
+        "tipo": "xpto",
+    })
+    assert r.status_code == 200
+    assert r.json() == {
+        "success": False,
+        "error": "tipo inválido: 'xpto'. Use bug, hotfix ou historia.",
+    }
+
+    # No case normalization: "Bug" is invalid too (lower() was not asked for;
+    # adding it would create a second rule to maintain).
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": created["card_id"],
+        "tipo": "Bug",
+    })
+    assert r.json()["success"] is False
+    assert r.json()["error"] == "tipo inválido: 'Bug'. Use bug, hotfix ou historia."
+
+
+def test_hook_cards_update_empty_string_tipo_clears_the_field(client):
+    """Prevents the D-4.1 regression: "" must not be rejected as invalid —
+    it is the clear gesture."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000003")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "tipo": "bug",
+    }).json()
+    card_id = created["card_id"]
+    assert _get_card(client, card_id)["tipo"] == "bug"
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "tipo": "",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["tipo"] is None
+
+
+def test_hook_cards_create_accepts_valid_tipo(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000004")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Bug do agente",
+        "tipo": "hotfix",
+    })
+    body = r.json()
+    assert body["success"] is True
+    assert _get_card(client, body["card_id"])["tipo"] == "hotfix"
+
+
+def test_hook_cards_create_invalid_tipo_rejected_and_nothing_created(client):
+    """Validate early, do not create-then-complain: no card is left in the database."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000005")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card ruim", "tipo": "xpto",
+    })
+    assert r.json() == {
+        "success": False,
+        "error": "tipo inválido: 'xpto'. Use bug, hotfix ou historia.",
+    }
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+def test_hook_cards_update_ignores_prazo_silently(client):
+    """`prazo` is outside the MCP on purpose (AD-11): it is not in the
+    handler's include, so it is ignored without an error."""
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-000000000006")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card",
+    }).json()
+    card_id = created["card_id"]
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id,
+        "prazo": "2026-09-15",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["prazo"] is None

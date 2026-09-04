@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import re
+from typing import Literal, get_args
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, field_validator
+
+
+# Card tipo — an informational field (bug/hotfix/historia), kept in PT-BR by
+# decision for consistency with the other domain fields already in PT-BR in the
+# schema. The valid values are derived from CardTipo (via get_args, evaluated at
+# import time — `from __future__ import annotations` only defers the ANNOTATION,
+# not the RHS of an assignment), so the list is not repeated by hand.
+CardTipo = Literal["bug", "hotfix", "historia"]
+CARD_TIPOS = get_args(CardTipo)
 
 
 class Agent(BaseModel):
@@ -161,6 +171,11 @@ class Card(BaseModel):
     criado_em: float
     atualizado_em: float
     deleted_at: float | None = None
+    # Free `str` on purpose: this is the RESPONSE model. Validating here would
+    # turn an unexpected legacy value into a 500 — validation lives in the
+    # REQUEST models (CardCreateRequest/CardUpdateRequest).
+    tipo: str | None = None
+    prazo: str | None = None
     subcards: list["Card"] = []
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
@@ -190,6 +205,8 @@ class CardCreateRequest(BaseModel):
     cliente_id: str | None = None
     status: str = "a_fazer"
     descricao: str | None = None
+    tipo: CardTipo | None = None
+    prazo: str | None = None
 
 
 class SubcardCreateRequest(BaseModel):
@@ -199,6 +216,7 @@ class SubcardCreateRequest(BaseModel):
     titulo: str
     status: str = "a_fazer"
     descricao: str | None = None
+    tipo: CardTipo | None = None
 
 
 class CardUpdateRequest(BaseModel):
@@ -207,6 +225,12 @@ class CardUpdateRequest(BaseModel):
     titulo: str | None = None
     descricao: str | None = None
     status: str | None = None
+    # "" is the "clear the tipo" sentinel on the UI path (becomes NULL in
+    # CardStore.update). The Literal validates for real — an invalid value
+    # becomes a 422, which on the PATCH /api/cards/{id} path (does not go
+    # through the MCP adapter) is acceptable and pre-existing behavior.
+    tipo: Literal["bug", "hotfix", "historia", ""] | None = None
+    prazo: str | None = None
 
 
 class HookCardCreateRequest(BaseModel):
@@ -218,6 +242,10 @@ class HookCardCreateRequest(BaseModel):
     titulo: str
     status: str = "a_fazer"
     descricao: str | None = None
+    # No Literal on purpose (AD-2): a 422 here would turn into a "connectivity
+    # error" for the agent (mcp_card_adapter._post_json swallows the 422).
+    # Validation lives in the handler, returning {"success": False, "error": ...}.
+    tipo: str | None = None
     parent_id: int | None = None
     # Opcional: sub-projeto alvo do mesmo cliente (validado no backend via
     # resolve_projeto_alvo). Omitido -> projeto da conversa atual. Ignorado
@@ -244,6 +272,9 @@ class HookCardUpdateRequest(BaseModel):
     titulo: str | None = None
     descricao: str | None = None
     status: str | None = None
+    # No Literal on purpose (AD-2), same reason as HookCardCreateRequest.
+    # "" clears the field; validated by hand in the handler.
+    tipo: str | None = None
 
 
 class HookCardDeleteRequest(BaseModel):

@@ -240,6 +240,45 @@ describe('useCards — updateCard', () => {
     expect(result.current.cards[0].imagens).toHaveLength(1);
     expect(result.current.cards[0].subcards).toHaveLength(1);
   });
+
+  it('merges tipo and prazo from the PATCH response into local state (whitelist U6)', async () => {
+    // Without tipo/prazo in the selective merge, the board keeps showing the
+    // stale value until the 5s poll — the field is saved to the DB but the
+    // chip on the card face and the modal rail lag behind. Nothing else in
+    // the suite catches a dropped key here, so this is the regression guard.
+    const card = fakeCard({ id: 1, tipo: null, prazo: null });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([card]) }));
+    const { result } = renderHook(() => useCards());
+    await waitFor(() => expect(result.current.cards).toEqual([card]));
+
+    const patchResponse = fakeCard({ id: 1, tipo: 'hotfix', prazo: '2026-09-15' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(patchResponse) }));
+
+    await act(async () => {
+      await result.current.updateCard(1, { tipo: 'hotfix', prazo: '2026-09-15' });
+    });
+
+    expect(result.current.cards[0].tipo).toBe('hotfix');
+    expect(result.current.cards[0].prazo).toBe('2026-09-15');
+  });
+
+  it('applies an empty-string clear sentinel for tipo/prazo coming back from PATCH', async () => {
+    const card = fakeCard({ id: 1, tipo: 'bug', prazo: '2026-09-15' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([card]) }));
+    const { result } = renderHook(() => useCards());
+    await waitFor(() => expect(result.current.cards).toEqual([card]));
+
+    // Backend turns "" into NULL, so the PATCH response echoes null back.
+    const patchResponse = fakeCard({ id: 1, tipo: null, prazo: null });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(patchResponse) }));
+
+    await act(async () => {
+      await result.current.updateCard(1, { tipo: '', prazo: '' });
+    });
+
+    expect(result.current.cards[0].tipo).toBeNull();
+    expect(result.current.cards[0].prazo).toBeNull();
+  });
 });
 
 describe('useCards — clearFinished', () => {

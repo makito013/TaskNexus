@@ -217,12 +217,17 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
             criar = by_name["criar_card"]
             assert criar["inputSchema"]["required"] == ["titulo"]
             props = criar["inputSchema"]["properties"]
-            assert set(props.keys()) == {"titulo", "status", "descricao", "parent_id", "projeto_id"}
+            assert set(props.keys()) == {
+                "titulo", "status", "descricao", "tipo", "parent_id", "projeto_id",
+            }
             assert props["status"]["enum"] == ["a_fazer", "em_andamento"]
             assert props["parent_id"]["type"] == "integer"
             # projeto_id (Tarefa 6): opcional (fora de `required`), string.
             assert "projeto_id" not in criar["inputSchema"]["required"]
             assert props["projeto_id"]["type"] == "string"
+            # tipo (Phase 1): optional, string, enum bug/hotfix/historia.
+            assert "tipo" not in criar["inputSchema"]["required"]
+            assert props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
 
             mover = by_name["mover_card"]
             assert set(mover["inputSchema"]["required"]) == {"card_id", "novo_status"}
@@ -236,12 +241,15 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
             assert editar["inputSchema"]["required"] == ["card_id"]
             editar_props = editar["inputSchema"]["properties"]
             assert set(editar_props.keys()) == {
-                "card_id", "titulo", "descricao", "status",
+                "card_id", "titulo", "descricao", "status", "tipo",
             }
             assert editar_props["card_id"]["type"] == "integer"
             assert editar_props["status"]["enum"] == [
                 "a_fazer", "em_andamento", "em_revisao", "feito",
             ]
+            assert editar_props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
+            # An empty `tipo` clears the field — this has to be stated in the description.
+            assert "limpa o campo" in editar["description"]
 
             for name in ("excluir_card", "ver_card"):
                 tool = by_name[name]
@@ -816,3 +824,77 @@ def test_new_tools_connectivity_failure_returns_generic_error():
             assert "não foi possível conectar" in text.lower()
     finally:
         adapter.close()
+
+
+# -- tipo in the handler bodies (Cards Board v2, Phase 1) ------------------
+
+
+def test_criar_card_forwards_tipo_in_the_body():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/create": {"success": True, "card_id": 1}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 50, "method": "tools/call",
+                "params": {
+                    "name": "criar_card",
+                    "arguments": {"titulo": "Bug", "tipo": "bug"},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["tipo"] == "bug"
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_criar_card_tipo_absent_is_sent_as_none_key():
+    """Key present with None when the agent does not supply it — same pattern
+    as `descricao`, so the format the backend expects is not broken."""
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/create": {"success": True, "card_id": 1}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 51, "method": "tools/call",
+                "params": {"name": "criar_card", "arguments": {"titulo": "X"}},
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert "tipo" in received["body"]
+            assert received["body"]["tipo"] is None
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_editar_card_forwards_tipo_in_the_body():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/update": {"success": True, "card": {"id": 3}}
+        }
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 52, "method": "tools/call",
+                "params": {
+                    "name": "editar_card",
+                    "arguments": {"card_id": 3, "tipo": ""},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["tipo"] == ""
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()

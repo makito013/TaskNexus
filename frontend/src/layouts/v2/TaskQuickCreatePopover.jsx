@@ -14,16 +14,19 @@
 // BottomSheet.jsx (stopPropagation interno + listener de keydown só enquanto
 // aberto), mas SEM o handle de arrasto e SEM escurecer a tela.
 //
-// A resolução de nome de sub-projeto reaproveita `resolveProjectName` de
-// CardFormModal.jsx (exportada de lá) para não divergir dos dois pontos que
-// hoje resolvem projeto_id -> nome. O select é ÚNICO (não cascata): uma
-// opção "Nenhum projeto", depois um <optgroup> por cliente (raiz + cada
-// subprojeto); clientes sem sub_projetos viram opção solta, sem optgroup.
+// A resolução de nome de sub-projeto reaproveita `resolveProjectLabel` de
+// utils/projects.js (compartilhada com CardFormModal.jsx, de onde ela saiu)
+// para não divergir dos dois pontos que hoje resolvem projeto_id -> nome.
+// Atenção à homônima de useClienteProjetoFilter.js, que devolve `null` no
+// caso não resolvido — semântica oposta, ver o cabeçalho de utils/projects.js.
+// O select é ÚNICO (não cascata): uma opção "Nenhum projeto", depois um
+// <optgroup> por cliente (raiz + cada subprojeto); clientes sem sub_projetos
+// viram opção solta, sem optgroup.
 // Sem filtro de "mesmo cliente" — a UI do humano vê TODOS os projetos (a
 // restrição de segurança de "mesmo cliente" é só do caminho MCP/IA).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { resolveProjectName } from '../../components/board/CardFormModal.jsx';
+import { resolveProjectLabel } from '../../utils/projects.js';
 import { isClienteId } from '../../utils/clientes.js';
 
 const styles = {
@@ -185,7 +188,7 @@ export function TaskQuickCreatePopover({ open, onClose, sessionKey, projects = [
 
   // "Clientes" = qualquer Project sem "/" no id (cliente-como-projeto e
   // projeto-solto-na-raiz contam como cliente de si mesmos) — mesma regra de
-  // CardFormModal.jsx/BoardView.jsx, centralizada em `isClienteId`
+  // CardFormModal.jsx, centralizada em `isClienteId`
   // (utils/clientes.js) pra não triplicar a regra (achado do QA na Fase 2,
   // mesmo padrão de duplicação que causou o bug raiz desta epic).
   const clientes = projects.filter((p) => isClienteId(p.id));
@@ -285,7 +288,7 @@ export function TaskQuickCreatePopover({ open, onClose, sessionKey, projects = [
                   <option value={cliente.id}>{cliente.nome}</option>
                   {subs.map((subId) => (
                     <option key={subId} value={subId}>
-                      {resolveProjectName(subId, projects)}
+                      {resolveProjectLabel(subId, projects)}
                     </option>
                   ))}
                 </optgroup>

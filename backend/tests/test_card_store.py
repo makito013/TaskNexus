@@ -404,6 +404,113 @@ async def test_update_returns_none_for_missing_or_deleted_card(store):
     assert await store.update(card_id, ultima_atualizacao_por="bruno", status="feito") is None
 
 
+# -- tipo / prazo (Cards Board v2, Phase 1) ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_persists_tipo_and_prazo(store):
+    card_id = await store.create(
+        titulo="Com tipo e prazo",
+        projeto_id="proj-a",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+        tipo="bug",
+        prazo="2026-09-15",
+    )
+    card = await store.get(card_id)
+    assert card["tipo"] == "bug"
+    assert card["prazo"] == "2026-09-15"
+
+
+@pytest.mark.asyncio
+async def test_create_without_tipo_and_prazo_leaves_them_null(store):
+    card_id = await store.create(
+        titulo="Sem tipo",
+        projeto_id="proj-a",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+    )
+    card = await store.get(card_id)
+    assert card["tipo"] is None
+    assert card["prazo"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_with_empty_string_tipo_stores_null_not_blank(store):
+    """An empty string on create writes NULL, never "" — otherwise the
+    database ends up with two representations of "no tipo" (D-4.2)."""
+    card_id = await store.create(
+        titulo="Tipo vazio",
+        projeto_id="proj-a",
+        origem="bruno",
+        ultima_atualizacao_por="bruno",
+        tipo="",
+        prazo="",
+    )
+    card = await store.get(card_id)
+    assert card["tipo"] is None
+    assert card["prazo"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_sets_tipo_and_prazo(store):
+    card_id = await store.create(
+        titulo="X", projeto_id="proj-a", origem="bruno",
+        ultima_atualizacao_por="bruno",
+    )
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", tipo="hotfix"
+    )
+    assert updated["tipo"] == "hotfix"
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", prazo="2026-01-02"
+    )
+    assert updated["prazo"] == "2026-01-02"
+
+
+@pytest.mark.asyncio
+async def test_update_empty_string_clears_tipo_from_a_card_that_had_one(store):
+    """Sentinel "" -> NULL. The initial state WITH a tipo is essential:
+    starting from a card with no tipo lets the buggy version of the
+    normalization (guard before normalization) pass just the same."""
+    card_id = await store.create(
+        titulo="X", projeto_id="proj-a", origem="bruno",
+        ultima_atualizacao_por="bruno", tipo="bug", prazo="2026-09-15",
+    )
+    updated = await store.update(card_id, ultima_atualizacao_por="bruno", tipo="")
+    assert updated["tipo"] is None
+    updated = await store.update(card_id, ultima_atualizacao_por="bruno", prazo="")
+    assert updated["prazo"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_tipo_none_does_not_clear_existing_tipo(store):
+    """Absent != clear: proves the "" sentinel did not leak into the
+    omission semantics."""
+    card_id = await store.create(
+        titulo="X", projeto_id="proj-a", origem="bruno",
+        ultima_atualizacao_por="bruno", tipo="bug",
+    )
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", tipo=None, titulo="Y"
+    )
+    assert updated["tipo"] == "bug"
+    assert updated["titulo"] == "Y"
+
+
+@pytest.mark.asyncio
+async def test_update_other_fields_leave_tipo_intact(store):
+    card_id = await store.create(
+        titulo="X", projeto_id="proj-a", origem="bruno",
+        ultima_atualizacao_por="bruno", tipo="bug",
+    )
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", status="feito"
+    )
+    assert updated["status"] == "feito"
+    assert updated["tipo"] == "bug"
+
+
 # -- soft_delete / cascade -------------------------------------------------
 
 
@@ -851,3 +958,148 @@ async def test_list_by_cliente_omits_subcards_and_deleted_cards_from_top_level(s
     cards = await store.list_by_cliente("acme")
 
     assert [c["id"] for c in cards] == [parent_id]
+
+
+# -- ad-hoc migration of the tipo/prazo columns (F1-T9) --------------------
+#
+# The CREATE TABLE of a pre-feature database, pasted LITERALLY as a
+# constant — reusing the module's DDL would defeat the test (the module
+# already has the new columns).
+_LEGACY_CARDS_DDL = """
+CREATE TABLE cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    titulo TEXT NOT NULL,
+    projeto_id TEXT NOT NULL,
+    parent_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'a_fazer',
+    origem TEXT NOT NULL,
+    ultima_atualizacao_por TEXT NOT NULL,
+    descricao TEXT,
+    session_key TEXT,
+    criado_em REAL NOT NULL,
+    atualizado_em REAL NOT NULL,
+    deleted_at REAL
+)
+"""
+
+_LEGACY_CARD_IMAGES_DDL = """
+CREATE TABLE card_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    criado_em REAL NOT NULL
+)
+"""
+
+_LEGACY_CARD_COLUMNS = (
+    "id, titulo, projeto_id, parent_id, status, origem, "
+    "ultima_atualizacao_por, descricao, session_key, criado_em, "
+    "atualizado_em, deleted_at"
+)
+
+_EXPECTED_CARD_COLUMNS_IN_ORDER = [
+    "id", "titulo", "projeto_id", "parent_id", "status", "origem",
+    "ultima_atualizacao_por", "descricao", "session_key", "criado_em",
+    "atualizado_em", "deleted_at", "tipo", "prazo",
+]
+
+
+def _build_legacy_db(db_path: str) -> list[dict]:
+    """Create a sessions.db on the pre-tipo/prazo schema with 2 cards (top
+    level + subcard) and 1 row in card_images. Returns the dicts of the
+    inserted card rows, for field-by-field comparison after the migration."""
+    import sqlite3
+
+    now = 1_700_000_000.0
+    rows = [
+        {
+            "id": 1, "titulo": "Card de topo legado", "projeto_id": "acme/site",
+            "parent_id": None, "status": "em_andamento", "origem": "bruno",
+            "ultima_atualizacao_por": "bruno", "descricao": "desc legada",
+            "session_key": None, "criado_em": now, "atualizado_em": now + 5,
+            "deleted_at": None,
+        },
+        {
+            "id": 2, "titulo": "Subcard legado", "projeto_id": "acme/site",
+            "parent_id": 1, "status": "feito", "origem": "agente:claude",
+            "ultima_atualizacao_por": "agente:claude", "descricao": None,
+            "session_key": "acme/site::claude", "criado_em": now + 1,
+            "atualizado_em": now + 2, "deleted_at": None,
+        },
+    ]
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(_LEGACY_CARDS_DDL)
+        conn.execute(_LEGACY_CARD_IMAGES_DDL)
+        for row in rows:
+            conn.execute(
+                f"INSERT INTO cards ({_LEGACY_CARD_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(row[c] for c in _EXPECTED_CARD_COLUMNS_IN_ORDER[:12]),
+            )
+        conn.execute(
+            "INSERT INTO card_images "
+            "(id, card_id, filename, mime_type, size_bytes, criado_em) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (1, 1, "print.png", "image/png", 2048, now + 3),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return rows
+
+
+@pytest.mark.asyncio
+async def test_initialize_migrates_legacy_db_without_losing_data(tmp_path):
+    db_path = str(tmp_path / "legacy.db")
+    original_rows = _build_legacy_db(db_path)
+
+    store = CardStore(db_path=db_path)
+    await store.initialize()
+    try:
+        # (c) PRAGMA table_info returns the 14 columns, tipo/prazo at the end, in order.
+        async with store._conn.execute("PRAGMA table_info(cards)") as cursor:
+            cols_in_order = [row[1] async for row in cursor]
+        assert cols_in_order == _EXPECTED_CARD_COLUMNS_IN_ORDER
+
+        # (a) and (b): the 2 rows are still there, field by field identical, and
+        # tipo/prazo came out as NULL.
+        async with store._conn.execute(
+            "SELECT id, titulo, projeto_id, parent_id, status, origem, "
+            "ultima_atualizacao_por, descricao, session_key, criado_em, "
+            "atualizado_em, deleted_at, tipo, prazo FROM cards ORDER BY id ASC"
+        ) as cursor:
+            migrated = await cursor.fetchall()
+        assert len(migrated) == len(original_rows)
+        for original, row in zip(original_rows, migrated):
+            migrated_dict = dict(zip(_EXPECTED_CARD_COLUMNS_IN_ORDER, row))
+            for column in _EXPECTED_CARD_COLUMNS_IN_ORDER[:12]:
+                assert migrated_dict[column] == original[column], column
+            assert migrated_dict["tipo"] is None
+            assert migrated_dict["prazo"] is None
+
+        # (e) card_images untouched.
+        async with store._conn.execute(
+            "SELECT id, card_id, filename, mime_type, size_bytes FROM card_images"
+        ) as cursor:
+            images = await cursor.fetchall()
+        assert images == [(1, 1, "print.png", "image/png", 2048)]
+    finally:
+        await store.close()
+
+    # (d) idempotency: a second initialize() over the same file (new
+    # instance — initialize() reassigns self._conn without closing the
+    # previous one) does not raise and does not change the data.
+    store2 = CardStore(db_path=db_path)
+    await store2.initialize()
+    try:
+        async with store2._conn.execute("PRAGMA table_info(cards)") as cursor:
+            cols_again = [row[1] async for row in cursor]
+        assert cols_again == _EXPECTED_CARD_COLUMNS_IN_ORDER
+        async with store2._conn.execute("SELECT COUNT(*) FROM cards") as cursor:
+            (count,) = await cursor.fetchone()
+        assert count == len(original_rows)
+    finally:
+        await store2.close()

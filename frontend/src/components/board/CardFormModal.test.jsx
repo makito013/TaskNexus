@@ -1,16 +1,29 @@
 // frontend/src/components/board/CardFormModal.test.jsx
-// Covers 05-DESIGNER.md seção 10 / 05-TL.md Tarefa 22: modal fullscreen de
-// criar/editar card em 3 modos (create-top, create-subcard, edit).
+// Rewritten for the centred v2 modal: two modes (`create`, `edit`), a
+// metadata rail, the card id in the header, and dirty tracking on `edit`.
+//
+// The old `create-subcard` describes were DELETED, not adapted — the mode no
+// longer exists (subcards are MCP-only now), and a test over a removed mode
+// is dead weight.
+//
+// ⚠️ jsdom is blind to everything visual here: `getBoundingClientRect` is
+// always 0, there is no `matchMedia` (so `useMediaQuery` returns false and
+// every test below runs the DESKTOP branch), and Vitest runs with
+// `css: false`. Centring, the 720px stacked layout, the entry animation and
+// the chip colours in both themes are manual QA.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { CardFormModal } from './CardFormModal.jsx';
 
-afterEach(() => cleanup());
+vi.mock('../../utils/clipboard.js', () => ({
+  copyTextToClipboard: vi.fn().mockResolvedValue(true),
+}));
 
-// Ambos sem "/" (cliente-como-projeto/projeto-solto-na-raiz): nenhum tem
-// subprojetos, então o 2º select (Tier 2) nunca aparece com esta fixture —
-// os testes que precisam do Tier 2 usam PROJETOS_COM_SUBPROJETOS abaixo.
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+// Both without "/" (client-as-project / loose root project): neither has
+// subprojects, so the 2nd select never shows with this fixture.
 const PROJETOS = [
   { id: 'escritorio-agentes', nome: 'Escritório de Agentes', sub_projetos: [] },
   { id: 'outro-projeto', nome: 'Outro Projeto', sub_projetos: [] },
@@ -29,10 +42,41 @@ function makeCard(overrides = {}) {
     projeto_id: 'escritorio-agentes',
     status: 'em_andamento',
     descricao: 'texto **negrito**',
+    tipo: null,
+    prazo: null,
+    criado_em: '2026-08-30T09:15:00',
     subcards: [],
     imagens: [],
     ...overrides,
   };
+}
+
+function renderCreate(props = {}) {
+  return render(
+    <CardFormModal
+      open
+      mode="create"
+      projetos={PROJETOS}
+      onSubmit={vi.fn()}
+      onClose={vi.fn()}
+      {...props}
+    />
+  );
+}
+
+function renderEdit(props = {}) {
+  return render(
+    <CardFormModal
+      open
+      mode="edit"
+      card={makeCard()}
+      projetos={PROJETOS}
+      onSubmit={vi.fn()}
+      onDelete={vi.fn()}
+      onClose={vi.fn()}
+      {...props}
+    />
+  );
 }
 
 describe('CardFormModal — open=false', () => {
@@ -40,7 +84,7 @@ describe('CardFormModal — open=false', () => {
     render(
       <CardFormModal
         open={false}
-        mode="create-top"
+        mode="create"
         projetos={PROJETOS}
         onSubmit={vi.fn()}
         onClose={vi.fn()}
@@ -50,548 +94,450 @@ describe('CardFormModal — open=false', () => {
   });
 });
 
-describe('CardFormModal — mode="create-top"', () => {
-  it('shows the Cliente field (1º select) with all clientes without "/"', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.getByLabelText('Cliente')).not.toBeNull();
-    expect(screen.getByText('Escritório de Agentes')).not.toBeNull();
+describe('CardFormModal — mode="create"', () => {
+  it('is titled "Novo Card" and carries no CardIdBadge (no id yet)', () => {
+    renderCreate();
+    expect(screen.getByText('Novo Card')).not.toBeNull();
+    expect(screen.queryByLabelText(/^Copiar ID/)).toBeNull();
   });
 
-  it('cliente sem subprojetos: não mostra o 2º select (Projeto), mostra texto informativo', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
+  it('shows the Cliente select with every project without "/"', () => {
+    renderCreate();
+    const select = screen.getByLabelText('Cliente');
+    expect(select.tagName).toBe('SELECT');
+    expect([...select.options].map((o) => o.textContent))
+      .toEqual(['Escritório de Agentes', 'Outro Projeto']);
+  });
+
+  it('shows the Projeto select only when the chosen client has subprojects', () => {
+    renderCreate({ projetos: PROJETOS_COM_SUBPROJETOS });
+    const projeto = screen.getByLabelText('Projeto (opcional)');
+    expect([...projeto.options].map((o) => o.textContent))
+      .toEqual(['Nenhum (vincula direto ao cliente)', 'Subprojeto 1']);
+  });
+
+  it('shows an informative hint instead of the Projeto select when there are no subprojects', () => {
+    renderCreate();
     expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
     expect(screen.getByText(/não tem subprojetos/)).not.toBeNull();
   });
 
-  it('cliente com subprojetos: mostra o 2º select (Projeto opcional) com os subprojetos dele', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS_COM_SUBPROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    // Cliente default é o primeiro (Cliente 1), que tem subprojetos.
-    expect(screen.getByLabelText('Projeto (opcional)')).not.toBeNull();
-    expect(screen.getByText('Subprojeto 1')).not.toBeNull();
-  });
-
-  it('trocar de Cliente reseta a seleção de Projeto (2º select)', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS_COM_SUBPROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-
-    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+  it('changing the client resets the project selection', () => {
+    renderCreate({ projetos: PROJETOS_COM_SUBPROJETOS });
+    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), {
+      target: { value: 'cliente_projeto_1/subprojeto_1' },
+    });
     expect(screen.getByLabelText('Projeto (opcional)').value).toBe('cliente_projeto_1/subprojeto_1');
 
-    // Troca pra um cliente sem subprojetos: o 2º select some (e a seleção
-    // anterior não sobrevive escondida).
     fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'podesubir' } });
-    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
 
-    // Volta pro cliente com subprojetos: o 2º select reaparece resetado
-    // (sem carregar "Subprojeto 1" da seleção anterior).
-    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
-    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('');
+    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
+    expect(screen.getByText(/não tem subprojetos/)).not.toBeNull();
   });
 
   it('offers all 4 status chips', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.getByText('A Fazer')).not.toBeNull();
-    expect(screen.getByText('Em Andamento')).not.toBeNull();
-    expect(screen.getByText('Em Revisão')).not.toBeNull();
-    expect(screen.getByText('Feito')).not.toBeNull();
+    renderCreate();
+    for (const label of ['A Fazer', 'Em Andamento', 'Em Revisão', 'Feito']) {
+      expect(screen.getByText(label)).not.toBeNull();
+    }
   });
 
-  it('does not render ImageAttachments (no card id yet)', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.queryByLabelText('Escolher imagem')).toBeNull();
+  it('does not render the Imagens section nor "Criado em" (no card yet)', () => {
+    renderCreate();
+    expect(screen.queryByText('Imagens')).toBeNull();
+    expect(screen.queryByText('Criado em')).toBeNull();
   });
 
-  it('submete cliente_id (card cliente-only) quando o cliente escolhido não tem projeto específico selecionado', async () => {
-    const onSubmit = vi.fn().mockResolvedValue();
-    const onClose = vi.fn();
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={onSubmit}
-        onClose={onClose}
-      />
-    );
+  it('disables submit while the title is empty', () => {
+    renderCreate();
+    const submit = screen.getByText('Criar Card');
+    expect(submit.disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Nova tarefa' } });
-    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'outro-projeto' } });
-    fireEvent.click(screen.getByText('Feito'));
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'X' } });
+    expect(screen.getByText('Criar Card').disabled).toBe(false);
+  });
+
+  it('opens on defaultClienteId / defaultProjetoId / defaultStatus', () => {
+    renderCreate({
+      projetos: PROJETOS_COM_SUBPROJETOS,
+      defaultClienteId: 'cliente_projeto_1',
+      defaultProjetoId: 'cliente_projeto_1/subprojeto_1',
+      defaultStatus: 'em_revisao',
+    });
+
+    expect(screen.getByLabelText('Cliente').value).toBe('cliente_projeto_1');
+    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('cliente_projeto_1/subprojeto_1');
+    // The active status chip is the bold one; assert through the payload
+    // instead of styling, which jsdom cannot see.
+  });
+
+  it('ignores a defaultProjetoId that is not a direct child of the chosen client', () => {
+    // The 2nd select only lists direct children — pre-selecting anything else
+    // would blank the select silently.
+    renderCreate({
+      projetos: PROJETOS_COM_SUBPROJETOS,
+      defaultClienteId: 'cliente_projeto_1',
+      defaultProjetoId: 'cliente_projeto_1/subprojeto_1/neto',
+    });
+    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('');
+  });
+});
+
+describe('CardFormModal — create payload (contra-test for the dirty tracking)', () => {
+  it('sends the COMPLETE payload even when only the title was typed', async () => {
+    // Gating create by dirtyFields would drop cliente_id/status here and the
+    // backend would answer 400. This test is the guard against that.
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit, defaultStatus: 'em_andamento' });
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
     fireEvent.click(screen.getByText('Criar Card'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit).toHaveBeenCalledWith({
-      titulo: 'Nova tarefa',
-      status: 'feito',
+      titulo: 'Novo',
+      status: 'em_andamento',
       descricao: '',
-      cliente_id: 'outro-projeto',
+      tipo: null,
+      prazo: null,
+      cliente_id: 'escritorio-agentes',
     });
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('submete projeto_id (sem cliente_id) quando um projeto específico foi escolhido no 2º select', async () => {
-    const onSubmit = vi.fn().mockResolvedValue();
-    const onClose = vi.fn();
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS_COM_SUBPROJETOS}
-        onSubmit={onSubmit}
-        onClose={onClose}
-      />
-    );
+  it('never sends tipo/prazo as "" on create (an empty string is a 422)', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit });
 
-    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Card do subprojeto' } });
-    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.tipo).toBeNull();
+    expect(payload.prazo).toBeNull();
+  });
+
+  it('sends projeto_id (and no cliente_id) when a specific project is chosen', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit, projetos: PROJETOS_COM_SUBPROJETOS });
+
+    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), {
+      target: { value: 'cliente_projeto_1/subprojeto_1' },
+    });
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
     fireEvent.click(screen.getByText('Criar Card'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const payload = onSubmit.mock.calls[0][0];
     expect(payload.projeto_id).toBe('cliente_projeto_1/subprojeto_1');
-    expect(payload.cliente_id).toBeUndefined();
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(payload).not.toHaveProperty('cliente_id');
   });
 
-  it('disables submit while titulo is empty', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.getByText('Criar Card').disabled).toBe(true);
-  });
-});
+  it('carries the tipo and prazo the user picked', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit });
 
-describe('CardFormModal — mode="create-subcard"', () => {
-  it('does NOT show the Projeto field (herdado do pai)', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-subcard"
-        parentId={5}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.queryByLabelText('Projeto')).toBeNull();
-  });
-
-  it('does NOT show the Cliente field either (feature Cliente/Projeto: herdado do pai)', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-subcard"
-        parentId={5}
-        projetos={PROJETOS_COM_SUBPROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.queryByLabelText('Cliente')).toBeNull();
-    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
-  });
-
-  it('offers all 4 status options — restriction to a_fazer/em_andamento is an MCP-only rule, not a UI rule', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-subcard"
-        parentId={5}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    expect(screen.getByText('A Fazer')).not.toBeNull();
-    expect(screen.getByText('Em Andamento')).not.toBeNull();
-    expect(screen.getByText('Em Revisão')).not.toBeNull();
-    expect(screen.getByText('Feito')).not.toBeNull();
-  });
-
-  it('submits payload with parent_id and without projeto_id', async () => {
-    const onSubmit = vi.fn().mockResolvedValue();
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-subcard"
-        parentId={5}
-        projetos={PROJETOS}
-        onSubmit={onSubmit}
-        onClose={vi.fn()}
-      />
-    );
-
-    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Subtarefa X' } });
-    fireEvent.click(screen.getByText('Criar Subtarefa'));
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'bug' } });
+    fireEvent.change(screen.getByLabelText('Prazo'), { target: { value: '2026-09-15' } });
+    fireEvent.click(screen.getByText('Criar Card'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const payload = onSubmit.mock.calls[0][0];
-    expect(payload.parent_id).toBe(5);
-    expect(payload.projeto_id).toBeUndefined();
-    expect(payload.titulo).toBe('Subtarefa X');
+    expect(payload.tipo).toBe('bug');
+    expect(payload.prazo).toBe('2026-09-15');
   });
 });
 
 describe('CardFormModal — mode="edit"', () => {
-  it('pre-fills fields from card and shows ImageAttachments', () => {
-    const card = makeCard({ imagens: [{ id: 1, url: '/x.png' }] });
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+  it('is titled "Editar Card", shows the CardIdBadge and pre-fills the fields', () => {
+    renderEdit();
+    expect(screen.getByText('Editar Card')).not.toBeNull();
+    expect(screen.getByText('#10')).not.toBeNull();
     expect(screen.getByLabelText('Título').value).toBe('Card existente');
-    expect(screen.getByTestId('image-thumb-1')).not.toBeNull();
-    expect(screen.getByText('Excluir')).not.toBeNull();
   });
 
-  it('does not show the Projeto field nor the Cliente field', () => {
-    const card = makeCard();
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
-    expect(screen.queryByLabelText('Projeto')).toBeNull();
+  it('shows Projeto as read-only TEXT, never as a select; the client lives only in the header', () => {
+    renderEdit();
+    const projeto = screen.getByText('Projeto');
+    expect(projeto.tagName).not.toBe('LABEL');
     expect(screen.queryByLabelText('Cliente')).toBeNull();
+    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
+    // The client name appears once: beside the id in the header (where the
+    // plan pins it, so it survives the 720px stack). The rail's Cliente row
+    // was removed — the header is the single source.
+    expect(screen.getAllByText('Escritório de Agentes').length).toBe(1);
   });
 
-  it('submit label reads "Salvar" and calls onSubmit with the card id', async () => {
-    const card = makeCard();
-    const onSubmit = vi.fn().mockResolvedValue();
-    const onClose = vi.fn();
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={onSubmit}
-        onDelete={vi.fn()}
-        onClose={onClose}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+  it('shows the Imagens section and the formatted "Criado em"', () => {
+    renderEdit();
+    expect(screen.getByText('Imagens')).not.toBeNull();
+    expect(screen.getByText('Criado em')).not.toBeNull();
+    expect(screen.getByText('30/08/2026')).not.toBeNull();
+  });
 
-    fireEvent.click(screen.getByText('Salvar'));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({ id: 10, titulo: 'Card existente' });
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  it('shows "Sem tipo"/"Sem prazo" when the card has neither', () => {
+    renderEdit();
+    expect(screen.getByLabelText('Tipo').value).toBe('');
+    expect(screen.getByText('Sem tipo')).not.toBeNull();
+    expect(screen.getByText('Sem prazo')).not.toBeNull();
+  });
+
+  it('pre-fills tipo and prazo when the card has them', () => {
+    renderEdit({ card: makeCard({ tipo: 'hotfix', prazo: '2026-09-15' }) });
+    expect(screen.getByLabelText('Tipo').value).toBe('hotfix');
+    expect(screen.getByLabelText('Prazo').value).toBe('2026-09-15');
+    expect(screen.queryByText('Sem prazo')).toBeNull();
   });
 });
 
-describe('CardFormModal — exclusão em cascata', () => {
-  let confirmSpy;
+describe('CardFormModal — dirty tracking (edit only)', () => {
+  it('changing ONLY the prazo submits prazo and nothing else', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit });
 
+    fireEvent.change(screen.getByLabelText('Prazo'), { target: { value: '2026-10-01' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.prazo).toBe('2026-10-01');
+    expect(payload).not.toHaveProperty('titulo');
+    expect(payload).not.toHaveProperty('descricao');
+    expect(payload).not.toHaveProperty('status');
+    expect(payload).not.toHaveProperty('tipo');
+  });
+
+  it('changing ONLY the tipo submits tipo and nothing else', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit });
+
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'bug' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.tipo).toBe('bug');
+    expect(payload).not.toHaveProperty('titulo');
+    expect(payload).not.toHaveProperty('prazo');
+    expect(payload).not.toHaveProperty('status');
+  });
+
+  it('closes without calling onSubmit when edit mode has no dirty fields', () => {
+    // The gate in handleSubmit: a Salvar click that changed nothing must not
+    // reach onSubmit. An empty-body PATCH still makes the backend rewrite
+    // `ultima_atualizacao_por`, stealing the attribution from whoever last
+    // edited the card.
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    renderEdit({ onSubmit, onClose });
+
+    fireEvent.click(screen.getByText('Salvar'));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('touching the status chip marks status dirty', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit });
+
+    fireEvent.click(screen.getByText('Feito'));
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toEqual({ id: 10, status: 'feito' });
+  });
+});
+
+describe('CardFormModal — clear sentinel ("" on edit)', () => {
+  it('clicking "limpar" on the prazo submits prazo: "" — not null, not absent', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit, card: makeCard({ prazo: '2026-09-15' }) });
+
+    fireEvent.click(screen.getByText('limpar'));
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.prazo).toBe('');
+    expect(payload.prazo).not.toBeNull();
+  });
+
+  it('selecting "Sem tipo" submits tipo: "" — not null, not absent', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit, card: makeCard({ tipo: 'bug' }) });
+
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.tipo).toBe('');
+    expect(payload.tipo).not.toBeNull();
+  });
+});
+
+describe('CardFormModal — closing', () => {
+  it('ESC calls onClose', () => {
+    const onClose = vi.fn();
+    renderEdit({ onClose });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the keydown listener on unmount', () => {
+    const onClose = vi.fn();
+    const { unmount } = renderEdit({ onClose });
+
+    unmount();
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('clicking the overlay closes, clicking inside the panel does not', () => {
+    const onClose = vi.fn();
+    renderEdit({ onClose });
+    const panel = screen.getByRole('dialog');
+    const overlay = panel.parentElement;
+
+    fireEvent.mouseDown(panel);
+    fireEvent.click(panel);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.mouseDown(overlay);
+    fireEvent.click(overlay);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT close when a text selection started inside the panel and ended on the overlay', () => {
+    // Dragging a selection out of the textarea makes the click resolve to the
+    // overlay. Closing there would silently discard the draft.
+    const onClose = vi.fn();
+    renderEdit({ onClose });
+    const panel = screen.getByRole('dialog');
+    const overlay = panel.parentElement;
+
+    fireEvent.mouseDown(panel);
+    fireEvent.click(overlay);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('the ✕ and "Cancelar" both close', () => {
+    const onClose = vi.fn();
+    renderEdit({ onClose });
+
+    fireEvent.click(screen.getByLabelText('Fechar'));
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CardFormModal — cascading delete', () => {
   beforeEach(() => {
-    confirmSpy = vi.spyOn(window, 'confirm');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
-  afterEach(() => {
-    confirmSpy.mockRestore();
-  });
-
-  it('card COM subcards: shows a warning mentioning the count before calling onDelete', async () => {
-    confirmSpy.mockReturnValue(true);
-    const card = makeCard({ subcards: [{ id: 1 }, { id: 2 }, { id: 3 }] });
-    const onDelete = vi.fn().mockResolvedValue();
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={onDelete}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+  it('warns with the subcard count before deleting', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onDelete, card: makeCard({ subcards: [{ id: 11 }, { id: 12 }] }) });
 
     fireEvent.click(screen.getByText('Excluir'));
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(confirmSpy.mock.calls[0][0]).toContain('3 subtarefa(s)');
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('2 subtarefa(s)'));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(10));
   });
 
-  it('card COM subcards: cancelling the warning does NOT call onDelete', () => {
-    confirmSpy.mockReturnValue(false);
-    const card = makeCard({ subcards: [{ id: 1 }] });
+  it('does NOT delete when the warning is dismissed', () => {
+    window.confirm.mockReturnValue(false);
     const onDelete = vi.fn();
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={onDelete}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+    renderEdit({ onDelete, card: makeCard({ subcards: [{ id: 11 }] }) });
 
     fireEvent.click(screen.getByText('Excluir'));
 
-    expect(confirmSpy).toHaveBeenCalled();
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  it('card SEM subcards: calls onDelete directly, without mentioning subtarefas that do not exist', async () => {
-    const card = makeCard({ subcards: [] });
-    const onDelete = vi.fn().mockResolvedValue();
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={onDelete}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+  it('deletes straight away, with no warning, when there are no subcards', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onDelete });
 
     fireEvent.click(screen.getByText('Excluir'));
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(10));
   });
-});
 
-describe('CardFormModal — preview de markdown', () => {
-  it('toggling "Visualizar" renders the markdown as HTML (e.g. **negrito** -> <strong>)', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-
-    fireEvent.change(screen.getByLabelText('Descrição (Markdown)'), {
-      target: { value: 'texto **negrito** aqui' },
-    });
-    fireEvent.click(screen.getByText('Visualizar'));
-
-    const preview = screen.getByTestId('card-descricao-preview');
-    expect(preview.innerHTML).toContain('<strong>negrito</strong>');
-
-    // Alterna de volta para edição.
-    fireEvent.click(screen.getByText('Editar'));
-    expect(screen.getByLabelText('Descrição (Markdown)').value).toBe('texto **negrito** aqui');
+  it('offers no Excluir button in create mode', () => {
+    renderCreate();
+    expect(screen.queryByText('Excluir')).toBeNull();
   });
 });
 
-describe('CardFormModal — preview default state', () => {
-  it('opens already rendered (preview) by default when editing a card with an existing descricao', () => {
-    const card = makeCard({ descricao: 'texto **negrito**' });
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
-
+describe('CardFormModal — markdown preview', () => {
+  it('opens already rendered when editing a card that has a description', () => {
+    renderEdit();
     const preview = screen.getByTestId('card-descricao-preview');
     expect(preview.innerHTML).toContain('<strong>negrito</strong>');
-    expect(screen.getByText('Editar')).not.toBeNull();
-    expect(screen.queryByLabelText('Descrição (Markdown)')).toBeNull();
   });
 
-  it('opens in raw (edit) mode by default when editing a card without a descricao', () => {
-    const card = makeCard({ descricao: '' });
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
-
+  it('opens raw when editing a card without a description', () => {
+    renderEdit({ card: makeCard({ descricao: '' }) });
     expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
-    expect(screen.getByText('Visualizar')).not.toBeNull();
     expect(screen.getByLabelText('Descrição (Markdown)')).not.toBeNull();
   });
 
-  it('opens in raw (edit) mode by default when creating a new top-level card', () => {
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-
+  it('opens raw when creating', () => {
+    renderCreate();
     expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
-    expect(screen.getByText('Visualizar')).not.toBeNull();
   });
 
-  it('starting from the preview default, toggling to "Editar" reveals the textarea pre-filled with the existing descricao', () => {
-    const card = makeCard({ descricao: 'texto **negrito**' });
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
+  it('toggling from the preview reveals the textarea pre-filled, and back', () => {
+    renderEdit();
 
     fireEvent.click(screen.getByText('Editar'));
+    const textarea = screen.getByLabelText('Descrição (Markdown)');
+    expect(textarea.value).toBe('texto **negrito**');
 
-    expect(screen.queryByTestId('card-descricao-preview')).toBeNull();
-    expect(screen.getByLabelText('Descrição (Markdown)').value).toBe('texto **negrito**');
-    expect(screen.getByText('Visualizar')).not.toBeNull();
-  });
-
-  it('starting from the preview default, editing the raw text and toggling back reflects the change in the rendered preview', () => {
-    const card = makeCard({ descricao: 'texto **negrito**' });
-    render(
-      <CardFormModal
-        open={true}
-        mode="edit"
-        card={card}
-        projetos={PROJETOS}
-        onSubmit={vi.fn()}
-        onDelete={vi.fn()}
-        onClose={vi.fn()}
-        onUploadImage={vi.fn()}
-        onDeleteImage={vi.fn()}
-      />
-    );
-
-    fireEvent.click(screen.getByText('Editar'));
-    fireEvent.change(screen.getByLabelText('Descrição (Markdown)'), {
-      target: { value: 'novo texto *italico*' },
-    });
+    fireEvent.change(textarea, { target: { value: 'agora **outro**' } });
     fireEvent.click(screen.getByText('Visualizar'));
 
-    const preview = screen.getByTestId('card-descricao-preview');
-    expect(preview.innerHTML).toContain('<em>italico</em>');
+    expect(screen.getByTestId('card-descricao-preview').innerHTML).toContain('<strong>outro</strong>');
   });
 });
 
-describe('CardFormModal — estado de envio', () => {
+describe('CardFormModal — submitting state', () => {
   it('disables the submit button while onSubmit is pending and closes after it resolves', async () => {
     let resolveSubmit;
     const onSubmit = vi.fn(() => new Promise((resolve) => { resolveSubmit = resolve; }));
     const onClose = vi.fn();
-    render(
-      <CardFormModal
-        open={true}
-        mode="create-top"
-        projetos={PROJETOS}
-        onSubmit={onSubmit}
-        onClose={onClose}
-      />
-    );
+    renderCreate({ onSubmit, onClose });
 
-    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Card X' } });
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
     fireEvent.click(screen.getByText('Criar Card'));
 
-    expect(screen.getByText('Criando…')).not.toBeNull();
-    expect(screen.getByText('Criando…').disabled).toBe(true);
-    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('Criando…').disabled).toBe(true));
 
     resolveSubmit();
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('keeps the modal open and alerts when onSubmit rejects', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('boom'));
+    const onClose = vi.fn();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderCreate({ onSubmit, onClose });
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(onClose).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 });

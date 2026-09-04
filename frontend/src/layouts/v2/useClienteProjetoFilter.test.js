@@ -4,7 +4,13 @@
 // exercises it in its real consumer.
 
 import { describe, it, expect } from 'vitest';
-import { collectSubtreeIds, resolveCardTags, resolveProjectName } from './useClienteProjetoFilter.js';
+import { renderHook, act } from '@testing-library/react';
+import {
+  collectSubtreeIds,
+  resolveCardTags,
+  resolveProjectName,
+  useClienteProjetoFilter,
+} from './useClienteProjetoFilter.js';
 
 const projects = [
   { id: 'cliente', nome: 'Cliente', sub_projetos: ['cliente/projeto'] },
@@ -47,6 +53,27 @@ describe('collectSubtreeIds', () => {
 
   it('returns an empty array for a root that is unknown to the project list', () => {
     expect(collectSubtreeIds('ghost', projects)).toEqual([]);
+  });
+});
+
+describe('useClienteProjetoFilter — empty-subtree guard', () => {
+  // `selectedProjectIds` is consumed by useCards, where an empty array means
+  // "no filter at all — fetch EVERY project". So while a client (and here a
+  // specific project) is selected, the hook must never hand back `[]`, even in
+  // the window where `projects` has not resolved yet: it falls back to
+  // `[effectiveClienteId]` instead. Dropping the guard (`return ids`) inverts
+  // the very bug this round fixes — a project filter that suddenly matches
+  // everything.
+  it('never returns an empty selectedProjectIds while a project is picked but the project list has not loaded', () => {
+    const { result } = renderHook(
+      ({ projects }) => useClienteProjetoFilter(projects, 'cliente'),
+      { initialProps: { projects: [] } }
+    );
+
+    act(() => { result.current.setSelectedProjetoId('cliente/projeto'); });
+
+    expect(result.current.selectedProjectIds).toEqual(['cliente']);
+    expect(result.current.selectedProjectIds.length).toBeGreaterThan(0);
   });
 });
 

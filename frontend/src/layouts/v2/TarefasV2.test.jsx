@@ -479,7 +479,7 @@ describe('TarefasV2 — hierarquia de 3+ níveis (Cliente > Projeto > Neto)', ()
     expect(screen.getByTestId('tarefas-v2-row-1').textContent).toContain('Neto C');
   });
 
-  it('keeps a client-only task visible when a specific intermediate project is selected (definitive product behavior, mirrors BoardV2)', () => {
+  it('drops a client-only task when a specific intermediate project is selected, keeping the grandchild (mirrors BoardV2)', () => {
     mockUseGlobalTasks.mockReturnValue({
       tasks: [
         fakeTask({ id: 1, titulo: 'Tarefa cliente-only', status: 'pending', projeto_id: 'clienteC' }),
@@ -493,7 +493,9 @@ describe('TarefasV2 — hierarquia de 3+ níveis (Cliente > Projeto > Neto)', ()
 
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
-    expect(screen.getByText('Tarefa cliente-only')).toBeTruthy();
+    // A tarefa presa direto ao cliente, sem projeto específico, sai de cena; a
+    // do neto (dentro da subárvore do projeto escolhido) fica.
+    expect(screen.queryByText('Tarefa cliente-only')).toBeNull();
     expect(screen.getByText('Tarefa do neto')).toBeTruthy();
   });
 

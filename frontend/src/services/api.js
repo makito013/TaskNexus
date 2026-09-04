@@ -151,20 +151,32 @@ export const api = {
     return r.json()
   },
 
-  async createCard({ titulo, projeto_id, cliente_id, status, descricao }) {
+  async createCard({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo }) {
     // Card cliente-only (feature Cliente/Projeto): o payload chega sem
     // `projeto_id`, só `cliente_id` — `JSON.stringify` descarta chaves
     // `undefined` sozinho, então não precisa de lógica condicional aqui;
     // o backend resolve projeto_id = cliente_id (CardStore.create ramo 3).
+    //
+    // `tipo`/`prazo` are whitelisted in BOTH places (the destructuring above
+    // and the stringified object below) — they are two separate lists, and
+    // adding a field to only one of them drops the payload silently.
+    // On the create path `tipo` must never be `""`: CardCreateRequest.tipo is
+    // `CardTipo | None`, so an empty string is a 422. Callers send `null` or
+    // omit the key; only PATCH accepts `""` as the "clear it" sentinel.
     const r = await fetch(`${BASE}/cards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, projeto_id, cliente_id, status, descricao }),
+      body: JSON.stringify({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo }),
     })
     if (!r.ok) throw new Error('Falha ao criar card')
     return r.json()
   },
 
+  // MCP/agent-only endpoint — no UI calls this any more, and it must NOT be
+  // deleted as dead code. Subcards stopped being creatable from the app when
+  // the `create-subcard` mode left CardFormModal and the v1 board was removed;
+  // the agent path (`criar_card` with `parent_id`) is the only caller left, and
+  // it is live. See the matching note in hooks/useCards.js.
   async createSubcard(parentId, { titulo, status, descricao }) {
     const r = await fetch(`${BASE}/cards/${parentId}/subcards`, {
       method: 'POST',
@@ -175,11 +187,16 @@ export const api = {
     return r.json()
   },
 
-  async updateCard(cardId, { titulo, descricao, status }) {
+  // Fields absent from `payload` stay `undefined` and are dropped by
+  // `JSON.stringify`, which is what makes the modal's dirty-tracking work:
+  // an untouched field is never sent, so the backend leaves it alone.
+  // `tipo: ""` / `prazo: ""` are the deliberate exception — the "clear this
+  // field" sentinel that CardStore.update turns into NULL.
+  async updateCard(cardId, { titulo, descricao, status, tipo, prazo }) {
     const r = await fetch(`${BASE}/cards/${cardId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, descricao, status }),
+      body: JSON.stringify({ titulo, descricao, status, tipo, prazo }),
     })
     if (!r.ok) throw new Error('Falha ao atualizar card')
     return r.json()

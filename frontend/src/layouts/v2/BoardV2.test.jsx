@@ -1,8 +1,7 @@
 // frontend/src/layouts/v2/BoardV2.test.jsx
 // Milestone 3 (plano Layout v2, 05-TL.md, Tarefa 15): cobre a apresentação
 // v2 do Board — 4 colunas fixas por status (não por projeto), reaproveitando
-// useCards tal como está (mockado aqui, mesmo padrão de App.test.jsx para
-// BoardView.jsx v1).
+// useCards tal como está (mockado aqui).
 //
 // Fase atual (cascata Cliente -> Projeto): a filtragem passou a sair de
 // `useClienteProjetoFilter` (estado local desta tela) em vez de um cálculo
@@ -11,8 +10,8 @@
 // uma entrada de Project para CADA descendente — declarar só `sub_projetos`
 // no pai não basta mais.
 //
-// `selectedProjectId` (singular, prop) continua sendo testado separadamente,
-// no único papel que tem: o fluxo de criação de card.
+// The `selectedProjectId` prop is gone: card creation no longer takes a
+// target from a prop, it comes from the CardFormModal's own payload.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
@@ -90,7 +89,7 @@ describe('BoardV2 — 4 colunas fixas por status', () => {
       updateCard: vi.fn(),
     });
 
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     expect(screen.getByTestId('board-v2-col-a_fazer')).toBeTruthy();
     expect(screen.getByTestId('board-v2-col-feito')).toBeTruthy();
@@ -101,40 +100,123 @@ describe('BoardV2 — 4 colunas fixas por status', () => {
   it('moving a card calls updateCard with the new status', () => {
     const updateCard = vi.fn();
     mockUseCards.mockReturnValue({ cards: [fakeCard()], createCard: vi.fn(), updateCard });
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.change(screen.getByLabelText('Mover "Card 1"'), { target: { value: 'feito' } });
     expect(updateCard).toHaveBeenCalledWith(1, { status: 'feito' });
   });
 
-  it('"+ Adicionar card" creates a card in that column\'s status for the chat\'s active project (selectedProjectId), not the aggregated client filter', async () => {
+  it('"+ Adicionar card" opens the modal in create mode with that column\'s status pre-selected', async () => {
     const createCard = vi.fn().mockResolvedValue({});
     mockUseCards.mockReturnValue({ cards: [], createCard, updateCard: vi.fn() });
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId="projA" selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
 
-    const column = screen.getByTestId('board-v2-col-a_fazer');
+    const column = screen.getByTestId('board-v2-col-em_andamento');
     fireEvent.click(within(column).getByText('+ Adicionar card'));
 
-    fireEvent.change(within(column).getByPlaceholderText('Título do card'), { target: { value: 'Novo card' } });
-    fireEvent.click(within(column).getByText('Adicionar'));
+    expect(screen.getByText('Novo Card')).toBeTruthy();
 
-    await waitFor(() => expect(within(column).queryByText('Adicionar')).toBeNull()); // form fecha
-    // projeto_id vem de selectedProjectId (chat ativo), não do cliente agregado na sidebar.
-    expect(createCard).toHaveBeenCalledWith({ titulo: 'Novo card', projeto_id: 'projA', status: 'a_fazer' });
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo card' } });
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(createCard).toHaveBeenCalled());
+    // The target now comes from the modal's own payload, not from a prop.
+    expect(createCard).toHaveBeenCalledWith(expect.objectContaining({
+      titulo: 'Novo card',
+      status: 'em_andamento',
+      cliente_id: 'clienteB',
+    }));
   });
 
-  it('disables card creation with a hint when no chat project is selected (selectedProjectId)', () => {
+  it('shows "+ Adicionar card" even with no client selected — the old blocker is gone', () => {
     mockNoCards();
-    render(<BoardV2 projects={projects} selectedProjectId={null} selectedClienteId="projA" />);
-    expect(screen.queryByText('+ Adicionar card')).toBeNull();
-    expect(screen.getAllByText('Selecione um projeto na barra lateral para adicionar cards.').length).toBeGreaterThan(0);
+    render(<BoardV2 projects={projects} selectedClienteId={null} />);
+    expect(screen.getAllByText('+ Adicionar card').length).toBe(4);
+    expect(screen.queryByText('Selecione um projeto na barra lateral para adicionar cards.')).toBeNull();
+  });
+
+  it('opens the create modal on the ACTIVE filter, not on stale defaults from the first opening', async () => {
+    // Regression guard for the lazy-useState freeze: BoardV2 must mount the
+    // modal conditionally, so reopening it after the filter changed rebuilds
+    // the defaults. Mounting it permanently with open={false} fails here.
+    mockNoCards();
+    const bothClients = [...projects, ...clienteWithSubsProjects];
+    const { rerender } = render(
+      <BoardV2 projects={bothClients} selectedClienteId="clienteB" />
+    );
+
+    fireEvent.click(screen.getAllByText('+ Adicionar card')[0]);
+    expect(screen.getByLabelText('Cliente').value).toBe('clienteB');
+    fireEvent.click(screen.getByLabelText('Fechar'));
+
+    rerender(<BoardV2 projects={bothClients} selectedClienteId="projA" />);
+    fireEvent.click(screen.getAllByText('+ Adicionar card')[0]);
+
+    await waitFor(() => expect(screen.getByLabelText('Cliente').value).toBe('projA'));
+  });
+});
+
+describe('BoardV2 — id, tipo e prazo no rosto do card', () => {
+  it('shows the copyable card id', () => {
+    mockUseCards.mockReturnValue({ cards: [fakeCard({ id: 128 })], createCard: vi.fn(), updateCard: vi.fn() });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const card = screen.getByTestId('board-v2-card-128');
+    expect(within(card).getByText('#128')).toBeTruthy();
+    expect(within(card).getByLabelText('Copiar ID 128')).toBeTruthy();
+  });
+
+  it('renders the tipo chip when the card has a tipo, and NO chip when it does not', () => {
+    mockUseCards.mockReturnValue({
+      cards: [
+        fakeCard({ id: 1, tipo: 'bug', titulo: 'Com tipo' }),
+        fakeCard({ id: 2, tipo: null, titulo: 'Sem tipo' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(within(screen.getByTestId('board-v2-card-1')).getByText('BUG')).toBeTruthy();
+    const untyped = screen.getByTestId('board-v2-card-2');
+    for (const label of ['BUG', 'HOTFIX', 'HISTÓRIA']) {
+      expect(within(untyped).queryByText(label)).toBeNull();
+    }
+  });
+
+  it('renders the prazo, and only marks it late when the card is not done', () => {
+    // jsdom cannot read the rendered colour (css: false), so the assertion is
+    // on the inline style property the component actually sets.
+    const past = '2020-01-01';
+    mockUseCards.mockReturnValue({
+      cards: [
+        fakeCard({ id: 1, prazo: past, status: 'a_fazer', titulo: 'Atrasado' }),
+        fakeCard({ id: 2, prazo: past, status: 'feito', titulo: 'Entregue' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const late = within(screen.getByTestId('board-v2-card-1')).getByText('1 jan 2020');
+    expect(late.style.color).toBe('var(--v2-danger)');
+
+    const done = within(screen.getByTestId('board-v2-card-2')).getByText('1 jan 2020');
+    expect(done.style.color).toBe('var(--v2-text-faint)');
+  });
+
+  it('renders no prazo text when the card has none', () => {
+    mockUseCards.mockReturnValue({ cards: [fakeCard({ id: 1, prazo: null })], createCard: vi.fn(), updateCard: vi.fn() });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.getByTestId('board-v2-card-1').textContent).not.toMatch(/\d{1,2} [a-z]{3}/);
   });
 });
 
 describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desacoplado do chat ativo)', () => {
   it('with no client selected ("Todos"), fetches cards for all projects — useCards([])', () => {
     mockNoCards();
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId={null} />);
+    render(<BoardV2 projects={projects} selectedClienteId={null} />);
     expect(mockUseCards).toHaveBeenCalledWith([]);
   });
 
@@ -147,13 +229,13 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
   // 3 testes.
   it('with any client fixed and Tier 2 on "Todos os projetos", fetches ALL cards (useCards([])) instead of a scoped query', () => {
     mockNoCards();
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
     expect(mockUseCards).toHaveBeenLastCalledWith([]);
   });
 
   it('with a client that has subprojects selected, still fetches everything (Tier 2 stays "Todos")', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
     expect(lastFetchedProjectIds()).toEqual([]);
   });
 
@@ -163,7 +245,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={deepProjects} selectedProjectId={null} selectedClienteId="clienteC" />);
+    render(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" />);
     expect(lastFetchedProjectIds()).toEqual([]);
     expect(screen.getByTestId('board-v2-card-9').textContent).toContain('Card do neto');
   });
@@ -180,7 +262,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
     // `projects` ainda não resolveu (array vazio) — o filtro de exibição é
     // por PREFIXO puro (clienteIdFromProjetoId), não depende de `projects`
     // estar carregado pra não vazar o card do outro cliente.
-    render(<BoardV2 projects={[]} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={[]} selectedClienteId="clienteB" />);
     expect(screen.getByText('Card Cliente B')).toBeTruthy();
     expect(screen.queryByText('Card Cliente Z')).toBeNull();
   });
@@ -196,7 +278,7 @@ describe('BoardV2 — card órfão sob um cliente específico', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
     expect(screen.getByText('Card órfão')).toBeTruthy();
   });
 
@@ -211,7 +293,7 @@ describe('BoardV2 — card órfão sob um cliente específico', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     }));
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
     expect(screen.getByText('Card órfão')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteB/sub1' } });
@@ -223,7 +305,7 @@ describe('BoardV2 — card órfão sob um cliente específico', () => {
 describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', () => {
   it('shows only the project select when the sidebar already fixed a client', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
 
     expect(screen.queryByLabelText('Filtrar por cliente')).toBeNull();
     expect(screen.getByLabelText('Filtrar por projeto')).toBeTruthy();
@@ -231,13 +313,13 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
   it('hides the project select ONLY when the sidebar fixed a client that has no subprojects', () => {
     mockNoCards();
-    render(<BoardV2 projects={projects} selectedProjectId={null} selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
     expect(screen.queryByLabelText('Filtrar por projeto')).toBeNull();
   });
 
   it('shows both selects as soon as the board opens in "Todos", with the project one disabled until a client is picked', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} />);
 
     expect(screen.getByLabelText('Filtrar por cliente')).toBeTruthy();
     const projetoSelect = screen.getByLabelText('Filtrar por projeto');
@@ -248,7 +330,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
   it('enables the project select once a client with subprojects is picked in "Todos"', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} />);
 
     fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'clienteB' } });
 
@@ -266,7 +348,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
   it('keeps the project select visible, with no options beyond "Todos os projetos", for a client without subprojects picked in "Todos"', () => {
     mockNoCards();
-    render(<BoardV2 projects={[...projects, ...clienteWithSubsProjects]} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={[...projects, ...clienteWithSubsProjects]} selectedClienteId={null} />);
 
     fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'projA' } });
 
@@ -278,7 +360,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
   it('going back to "Todos os clientes" in the local select fetches every project again', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} />);
 
     const clienteSelect = screen.getByLabelText('Filtrar por cliente');
     fireEvent.change(clienteSelect, { target: { value: 'clienteB' } });
@@ -289,7 +371,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
   it('the project select lists only DIRECT children, but filtering by one of them reaches its whole subtree (shallow dropdown, deep result)', () => {
     mockNoCards();
-    render(<BoardV2 projects={deepProjects} selectedProjectId={null} selectedClienteId="clienteC" />);
+    render(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" />);
 
     const projetoSelect = screen.getByLabelText('Filtrar por projeto');
     // Só o filho direto aparece no dropdown — o neto não.
@@ -298,29 +380,32 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
 
     fireEvent.change(projetoSelect, { target: { value: 'clienteC/proj' } });
 
-    // ...mas o filtro por trás traz o neto junto.
+    // ...mas o filtro por trás traz o neto junto (subárvore inteira do projeto
+    // escolhido — e nada acima dele, ver o teste de cards cliente-only abaixo).
     expect(lastFetchedProjectIds()).toContain('clienteC/proj/neto');
   });
 
-  it('keeps client-only cards visible when a specific project is selected (definitive product behavior)', () => {
+  it('drops client-only cards when a specific project is selected — the filter narrows to that subtree only', () => {
     mockNoCards();
-    render(<BoardV2 projects={deepProjects} selectedProjectId={null} selectedClienteId="clienteC" />);
+    render(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" />);
 
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
-    expect(lastFetchedProjectIds()).toEqual(['clienteC', 'clienteC/proj', 'clienteC/proj/neto']);
+    // No 'clienteC' in the list: a card attached straight to the client, with
+    // no specific project, is out of scope once a project is picked.
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj', 'clienteC/proj/neto']);
   });
 
   it('resets the selected project when the effective client changes', () => {
     mockNoCards();
     const { rerender } = render(
-      <BoardV2 projects={[...deepProjects, ...clienteWithSubsProjects]} selectedProjectId={null} selectedClienteId="clienteC" />
+      <BoardV2 projects={[...deepProjects, ...clienteWithSubsProjects]} selectedClienteId="clienteC" />
     );
 
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
     rerender(
-      <BoardV2 projects={[...deepProjects, ...clienteWithSubsProjects]} selectedProjectId={null} selectedClienteId="clienteB" />
+      <BoardV2 projects={[...deepProjects, ...clienteWithSubsProjects]} selectedClienteId="clienteB" />
     );
 
     // Nenhum resquício de clienteC no filtro, e o select volta pra "Todos os projetos".
@@ -333,13 +418,13 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
     mockNoCards();
     const allProjects = [...clienteWithSubsProjects, ...deepProjects];
     const { rerender } = render(
-      <BoardV2 projects={allProjects} selectedProjectId={null} selectedClienteId={null} />
+      <BoardV2 projects={allProjects} selectedClienteId={null} />
     );
 
     fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'clienteB' } });
-    rerender(<BoardV2 projects={allProjects} selectedProjectId={null} selectedClienteId="clienteC" />);
+    rerender(<BoardV2 projects={allProjects} selectedClienteId="clienteC" />);
     // Sidebar volta pra "Todos": a escolha local anterior não pode ressuscitar.
-    rerender(<BoardV2 projects={allProjects} selectedProjectId={null} selectedClienteId={null} />);
+    rerender(<BoardV2 projects={allProjects} selectedClienteId={null} />);
 
     expect(screen.getByLabelText('Filtrar por cliente').value).toBe('');
     expect(mockUseCards).toHaveBeenLastCalledWith([]);
@@ -361,12 +446,12 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
   it('never queries another client\'s projects on the render where the sidebar client changes', () => {
     mockNoCards();
     const { rerender } = render(
-      <BoardV2 projects={mixedProjects} selectedProjectId={null} selectedClienteId="clienteC" />
+      <BoardV2 projects={mixedProjects} selectedClienteId="clienteC" />
     );
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
     const callsBefore = mockUseCards.mock.calls.length;
-    rerender(<BoardV2 projects={mixedProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    rerender(<BoardV2 projects={mixedProjects} selectedClienteId="clienteB" />);
 
     const calls = fetchedProjectIdCallsSince(callsBefore);
     expect(calls.length).toBeGreaterThan(0);
@@ -378,7 +463,7 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
   // modo "Todos". Aqui cliente e projeto mudam dentro do MESMO evento.
   it('never queries another client\'s projects when the local client select switches clients in "Todos"', () => {
     mockNoCards();
-    render(<BoardV2 projects={mixedProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={mixedProjects} selectedClienteId={null} />);
 
     const clienteSelect = screen.getByLabelText('Filtrar por cliente');
     fireEvent.change(clienteSelect, { target: { value: 'clienteC' } });
@@ -410,12 +495,12 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
       updateCard: vi.fn(),
     });
     const { rerender } = render(
-      <BoardV2 projects={[]} selectedProjectId={null} selectedClienteId="clienteB" />
+      <BoardV2 projects={[]} selectedClienteId="clienteB" />
     );
     expect(screen.getByText('Card Cliente B')).toBeTruthy();
     expect(screen.queryByText('Card Cliente Z')).toBeNull();
 
-    rerender(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    rerender(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
     expect(screen.getByText('Card Cliente B')).toBeTruthy();
     expect(screen.queryByText('Card Cliente Z')).toBeNull();
   });
@@ -429,12 +514,14 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={deepProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={deepProjects} selectedClienteId={null} />);
 
     fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'clienteC' } });
     fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteC/proj' } });
 
-    expect(lastFetchedProjectIds()).toEqual(['clienteC', 'clienteC/proj', 'clienteC/proj/neto']);
+    // Same rule as the "drops client-only cards" test above: the subtree of
+    // the picked project, and only it.
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj', 'clienteC/proj/neto']);
     const card = screen.getByTestId('board-v2-card-9');
     expect(card.textContent).toContain('Card do neto');
     expect(card.textContent).toContain('Cliente C');
@@ -454,18 +541,22 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={projects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={projects} selectedClienteId={null} />);
 
     const orphan = screen.getByTestId('board-v2-card-7');
     expect(orphan.textContent).toContain('Card de projeto removido');
     expect(within(orphan).queryByText('ghost')).toBeNull();
     expect(within(orphan).queryByText('ghost/x')).toBeNull();
-    // Só o avatar (1 span) — nenhuma tag de cliente/projeto.
-    expect(orphan.querySelectorAll('span').length).toBe(1);
+    // The span COUNT is no longer the assertion: the card face gained an id
+    // badge (its own spans) in this round. What must stay true is that no
+    // client/project pill renders at all when the id does not resolve.
+    expect(within(orphan).queryAllByTestId('card-tag')).toHaveLength(0);
+    expect(orphan.textContent).not.toContain('ghost');
 
     const orphanClient = screen.getByTestId('board-v2-card-8');
     expect(within(orphanClient).queryByText('ghost')).toBeNull();
-    expect(orphanClient.querySelectorAll('span').length).toBe(1);
+    expect(within(orphanClient).queryAllByTestId('card-tag')).toHaveLength(0);
+    expect(orphanClient.textContent).not.toContain('ghost');
   });
 
   // 4ª combinação de visibilidade do select de Projeto (as outras 3 já estão
@@ -473,7 +564,7 @@ describe('BoardV2 — casos de borda do filtro (QA)', () => {
   // e habilitado, não só presente.
   it('shows the project select enabled when the sidebar fixed a client that has subprojects', () => {
     mockNoCards();
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
 
     const projetoSelect = screen.getByLabelText('Filtrar por projeto');
     expect(projetoSelect.disabled).toBe(false);
@@ -507,7 +598,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
 
   it('opens the edit modal with the clicked card data', () => {
     mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.click(screen.getByText('Card 1'));
 
@@ -517,7 +608,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
 
   it('submitting the form calls updateCard with the edited card id and the new payload', async () => {
     const { updateCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.click(screen.getByText('Card 1'));
     fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Card 1 edited' } });
@@ -529,7 +620,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
 
   it('deleting the card calls deleteCard and closes the modal', async () => {
     const { deleteCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.click(screen.getByText('Card 1'));
     fireEvent.click(screen.getByText('Excluir'));
@@ -540,7 +631,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
 
   it('closing the modal without saving ("x" button) does not call updateCard', () => {
     const { updateCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.click(screen.getByText('Card 1'));
     fireEvent.click(screen.getByLabelText('Fechar'));
@@ -560,7 +651,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
   // `isEdit` is true).
   it('closes the modal by itself, without crashing, if the card being edited disappears from the list', () => {
     const actions = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
-    const { rerender } = render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    const { rerender } = render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     fireEvent.click(screen.getByText('Card 1'));
     expect(screen.getByText('Editar Card')).toBeTruthy();
@@ -569,7 +660,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
     // filtered out by a Cliente/Projeto change while the modal stays open.
     mockUseCards.mockReturnValue({ ...actions, cards: [] });
     expect(() => {
-      rerender(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+      rerender(<BoardV2 projects={projects} selectedClienteId="projA" />);
     }).not.toThrow();
 
     expect(screen.queryByText('Editar Card')).toBeNull();
@@ -579,7 +670,7 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
     const card1 = fakeCard({ id: 1, titulo: 'Card 1', imagens: [{ id: 'img-1', url: '/x/1.png' }] });
     const card2 = fakeCard({ id: 2, titulo: 'Card 2', imagens: [] });
     const { uploadCardImage, deleteCardImage } = mockCardsWithActions([card1, card2]);
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     // Open card 1, delete its existing image — must go out bound to card 1's id.
     fireEvent.click(screen.getByText('Card 1'));
@@ -599,6 +690,89 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
   });
 });
 
+// "Limpar concluídos" — ported from the deleted v1 board, which was its only
+// surface. Divergence D-5 of the plan: the button does NOT live inside
+// `ClienteProjetoFilterBar`. That bar returns `null` whenever the sidebar
+// fixed a client with no subprojects — exactly the case where clearing is most
+// useful — and it is shared with TarefasV2, where a card action makes no
+// sense. It lives in BoardV2's own header row instead, and the test named for
+// the null case below is what keeps someone from "simplifying" that back.
+describe('BoardV2 - clear finished cards', () => {
+  function mockCardsWithClear(cards = [], overrides = {}) {
+    const actions = {
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      previewClearFinished: vi.fn().mockResolvedValue({ cards: 3, imagens: 2 }),
+      clearFinished: vi.fn().mockResolvedValue({ cards: 3, imagens: 2 }),
+      ...overrides,
+    };
+    mockUseCards.mockReturnValue(actions);
+    return actions;
+  }
+
+  it('disables the button, with an explanatory title, while no client or project is selected', () => {
+    mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} />);
+
+    const button = screen.getByText('Limpar concluídos');
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('Selecione um cliente ou projeto para limpar concluídos');
+  });
+
+  it('still renders the button for a fixed client WITHOUT subprojects, where the filter bar renders nothing at all', () => {
+    mockCardsWithClear();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // The shared bar is genuinely absent here — that is the whole point.
+    expect(screen.queryByTestId('cliente-projeto-filter-bar')).toBeNull();
+    expect(screen.getByText('Limpar concluídos').disabled).toBe(false);
+  });
+
+  it('opens the sheet on the client tier when no specific project is picked', async () => {
+    const { previewClearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    await waitFor(() => expect(previewClearFinished).toHaveBeenCalledWith('clienteB'));
+    expect(screen.getByRole('dialog', { name: 'Limpar concluídos — Cliente B' })).toBeTruthy();
+  });
+
+  it('targets the most specific tier: the Tier 2 project once one is picked', async () => {
+    const { previewClearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: 'clienteB/sub1' } });
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    await waitFor(() => expect(previewClearFinished).toHaveBeenCalledWith('clienteB/sub1'));
+    expect(previewClearFinished).not.toHaveBeenCalledWith('clienteB');
+  });
+
+  it('confirming the sheet calls clearFinished with the same target and closes it', async () => {
+    const { clearFinished } = mockCardsWithClear();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+    fireEvent.click(await screen.findByText('Apagar permanentemente'));
+
+    await waitFor(() => expect(clearFinished).toHaveBeenCalledWith('clienteB'));
+    await waitFor(() => expect(screen.queryByText('Apagar permanentemente')).toBeNull());
+  });
+
+  it('never titles the sheet "null" for a client the project list cannot resolve', async () => {
+    mockCardsWithClear();
+    // `projects` has no entry for 'clienteB' — resolveProjectName returns null
+    // by design, and the raw id has to stand in inside a destructive dialog.
+    render(<BoardV2 projects={[]} selectedClienteId="clienteB" />);
+
+    fireEvent.click(screen.getByText('Limpar concluídos'));
+
+    expect(await screen.findByRole('dialog', { name: 'Limpar concluídos — clienteB' })).toBeTruthy();
+  });
+});
+
 describe('BoardV2 — tags de cliente e projeto no card', () => {
   it('shows the client tag on every card, including in "Todos"', () => {
     const multiProjects = [
@@ -613,7 +787,7 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={multiProjects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={multiProjects} selectedClienteId={null} />);
 
     expect(screen.getByTestId('board-v2-card-1').textContent).toContain('Projeto A');
     expect(screen.getByTestId('board-v2-card-2').textContent).toContain('Projeto B');
@@ -625,7 +799,7 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={projects} selectedProjectId="projA" selectedClienteId="projA" />);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
     expect(screen.getByTestId('board-v2-card-1').textContent).toContain('Projeto A');
   });
@@ -636,7 +810,7 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
 
     const card = screen.getByTestId('board-v2-card-1');
     expect(within(card).getAllByText('Cliente B')).toHaveLength(1);
@@ -648,11 +822,16 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={clienteWithSubsProjects} selectedProjectId={null} selectedClienteId="clienteB" />);
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" />);
 
     const card = screen.getByTestId('board-v2-card-2');
     expect(card.textContent).toContain('Cliente B');
     expect(card.textContent).toContain('Sub 1');
+    // The project tag is the single `card-tag` pill; the client name rides in
+    // the id badge, not in a tag.
+    const tags = within(card).queryAllByTestId('card-tag');
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe('Sub 1');
   });
 
   it('renders no tag at all for a card with no projeto_id, never an empty pill', () => {
@@ -661,10 +840,14 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
       createCard: vi.fn(),
       updateCard: vi.fn(),
     });
-    render(<BoardV2 projects={projects} selectedProjectId={null} selectedClienteId={null} />);
+    render(<BoardV2 projects={projects} selectedClienteId={null} />);
 
     const card = screen.getByTestId('board-v2-card-3');
     expect(card.textContent).toContain('Card órfão');
-    expect(card.querySelectorAll('span').length).toBe(1); // só o avatar
+    // Same note as the orphan test above: assert on the absence of a tag, not
+    // on a span count the id badge legitimately changed.
+    expect(within(card).queryAllByTestId('card-tag')).toHaveLength(0);
+    expect(within(card).queryByText('Projeto A')).toBeNull();
+    expect(card.textContent).not.toContain('null');
   });
 });

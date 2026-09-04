@@ -79,6 +79,12 @@
      de verdade em volta do output. Removido porque o PTY é a fonte de verdade
      e ele não é decorado (INV-PTY-OPACITY / ADR-005). */
   --v2-warn: oklch(0.62 0.13 75);
+  /* Soft background for the "hotfix" tipo chip (CardFormModal / card face).
+     Companion to --v2-warn, built with the same recipe as --v2-danger-soft
+     above: same hue axis, high lightness in the light theme. Every v2 token
+     must exist in BOTH theme blocks — there is no bare `:root` here, and a
+     token defined in only one of them silently vanishes in the other. */
+  --v2-warn-soft: oklch(0.93 0.04 75);
   --v2-shadow: 0 1px 2px oklch(0.4 0.02 70/.06), 0 6px 20px oklch(0.4 0.02 70/.06);
   --v2-shadow-lg: 0 12px 48px oklch(0.3 0.02 70/.18);
   /* Bloco C (BottomSheet.jsx) — scrim atrás do painel do bottom sheet. Mesma
@@ -105,6 +111,8 @@
   --v2-danger-soft: oklch(0.36 0.05 25);
   /* Gêmeo dark do --v2-bubble-me removido em T7 — ver a lápide no bloco light. */
   --v2-warn: oklch(0.78 0.13 80);
+  /* Dark twin of --v2-warn-soft — see the comment in the light block. */
+  --v2-warn-soft: oklch(0.36 0.05 80);
   /* Designer não especificou --v2-shadow/--v2-shadow-lg para o bloco dark —
      reaproveita os mesmos valores do bloco light (a cor-base do oklch já é
      escura o bastante para ler bem em ambos os temas). */
@@ -269,6 +277,21 @@
   animation: v2-fab-panel-enter 160ms ease-out;
 }
 
+/* Entry animation for the CardFormModal panel, mirroring the precedent above.
+ *
+ * The `transform` here is fine: fixedPositioningInvariant.test.js strips whole
+ * `@keyframes` blocks before scanning this file. OUTSIDE a keyframe,
+ * `transform`/`filter`/`will-change`/`contain` stay forbidden in theme.css —
+ * do not "optimise" the class below with `will-change: transform`. */
+@keyframes v2-card-modal-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.v2-card-modal-enter {
+  animation: v2-card-modal-enter 160ms ease-out;
+}
+
 /* PRECISA ser o último bloco do arquivo: tem a mesma especificidade (uma
  * classe) que `.v2-fab--dragging`, então quem vence é a ordem de fonte. Mover
  * este bloco pra cima faz "Reduzir movimento" parar de funcionar durante o
@@ -277,4 +300,5 @@
   .v2-fab,
   .v2-fab--dragging { transition-duration: 0ms; }
   .v2-fab-panel-enter { animation-duration: 0ms; }
+  .v2-card-modal-enter { animation-duration: 0ms; }
 }

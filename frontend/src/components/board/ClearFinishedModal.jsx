@@ -4,14 +4,16 @@
 // #confirm-sheet/#confirm-sheet-backdrop e funções openConfirmSheet/
 // closeConfirmSheet/executeClearFinished). 05-TL.md Tarefa 25.
 //
-// Segue a MESMA estrutura visual de bottom sheet de MoveCardMenu.jsx
-// (backdrop fixed + folha ancorada no rodapé, --radius-lg, --touch-target)
-// para consistência entre os dois bottom sheets do app, mas com conteúdo
-// próprio — não reaproveita o componente literalmente (MoveCardMenu é uma
-// lista de opções; este é uma confirmação com estados assíncronos).
+// Bottom sheet: backdrop fixed + folha ancorada no rodapé, --radius-lg,
+// --touch-target. Herdou essa estrutura do outro bottom sheet do app, que
+// saiu junto com a árvore do Board v1 — hoje este é o único.
 //
-// Diferente de MoveCardMenu, este componente NÃO pode retornar `null` antes
-// dos hooks — precisa rodar `useEffect` para disparar `onPreview` sempre que
+// Montado por layouts/v2/BoardV2.jsx (o Board v1 era o call site original).
+// Os tokens de estilo aqui ainda são os `--*` da v1, não os `--v2-*`: ver
+// "Pontos de atenção" do relatório da Fase 3.
+//
+// Este componente NÃO pode retornar `null` antes dos hooks — precisa rodar
+// `useEffect` para disparar `onPreview` sempre que
 // `open` vira `true`, então os hooks ficam incondicionais no topo e o
 // `if (!open) return null` vem depois deles.
 //

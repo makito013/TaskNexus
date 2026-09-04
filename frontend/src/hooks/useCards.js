@@ -1,7 +1,7 @@
 // frontend/src/hooks/useCards.js
 // Board (Kanban por projeto) state — o hook mais importante do Board (Fase
-// 05-tarefas-board-jira, 05-TL.md Tarefa 18): todo componente visual
-// (CardItem, KanbanBoard, BoardView, etc — tarefas 19-26) depende dele.
+// 05-tarefas-board-jira, 05-TL.md Tarefa 18): todo componente visual do Board
+// (hoje layouts/v2/BoardV2.jsx e o CardFormModal que ele monta) depende dele.
 //
 // Key design decisions:
 //
@@ -9,9 +9,9 @@
 //   não "busca tudo e quem usa filtra localmente". Motivo: o backend já
 //   suporta filtro nativo (`GET /api/cards?projeto_id=a&projeto_id=b`,
 //   05-ARQUITETO.md §2), então repassar o filtro evita trazer/reter em
-//   memória cards de projetos que o usuário nem tem selecionados — e
-//   `BoardView` (Tarefa 26) já é dona de `selectedProjectIds` via
-//   localStorage, então o parâmetro tem uma fonte natural. `selectedProjectIds`
+//   memória cards de projetos que o usuário nem tem selecionados — e a tela
+//   do Board já é dona da cascata de filtro (useClienteProjetoFilter.js),
+//   então o parâmetro tem uma fonte natural. `selectedProjectIds`
 //   ausente/vazio busca cards de TODOS os projetos (sem query param).
 //
 // - Poll leve, mesmo espírito de useTasks.js: roda enquanto o componente que
@@ -52,6 +52,16 @@
 //   pro chamador, porque quem chama é um modal com sua própria superfície
 //   de UI de erro (ex.: mensagem inline "não foi possível carregar o
 //   preview"), diferente de um alert() global bloqueante.
+//
+// - `createSubcard` has NO UI surface any more, and that is deliberate — do
+//   NOT delete it as dead code. Subcards became MCP-only (Bruno's decision,
+//   "cards/board v2" session): the `create-subcard` mode left CardFormModal
+//   and the v1 board that mounted it was removed, but the agent path
+//   (`criar_card` with `parent_id` -> `POST /api/cards/{id}/subcards`) is
+//   live and is the only way subcards get created now. Same note sits on
+//   `api.createSubcard`. The read side stays wired too: `subcards` /
+//   `subcards_resumo` keep being hydrated and merged, because the edit modal
+//   counts `card.subcards.length` for its cascade-delete warning.
 //
 // - Ponto de atenção para quem for ler/mexer em updateCard: a resposta de
 //   `PATCH /api/cards/{id}` (backend/app/main.py:update_card) vem de
@@ -128,7 +138,7 @@ export function useCards(selectedProjectIds) {
   const [cards, setCards] = useState([]);
 
   // Chave estável derivada de `selectedProjectIds` (ordenada + joinada) em
-  // vez da referência do array — BoardView pode passar um array literal
+  // vez da referência do array — quem chama pode passar um array literal
   // novo a cada render (`selectedProjectIds={[...]}`), e sem isso o efeito
   // de poll abaixo recriaria fetchCards (e reiniciaria o interval) a cada
   // render mesmo com o mesmo conteúdo.
@@ -169,13 +179,11 @@ export function useCards(selectedProjectIds) {
   }, [fetchCards]);
 
   // Bug fixed here: any caller whose creation target can fall outside the
-  // currently active filter — BoardV2 (Cliente A selected in the sidebar
-  // while the active chat's project belongs to client B: "+ Add card" still
-  // creates in B on purpose, chat project drives creation target) or
-  // BoardView v1 (CardFormModal's Cliente/Projeto selects are independent
-  // of the board's active filter, so the user can pick a different client
-  // or subproject than the one currently filtered) — must NOT have the
-  // created card flash-then-vanish on a board filtered to something else.
+  // currently active filter — BoardV2, where CardFormModal's Cliente/Projeto
+  // selects are independent of the board's active filter, so the user can
+  // pick a different client or subproject than the one currently filtered —
+  // must NOT have the created card flash-then-vanish on a board filtered to
+  // something else.
   // Root cause was this optimistic append running unconditionally: it added
   // the card to local state regardless of the active filter, so it showed
   // up immediately and then disappeared on the next 5s poll (which only
@@ -225,6 +233,8 @@ export function useCards(selectedProjectIds) {
         titulo: updated.titulo,
         descricao: updated.descricao,
         status: updated.status,
+        tipo: updated.tipo,
+        prazo: updated.prazo,
         ultima_atualizacao_por: updated.ultima_atualizacao_por,
         atualizado_em: updated.atualizado_em,
         // imagens/subcards/subcards_resumo propositalmente NÃO vêm de

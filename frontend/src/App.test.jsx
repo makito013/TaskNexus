@@ -88,22 +88,10 @@ describe('App routing', () => {
     expect(screen.queryByText('Tarefas — em construção')).toBeNull();
   });
 
-  it('renders AppLauncherHeader on non-root routes like /board and /tarefas', () => {
-    window.history.pushState({}, '', '/board');
-    const r2 = render(<App />);
-    expect(screen.getByText('Board', { selector: 'span' })).toBeTruthy();
-    r2.unmount();
-
+  it('renders AppLauncherHeader on a non-root route', () => {
     window.history.pushState({}, '', '/tarefas');
     render(<App />);
     expect(screen.getByText('Tarefas', { selector: 'span' })).toBeTruthy();
-  });
-
-  it('swaps content to BoardView on /board path', async () => {
-    window.history.pushState({}, '', '/board');
-    render(<App />);
-    expect(await screen.findByText('Nenhum card ainda.')).toBeTruthy();
-    expect(screen.getAllByText('Board', { selector: 'span' }).length).toBeGreaterThan(0);
   });
 
   it('swaps content to TarefasGlobalView on /tarefas path', async () => {
