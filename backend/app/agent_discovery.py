@@ -115,6 +115,7 @@ def scan_projects(root: str, global_agents: list[Agent] | None = None) -> list[P
         gemini_path = current / ".gemini"
 
         elegivel = claude_path.is_dir() or gemini_path.is_dir()
+        proj.elegivel = elegivel
         if elegivel:
             proj.agentes = list(global_agents)
             projects[project_id] = proj

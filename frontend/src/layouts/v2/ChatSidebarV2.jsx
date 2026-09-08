@@ -57,7 +57,7 @@
 // cuida do header ("+ Novo chat" + toggle de colapso) e do NewChatSheet,
 // delegando a lista propriamente dita.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NewChatSheet } from './NewChatSheet.jsx';
 import { ChatList } from './ChatList.jsx';
 import { COLLAPSED_WIDTH, SIDEBAR_TRANSITION } from './collapseLayout.js';
@@ -126,8 +126,14 @@ export function ChatSidebarV2({
   onStartNewChat,
   collapsed = false,
   onToggleCollapsed,
+  onNewChatOpenChange,
 }) {
   const [newChatSheetOpen, setNewChatSheetOpen] = useState(false);
+  const triggerRef = useRef(null);
+  // Guards the true->false transition below so the trigger only regains
+  // focus on an actual close, not on mount (prevOpenRef starts false, same
+  // as newChatSheetOpen — no false transition on the initial render).
+  const prevNewChatSheetOpenRef = useRef(false);
   const projectsById = Object.fromEntries(projects.map((p) => [p.id, p]));
   const clientes = projects.filter((p) => isClienteId(p.id));
 
@@ -148,13 +154,68 @@ export function ChatSidebarV2({
   const handleNewChatClick = () => {
     if (newChatDisabled) return;
     setNewChatSheetOpen(true);
+    onNewChatOpenChange?.(true);
   };
+
+  const handleClose = () => {
+    setNewChatSheetOpen(false);
+    onNewChatOpenChange?.(false);
+  };
+
+  // Retorno de foco ao gatilho (WCAG 2.4.3) — DEPOIS do commit que já
+  // removeu `inert` do wrapper no AppV2. Um `.focus()` síncrono dentro de
+  // `handleClose` rodaria ANTES desse commit (o elemento ainda estaria numa
+  // subtree `inert`, então seria um no-op silencioso) — por isso o efeito
+  // aqui, disparado só na transição true->false, DEPOIS que React já
+  // aplicou a remoção do atributo no DOM.
+  useEffect(() => {
+    if (prevNewChatSheetOpenRef.current && !newChatSheetOpen) {
+      triggerRef.current?.focus();
+    }
+    prevNewChatSheetOpenRef.current = newChatSheetOpen;
+  }, [newChatSheetOpen]);
+
+  // Guard achado na revisão (mesma classe de bug já documentada/corrigida em
+  // MobileChatSheet.jsx): o cliente selecionado pode virar ÓRFÃO (some de
+  // `projects`, ex. um refetch depois de removido no disco) enquanto o
+  // NewChatSheet está aberto — `{!clienteOrfao ? <NewChatSheet/> : null}`
+  // abaixo desmonta o NewChatSheet nesse instante, mas SEM passar por
+  // `handleClose`, então sem este efeito `onNewChatOpenChange(false)` nunca
+  // seria chamado e `newChatOpen` ficaria travado em `true` no AppV2 — o
+  // wrapper principal (SidebarV2 + coluna de conteúdo) ficaria `inert` para
+  // sempre, mesmo sem nenhum modal na tela.
+  useEffect(() => {
+    if (newChatDisabled && newChatSheetOpen) {
+      handleClose();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newChatDisabled]);
+
+  // Guard adicional: ChatSidebarV2 inteiro DESMONTA quando `isMobile` vira
+  // `true` (`{!isMobile && <ChatSidebarV2/>}` em AppV2.jsx) — se o
+  // NewChatSheet estiver aberto nesse instante, nem `handleClose` nem o
+  // efeito acima rodam (o componente todo já foi removido da árvore), então
+  // `onNewChatOpenChange(false)` também nunca seria chamado sem isto —
+  // mesma classe de "inert travado" do guard acima, gatilho diferente. Ref
+  // (não a prop direta) porque um efeito de cleanup só-no-unmount (deps
+  // `[]`) fecha sobre o valor da MONTAGEM — a ref garante que a chamada, no
+  // desmonte, sempre usa a versão mais recente do callback.
+  const onNewChatOpenChangeRef = useRef(onNewChatOpenChange);
+  useEffect(() => {
+    onNewChatOpenChangeRef.current = onNewChatOpenChange;
+  }, [onNewChatOpenChange]);
+  useEffect(() => {
+    return () => {
+      onNewChatOpenChangeRef.current?.(false);
+    };
+  }, []);
 
   return (
     <div style={styles.column(collapsed)}>
       <div style={styles.header(collapsed)}>
         {!collapsed && (
           <button
+            ref={triggerRef}
             type="button"
             style={styles.newChatBtn(newChatDisabled)}
             onClick={handleNewChatClick}
@@ -197,9 +258,11 @@ export function ChatSidebarV2({
       {!clienteOrfao ? (
         <NewChatSheet
           open={newChatSheetOpen}
-          onClose={() => setNewChatSheetOpen(false)}
+          onClose={handleClose}
           cliente={selectedCliente}
           clientes={clientes}
+          projects={projects}
+          presentation="modal"
           onSubmit={onStartNewChat}
         />
       ) : null}

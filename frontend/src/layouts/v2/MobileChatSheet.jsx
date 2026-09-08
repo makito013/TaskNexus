@@ -210,6 +210,8 @@ export function MobileChatSheet({
           onClose={() => setNewChatSheetOpen(false)}
           cliente={selectedCliente}
           clientes={clientes}
+          projects={projects}
+          presentation="sheet"
           onSubmit={onStartNewChat}
         />
       ) : null}

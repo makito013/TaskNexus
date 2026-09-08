@@ -156,6 +156,43 @@ describe('AppV2 — as 4 telas navegam de verdade (não mais placeholder)', () =
   });
 });
 
+// Rodada "Novo chat em modal" (Bloco 7, Tarefa 17/18): wiring de `inert` no
+// wrapper SidebarV2+coluna principal quando o CenteredModal do "Novo chat"
+// está aberto (contrato de nível-shell, style-guide.md §1). IMPORTANTE: isto
+// prova só a PRESENÇA/AUSÊNCIA do atributo `inert` (e do fallback
+// aria-hidden) no DOM — jsdom não implementa a semântica REAL de `inert`
+// (bloqueio de foco/clique/leitor de tela), então não é cobertura de
+// comportamento de acessibilidade real — isso fica pra QA manual (ver
+// entrega do Dev).
+describe('AppV2 — inert no wrapper principal quando o CenteredModal do "Novo chat" está aberto', () => {
+  it('sem o modal aberto: o wrapper NÃO tem `inert` nem `aria-hidden`', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    const wrapper = screen.getByTestId('app-v2-inertable-wrapper');
+    expect(wrapper.hasAttribute('inert')).toBe(false);
+    expect(wrapper.hasAttribute('aria-hidden')).toBe(false);
+  });
+
+  it('abrir o "Novo chat" (CenteredModal) adiciona `inert` e `aria-hidden="true"` ao wrapper', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    const wrapper = screen.getByTestId('app-v2-inertable-wrapper');
+    expect(wrapper.hasAttribute('inert')).toBe(true);
+    expect(wrapper.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('fechar o modal (Cancelar) remove `inert` e `aria-hidden` do wrapper', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(screen.getByTestId('app-v2-inertable-wrapper').hasAttribute('inert')).toBe(true);
+
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    const wrapper = screen.getByTestId('app-v2-inertable-wrapper');
+    expect(wrapper.hasAttribute('inert')).toBe(false);
+    expect(wrapper.hasAttribute('aria-hidden')).toBe(false);
+  });
+});
+
 // Fase 2 do plano (fix reportado pelo Bruno): BoardV2 passa a seguir o
 // CLIENTE selecionado na sidebar (`selectedClienteId`, o mesmo estado já
 // repassado a TarefasV2), desacoplado de `selectedProjectId` (o projeto do

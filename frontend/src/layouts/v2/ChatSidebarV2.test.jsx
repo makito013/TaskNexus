@@ -201,11 +201,21 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     nome: 'Cliente 1',
     path: '/tmp/cliente_projeto_1',
     agentes: [],
-    sub_projetos: ['cliente_projeto_1/subprojeto_1'],
+  };
+  // Bloco 5 (Tarefa 12): o select de Projeto agora lê de `projects` (flat,
+  // via listSubProjectsForClient), não mais de `cliente.sub_projetos` — a
+  // fixture precisa de uma 2ª entrada representando o sub-projeto em si,
+  // com `elegivel: true`.
+  const subProjetoDoCliente = {
+    id: 'cliente_projeto_1/subprojeto_1',
+    nome: 'subprojeto_1',
+    path: '/tmp/cliente_projeto_1/subprojeto_1',
+    agentes: [],
+    elegivel: true,
   };
   const propsComCliente = {
     ...chatSidebarBaseProps,
-    projects: [clienteComSub],
+    projects: [clienteComSub, subProjetoDoCliente],
     selectedClienteId: 'cliente_projeto_1',
     persistedSessions: {},
     activeSessions: {},
@@ -224,7 +234,7 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     const onStartNewChat = vi.fn();
     render(<ChatSidebarV2 {...propsComCliente} onStartNewChat={onStartNewChat} />);
     fireEvent.click(screen.getByText('+ Novo chat'));
-    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude-work' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude-work');
@@ -299,6 +309,93 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     } finally {
       window.removeEventListener('error', onWindowError);
     }
+  });
+});
+
+// Rodada "Novo chat em modal" — CenteredModal wiring (Bloco 5, Tarefa 11/12):
+// ChatSidebarV2 passa presentation="modal" ao NewChatSheet, guarda uma ref do
+// botão "+ Novo chat" e devolve o foco a ele quando o modal fecha.
+describe('ChatSidebarV2 — CenteredModal wiring (foco/fechamento)', () => {
+  const cliente = {
+    id: 'outro-projeto',
+    nome: 'Outro Projeto',
+    path: '/tmp/outro-projeto',
+    agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }],
+  };
+  const propsComCliente = {
+    ...chatSidebarBaseProps,
+    projects: [cliente],
+    selectedClienteId: 'outro-projeto',
+    persistedSessions: {},
+    activeSessions: {},
+  };
+
+  it('o botão × do modal tem aria-label="Fechar"', () => {
+    render(<ChatSidebarV2 {...propsComCliente} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(screen.getByLabelText('Fechar')).toBeTruthy();
+  });
+
+  it('fechar o modal (botão ×) devolve o foco ao gatilho "+ Novo chat"', () => {
+    render(<ChatSidebarV2 {...propsComCliente} />);
+    const trigger = screen.getByText('+ Novo chat').closest('button');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Fechar'));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('fechar o modal (Cancelar) também devolve o foco ao gatilho', () => {
+    render(<ChatSidebarV2 {...propsComCliente} />);
+    const trigger = screen.getByText('+ Novo chat').closest('button');
+    fireEvent.click(trigger);
+
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('onNewChatOpenChange é chamado com true ao abrir e false ao fechar', () => {
+    const onNewChatOpenChange = vi.fn();
+    render(<ChatSidebarV2 {...propsComCliente} onNewChatOpenChange={onNewChatOpenChange} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  // Achado da revisão (mesma classe de bug já documentada em
+  // MobileChatSheet.jsx): sem este guard, `onNewChatOpenChange(false)` nunca
+  // seria chamado nestes 2 caminhos, e `newChatOpen` ficaria travado em
+  // `true` no AppV2 — o wrapper principal ficaria `inert` para sempre, sem
+  // nenhum modal na tela.
+  it('cliente selecionado vira órfão com o modal aberto: onNewChatOpenChange(false) é chamado (evita inert travado)', () => {
+    const onNewChatOpenChange = vi.fn();
+    const { rerender } = render(<ChatSidebarV2 {...propsComCliente} onNewChatOpenChange={onNewChatOpenChange} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(true);
+
+    // O cliente selecionado some de `projects` (ex.: removido do disco,
+    // refetch) enquanto o NewChatSheet está aberto.
+    rerender(<ChatSidebarV2 {...propsComCliente} projects={[]} onNewChatOpenChange={onNewChatOpenChange} />);
+
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('ChatSidebarV2 desmonta (breakpoint mobile) com o modal aberto: onNewChatOpenChange(false) é chamado no cleanup', () => {
+    const onNewChatOpenChange = vi.fn();
+    const { unmount } = render(<ChatSidebarV2 {...propsComCliente} onNewChatOpenChange={onNewChatOpenChange} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(true);
+
+    unmount();
+
+    expect(onNewChatOpenChange).toHaveBeenLastCalledWith(false);
   });
 });
 

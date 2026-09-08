@@ -99,6 +99,31 @@ def test_creates_placeholder_parent_projects(tmp_path):
     assert "pessoal/estatistica" in pessoal_proj.sub_projetos
 
 
+def test_scan_projects_sets_elegivel_true_for_project_with_claude_folder(fake_projects):
+    """A project with a .claude/ folder must be marked elegivel=True."""
+    projects = scan_projects(str(fake_projects))
+    proj = next(p for p in projects if p.id == "projeto-claude")
+    assert proj.elegivel is True
+
+
+def test_scan_projects_sets_elegivel_true_for_project_with_gemini_folder(fake_projects):
+    """A project with a .gemini/ folder must be marked elegivel=True, same
+    as .claude/."""
+    projects = scan_projects(str(fake_projects))
+    proj = next(p for p in projects if p.id == "projeto-gemini")
+    assert proj.elegivel is True
+
+
+def test_scan_projects_sets_elegivel_false_for_placeholder_parent_project(tmp_path):
+    """A synthesized placeholder parent (no .claude/ nor .gemini/ of its own)
+    must stay elegivel=False, even though it has an eligible descendant."""
+    (tmp_path / "pessoal" / "estatistica" / ".claude").mkdir(parents=True)
+
+    projects = scan_projects(str(tmp_path))
+    pessoal_proj = next(p for p in projects if p.id == "pessoal")
+    assert pessoal_proj.elegivel is False
+
+
 def test_autodetect_gemini_folder(fake_projects):
     """A project with .gemini/ is eligible, same as .claude/."""
     projects = scan_projects(str(fake_projects))

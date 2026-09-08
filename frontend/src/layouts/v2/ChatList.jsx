@@ -29,6 +29,7 @@ import { tabLabels } from '../../utils/sessionLabels.js';
 import { RenameableLabel } from '../../components/RenameableLabel.jsx';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { useAgentSettings } from '../../hooks/useAgentSettings.js';
+import { relativeProjectPath, truncatePathMeta } from '../../utils/projects.js';
 
 const styles = {
   list: {
@@ -70,7 +71,10 @@ const styles = {
   },
   rowMeta: {
     fontSize: '11px',
-    color: 'var(--v2-text-faint)',
+    // WCAG 1.4.3 (correção da auditoria de Acessibilidade): --v2-text-faint
+    // mede 2,65-4,00:1 nos dois temas nesta linha, abaixo do mínimo 4,5:1.
+    // --v2-text-dim passa (4,70-5,95:1). Ver tokens.json (chatRowMeta.color).
+    color: 'var(--v2-text-dim)',
   },
   closeBtn: {
     background: 'transparent',
@@ -94,13 +98,29 @@ function initialsFor(name) {
   return (name || '?').trim().slice(0, 1).toUpperCase();
 }
 
-// Nome de exibição de um sub-projeto/raiz na linha do chat (lista flat, com
-// um cliente específico selecionado): "Raiz" quando o chat vive no próprio
-// cliente (`projectId === selectedClienteId`); senão, o nome do sub-projeto
-// resolvido em `projectsById` (fallback pro id cru, projeto desconhecido).
-function resolveRowMeta(projectId, selectedClienteId, projectsById) {
-  if (projectId === selectedClienteId) return 'Raiz';
+// Texto COMPLETO (nunca truncado) de exibição de um sub-projeto/raiz na
+// linha do chat: "Raiz" quando o chat vive no próprio cliente
+// (`projectId === clienteId`); profundidade >= 2 (2+ segmentos abaixo do
+// cliente) usa o caminho relativo inteiro (`relativeProjectPath`); senão
+// (profundidade 1, filho direto) o nome do sub-projeto resolvido em
+// `projectsById` (fallback pro id cru, projeto desconhecido) — mesmo
+// comportamento de antes para esse caso.
+function resolveRowMetaFull(projectId, clienteId, projectsById) {
+  if (projectId === clienteId) return 'Raiz';
+  const depth = projectId.split('/').length - 1;
+  if (depth >= 2) return relativeProjectPath(projectId, clienteId);
   return projectsById[projectId]?.nome || projectId;
+}
+
+// Nome de exibição — igual a `resolveRowMetaFull`, exceto que profundidade
+// >= 2 é truncado pela CABEÇA (`truncatePathMeta`, budget 2) pra não quebrar
+// em 2 linhas com caminhos longos. O texto completo (sem truncar) fica
+// disponível via `resolveRowMetaFull`, usado no `title` da linha.
+function resolveRowMeta(projectId, clienteId, projectsById) {
+  const full = resolveRowMetaFull(projectId, clienteId, projectsById);
+  const depth = projectId.split('/').length - 1;
+  if (depth >= 2) return truncatePathMeta(full, 2);
+  return full;
 }
 
 const defaultRenderEmptyState = (clienteNome) => (
@@ -138,11 +158,16 @@ export function ChatList({
 
   const noChatsAtAll = labeledChats.length === 0;
 
-  const renderChatRow = (chat, rowMetaLabel) => {
+  const renderChatRow = (chat, rowMetaLabel, rowMetaTitle) => {
     const running = activeSessions?.[chat.sessionKey]?.status === 'running';
     const active = chat.sessionKey === activeSessionKey;
     return (
-      <div key={chat.sessionKey} style={styles.row(active, collapsed)} onClick={() => onSelectChat(chat)}>
+      <div
+        key={chat.sessionKey}
+        style={styles.row(active, collapsed)}
+        onClick={() => onSelectChat(chat)}
+        title={rowMetaTitle}
+      >
         <span
           className={`v2-chat-avatar${running ? ' v2-chat-avatar--running' : ''}`}
           title={collapsed ? chat.label : undefined}
@@ -188,7 +213,11 @@ export function ChatList({
       listContent = collapsed ? null : renderEmptyState(clienteNome);
     } else {
       listContent = filteredChats.map((chat) =>
-        renderChatRow(chat, resolveRowMeta(chat.projectId, selectedClienteId, projectsById))
+        renderChatRow(
+          chat,
+          resolveRowMeta(chat.projectId, selectedClienteId, projectsById),
+          resolveRowMetaFull(chat.projectId, selectedClienteId, projectsById)
+        )
       );
     }
   } else if (noChatsAtAll) {
@@ -218,7 +247,11 @@ export function ChatList({
             </div>
           )}
           {group.chats.map((chat) =>
-            renderChatRow(chat, resolveRowMeta(chat.projectId, group.clienteId, projectsById))
+            renderChatRow(
+              chat,
+              resolveRowMeta(chat.projectId, group.clienteId, projectsById),
+              resolveRowMetaFull(chat.projectId, group.clienteId, projectsById)
+            )
           )}
         </div>
       );

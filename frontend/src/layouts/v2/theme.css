@@ -292,6 +292,13 @@
   animation: v2-card-modal-enter 160ms ease-out;
 }
 
+/* Foco visível do painel do CenteredModal (WCAG 2.4.7 / 1.4.11) — style={}
+ * inline não suporta :focus-visible, por isso é uma classe CSS dedicada.
+ * Ver CenteredModal.reference.jsx / style-guide.md seção 1. */
+.v2-centered-modal-panel:focus-visible {
+  box-shadow: 0 0 0 2px var(--v2-accent), var(--v2-shadow-lg);
+}
+
 /* PRECISA ser o último bloco do arquivo: tem a mesma especificidade (uma
  * classe) que `.v2-fab--dragging`, então quem vence é a ordem de fonte. Mover
  * este bloco pra cima faz "Reduzir movimento" parar de funcionar durante o

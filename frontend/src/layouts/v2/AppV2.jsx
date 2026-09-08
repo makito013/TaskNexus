@@ -89,6 +89,15 @@ export function AppV2({ initialAppearance }) {
   );
   const [v2Screen, setV2Screen] = useState('chat');
 
+  // Rodada "Novo chat em modal": CenteredModal (Tarefa 6) é portalizado pra
+  // document.body, então não é descendente da árvore abaixo — aplicar
+  // `inert` nela não desativa o próprio modal. Só ChatSidebarV2 (desktop,
+  // presentation="modal") pode abrir um CenteredModal; MobileChatSheet usa
+  // BottomSheet (presentation="sheet", fora deste contrato — ver
+  // style-guide.md §1). Escopo desta rodada: só o CenteredModal desta
+  // feature, não o CardFormModal/BoardV2 (decisão do Bruno).
+  const [newChatOpen, setNewChatOpen] = useState(false);
+
   // Rodada 2, Frente B: o casco do v2 acompanha a área REALMENTE visível, para
   // que abrir o teclado nativo do iPad encolha o app ("tela − teclado") em vez
   // de o teclado cobrir o chat e o Safari empurrar a topbar para fora da tela.
@@ -272,21 +281,37 @@ export function AppV2({ initialAppearance }) {
         fontFamily: "'Figtree', -apple-system, sans-serif",
       }}
     >
-      {!isMobile && (
-        <SidebarV2
-          collapsed={sidebarCollapsed}
-          onToggleCollapsed={toggleSidebar}
-          clientes={clientes}
-          selectedClienteId={selectedClienteId}
-          onSelectCliente={handleSelectCliente}
-          navItems={NAV_ITEMS}
-          activeScreen={v2Screen}
-          onSelectScreen={setV2Screen}
-          initialAppearance={initialAppearance}
-        />
-      )}
+      {/* CONTRATO WCAG 2.4.3/nível-shell (style-guide.md §1): sempre que o
+          CenteredModal do "Novo chat" está aberto, este wrapper (SidebarV2 +
+          coluna principal) recebe `inert` — o overlay do modal bloqueia
+          clique de mouse por z-index, mas NÃO bloqueia o cursor virtual de
+          leitor de tela; sem isto, dava pra ativar um elemento coberto (ex.
+          trocar de chat) sem perceber que o modal estava aberto.
+          `aria-hidden="true"` como fallback documentado pra browsers sem
+          suporte a `inert`. Spread condicional (não `inert={boolean}` direto):
+          React 18 pode não remover o atributo de verdade quando o valor vira
+          `false` — só ficou sólido no React 19. */}
+      <div
+        data-testid="app-v2-inertable-wrapper"
+        style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden' }}
+        {...(newChatOpen ? { inert: '' } : {})}
+        aria-hidden={newChatOpen ? 'true' : undefined}
+      >
+        {!isMobile && (
+          <SidebarV2
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={toggleSidebar}
+            clientes={clientes}
+            selectedClienteId={selectedClienteId}
+            onSelectCliente={handleSelectCliente}
+            navItems={NAV_ITEMS}
+            activeScreen={v2Screen}
+            onSelectScreen={setV2Screen}
+            initialAppearance={initialAppearance}
+          />
+        )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div
           style={{
             height: '62px',
@@ -351,6 +376,7 @@ export function AppV2({ initialAppearance }) {
                 onStartNewChat={startNewInstance}
                 collapsed={chatSidebarCollapsed}
                 onToggleCollapsed={toggleChatSidebar}
+                onNewChatOpenChange={setNewChatOpen}
               />
             )}
             <ChatV2
@@ -371,6 +397,7 @@ export function AppV2({ initialAppearance }) {
             <TarefasV2 projects={projects} selectedClienteId={selectedClienteId} />
           )}
           {v2Screen === 'agentes' && <ConfiguracaoV2 onAgentsChanged={refreshProjects} />}
+        </div>
         </div>
       </div>
 

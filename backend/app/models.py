@@ -57,6 +57,14 @@ class Project(BaseModel):
     # subpasta ("podesubir") ou um projeto solto na raiz
     # ("projeto_2"), cliente_id == id (nenhum "/" no meio).
     cliente_id: str = ""
+    # Campo aditivo — reflete se a pasta do projeto tem `.claude/` OU
+    # `.gemini/` (ver agent_discovery.scan_projects). Substitui o proxy
+    # `agentes non-empty` para o frontend distinguir "projeto elegível para
+    # chat" de "pasta-pai sem agente configurado" (usado por
+    # listSubProjectsForClient no seletor de "Novo chat"). Default False:
+    # pastas-pai sintéticas (missing_parents em scan_projects) nunca setam
+    # este campo explicitamente e devem permanecer inelegíveis.
+    elegivel: bool = False
 
 
 class InitFrame(BaseModel):

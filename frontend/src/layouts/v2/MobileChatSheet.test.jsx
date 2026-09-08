@@ -58,7 +58,17 @@ const clienteComSub = {
   nome: 'Cliente 1',
   path: '/tmp/cliente_projeto_1',
   agentes: [],
-  sub_projetos: ['cliente_projeto_1/subprojeto_1'],
+};
+
+// O select de Projeto agora lê de `projects` (flat, via
+// listSubProjectsForClient), não mais de `cliente.sub_projetos` — precisa de
+// uma entrada própria pro sub-projeto, com `elegivel: true`.
+const subProjetoDoCliente = {
+  id: 'cliente_projeto_1/subprojeto_1',
+  nome: 'subprojeto_1',
+  path: '/tmp/cliente_projeto_1/subprojeto_1',
+  agentes: [],
+  elegivel: true,
 };
 
 const clienteSemSub = {
@@ -66,10 +76,9 @@ const clienteSemSub = {
   nome: 'Pode Subir',
   path: '/tmp/podesubir',
   agentes: [],
-  sub_projetos: [],
 };
 
-const projects = [clienteComSub, clienteSemSub];
+const projects = [clienteComSub, subProjetoDoCliente, clienteSemSub];
 
 function baseProps(overrides = {}) {
   return {
@@ -234,17 +243,17 @@ describe('MobileChatSheet — "criar novo chat" (fluxo completo, achado do Revis
     const onStartNewChat = vi.fn();
     render(<MobileChatSheet {...baseProps({ selectedClienteId: 'cliente_projeto_1', onStartNewChat })} />);
     fireEvent.click(getFooterNewChatButton());
-    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude');
   });
 
-  it('cliente sem subprojetos: não mostra o select de projeto, só o aviso de que abre na raiz', () => {
+  it('cliente sem sub-projeto elegível: não mostra o select de projeto, só o fallback único de que abre na raiz', () => {
     render(<MobileChatSheet {...baseProps({ selectedClienteId: 'podesubir' })} />);
     fireEvent.click(getFooterNewChatButton());
-    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
-    expect(screen.getByText(/não tem subprojetos/)).toBeTruthy();
+    expect(screen.queryByLabelText('Projeto')).toBeNull();
+    expect(screen.getByText('Nenhum projeto disponível agora. O chat abre na raiz de Pode Subir.')).toBeTruthy();
   });
 
   it('fechar o NewChatSheet pelo botão "Cancelar" volta pro MobileChatSheet ainda aberto (sheets independentes)', () => {

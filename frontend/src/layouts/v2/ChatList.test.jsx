@@ -133,3 +133,61 @@ describe('ChatList — collapsed=false (comportamento original preservado)', () 
     expect(screen.getByLabelText('Encerrar Claude')).toBeTruthy();
   });
 });
+
+// Rodada "Novo chat em modal" (Bloco 6, Tarefa 15/16): resolveRowMeta agora
+// usa relativeProjectPath/truncatePathMeta pra profundidade >= 2 (2+
+// segmentos abaixo do cliente), com truncamento pela CABEÇA e `title` na
+// linha inteira com o caminho completo (nunca truncado). Profundidade 0
+// ("Raiz") e 1 (nome do sub-projeto) ficam cobertas pelos 2 describes acima,
+// inalteradas.
+describe('ChatList — meta de profundidade >= 2 (truncatePathMeta + title)', () => {
+  const deepProjects = [
+    { id: 'meu-projeto', nome: 'Meu Projeto', path: '/tmp/meu-projeto', agentes: [] },
+    { id: 'meu-projeto/gateway', nome: 'gateway', path: '/tmp/meu-projeto/gateway', agentes: [], elegivel: false },
+    { id: 'meu-projeto/gateway/sub', nome: 'sub', path: '/tmp/meu-projeto/gateway/sub', agentes: [], elegivel: true },
+    {
+      id: 'meu-projeto/principal/apps/podesubir-guardapp-rn',
+      nome: 'podesubir-guardapp-rn',
+      path: '/tmp/meu-projeto/principal/apps/podesubir-guardapp-rn',
+      agentes: [],
+      elegivel: true,
+    },
+  ];
+
+  it('profundidade 2 (2 segmentos abaixo do cliente): mostra o caminho relativo inteiro, sem truncar', () => {
+    const persisted = { 'meu-projeto/gateway/sub::claude': { display_name: null } };
+    render(
+      <ChatList
+        {...baseProps({ collapsed: false, projects: deepProjects, persistedSessions: persisted, selectedCliente: deepProjects[0] })}
+      />
+    );
+    expect(screen.getByText('gateway / sub')).toBeTruthy();
+  });
+
+  it('profundidade 3 (3+ segmentos): trunca pela CABEÇA, preservando os últimos 2 segmentos', () => {
+    const persisted = { 'meu-projeto/principal/apps/podesubir-guardapp-rn::claude': { display_name: null } };
+    render(
+      <ChatList
+        {...baseProps({ collapsed: false, projects: deepProjects, persistedSessions: persisted, selectedCliente: deepProjects[0] })}
+      />
+    );
+    expect(screen.getByText('… / apps / podesubir-guardapp-rn')).toBeTruthy();
+  });
+
+  it('a linha carrega title com o caminho COMPLETO (não truncado), mesmo quando o texto visível está truncado', () => {
+    const persisted = { 'meu-projeto/principal/apps/podesubir-guardapp-rn::claude': { display_name: null } };
+    render(
+      <ChatList
+        {...baseProps({ collapsed: false, projects: deepProjects, persistedSessions: persisted, selectedCliente: deepProjects[0] })}
+      />
+    );
+    const row = screen.getByText('… / apps / podesubir-guardapp-rn').closest('[title]');
+    expect(row.getAttribute('title')).toBe('principal / apps / podesubir-guardapp-rn');
+  });
+
+  it('a cor do meta da linha é --v2-text-dim (correção WCAG 1.4.3, antes --v2-text-faint)', () => {
+    render(<ChatList {...baseProps({ collapsed: false })} />);
+    const meta = screen.getByText('Raiz');
+    expect(meta.style.color).toBe('var(--v2-text-dim)');
+  });
+});
