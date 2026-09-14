@@ -16,17 +16,18 @@ aberta ou instalar nada no dispositivo cliente.
 
 ## O que é
 
-Um "escritório" web para gerenciar e conversar com agentes de IA (Claude,
-com suporte parcial a Gemini/Antigravity) rodando localmente na sua máquina.
+Um "escritório" web para gerenciar e conversar com agentes de IA (Claude e
+codex, com suporte parcial a Gemini/Antigravity) rodando localmente na sua
+máquina.
 Três telas:
 
 - **Escritório** (`/`) — terminal PTY real por projeto/agente. Você escolhe
   um projeto e um agente na barra lateral e conversa com ele num terminal de
   verdade (via [xterm.js](https://xtermjs.org/)), sem parsing frágil de
   eventos — é o mesmo terminal que você teria rodando `claude` localmente.
-  Projetos são qualquer pasta com `.claude/` ou `.gemini/` dentro da raiz
-  configurada (`PROJECTS_ROOT`, padrão `~/projetos`, ajustável na tela de
-  Configurações); os agentes disponíveis vêm de um cadastro global, também
+  Projetos são qualquer pasta com `.claude/`, `.gemini/` ou `.codex/` dentro
+  da raiz configurada (`PROJECTS_ROOT`, padrão `~/projetos`, ajustável na tela
+  de Configurações); os agentes disponíveis vêm de um cadastro global, também
   editável na UI.
 - **Board** (`/board`) — kanban por projeto, com cards, subcards e imagens,
   para acompanhar o que está em andamento.
@@ -47,6 +48,7 @@ Três telas:
   um PTY, então precisa estar disponível no ambiente onde o backend roda.
 - Opcionalmente, `agy` (Gemini/Antigravity) no `PATH`, para projetos com
   `.gemini/` — suporte ainda parcial, em evolução.
+- Opcionalmente, `codex` (OpenAI CLI) no `PATH`, para projetos com `.codex/`.
 - Node.js (frontend) e Python 3 (backend).
 
 ## Como rodar localmente

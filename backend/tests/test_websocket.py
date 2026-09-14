@@ -470,8 +470,9 @@ def test_pty_websocket_gemini_project_uses_agent_cmd_not_claude(client, tmp_path
     captured = {}
     real_build_agent_cmd = main_mod._build_agent_cmd
 
-    def spy(agent, session_id, resume, system_prompt):
+    def spy(agent, session_id, resume, system_prompt, cwd=None):
         captured["agent"] = agent
+        captured["cwd"] = cwd
         return [sys.executable, "-c", "import time; time.sleep(2)"]
 
     with patch("app.main._build_agent_cmd", side_effect=spy):
@@ -1455,6 +1456,18 @@ def test_agent_types_without_resume_semantics_have_no_probe():
     assert "terminal" not in _RESUME_FAILURE_SIGNATURES
 
 
+def test_codex_has_no_probe_entry():
+    """Spike R-3 (codex-cli 0.153.2, real ConPTY): `codex resume --last` with
+    no rollout for the cwd does NOT error or exit — it drops straight into the
+    normal interactive TUI (same "silent fresh start" as agy's `--continue`).
+    No failure text to key a probe on and the process stays alive, so codex
+    must have NO entry rather than one with empty markers (a truthy dict would
+    make the caller run the 5s probe loop for nothing)."""
+    from app.main import _RESUME_FAILURE_SIGNATURES
+
+    assert "codex" not in _RESUME_FAILURE_SIGNATURES
+
+
 @pytest.mark.asyncio
 async def test_provisioning_failure_sends_spawn_failed_and_keeps_socket_open():
     """Uma falha de `cursor-agent create-chat` acontece ANTES do spawn e ANTES do
@@ -2116,3 +2129,397 @@ async def test_lock_entry_survives_for_a_queued_waiter_and_is_reclaimed_after():
     assert session_key not in _session_lock_users
 
     await store.close()
+
+
+# ==========================================================================
+# ia="codex" — TOML literal encoders, `-c` overrides, argv e dispatch
+# ==========================================================================
+
+def _codex_agent(cmd=None):
+    from app.models import Agent
+    return Agent(
+        id="codex", nome="Codex", papel="Assistente", ia="codex",
+        cmd=cmd or ["codex"],
+    )
+
+
+def _dash_c_pairs(argv):
+    """Extrai os pares (key, value) de uma lista plana ['-c', 'k=v', ...]."""
+    pairs = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "-c":
+            key, _, value = argv[i + 1].partition("=")
+            pairs.append((key, value))
+            i += 2
+        else:
+            i += 1
+    return pairs
+
+
+# -- _toml_literal / _toml_literal_array -----------------------------------
+
+def test_toml_literal_wraps_in_single_quotes():
+    from app.main import _toml_literal
+    assert _toml_literal("never") == "'never'"
+
+
+def test_toml_literal_does_not_escape_backslash():
+    from app.main import _toml_literal
+    assert _toml_literal(r"C:\Users\x") == r"'C:\Users\x'"
+
+
+def test_toml_literal_raises_value_error_on_apostrophe():
+    from app.main import _toml_literal
+    with pytest.raises(ValueError):
+        _toml_literal("it's")
+
+
+def test_toml_literal_quotes_numeric_looking_value():
+    from app.main import _toml_literal
+    assert _toml_literal("1") == "'1'"
+
+
+def test_toml_literal_array_single_element():
+    from app.main import _toml_literal_array
+    assert _toml_literal_array(["x"]) == "['x']"
+
+
+def test_toml_literal_array_propagates_value_error_from_element():
+    from app.main import _toml_literal_array
+    with pytest.raises(ValueError):
+        _toml_literal_array(["ok", "b'ad"])
+
+
+def test_toml_literal_rejects_percent_and_shell_metachars():
+    from app.main import _toml_literal
+    for char in ("%", "&", "|", "<", ">"):
+        with pytest.raises(ValueError):
+            _toml_literal("value" + char + "x")
+
+
+def test_toml_literal_allows_caret_bang_parens():
+    from app.main import _toml_literal
+    for char in ("^", "!", "(", ")"):
+        assert _toml_literal("v" + char) == "'v" + char + "'"
+
+
+def test_toml_literal_rejects_double_quote_and_newlines():
+    """QA gap: `test_toml_literal_rejects_percent_and_shell_metachars` covers
+    `% & | < >` and a separate test covers `'`, but `"` and CR/LF are in
+    `_TOML_LITERAL_FORBIDDEN` with no fixture — removing any of them from the
+    guard was a mutation no test caught. `"` would break out of a TOML basic
+    string if the value were ever re-quoted; a raw CR/LF splits the `-c`
+    token. All three must raise."""
+    from app.main import _toml_literal
+    for char in ('"', "\r", "\n"):
+        with pytest.raises(ValueError):
+            _toml_literal("value" + char + "x")
+
+
+def test_toml_literal_empty_string_is_empty_quotes():
+    """Edge case: an empty value is representable — `''` is a valid TOML
+    literal string, not an error."""
+    from app.main import _toml_literal
+    assert _toml_literal("") == "''"
+
+
+def test_toml_literal_bare_backslash_passes_through():
+    """A lone backslash is not forbidden and must survive verbatim (literal
+    strings do no escape processing — the whole reason codex values use them)."""
+    from app.main import _toml_literal
+    assert _toml_literal("\\") == "'\\'"
+
+
+def test_toml_literal_array_empty_is_empty_brackets():
+    from app.main import _toml_literal_array
+    assert _toml_literal_array([]) == "[]"
+
+
+# -- _build_codex_config_overrides ---------------------------------------
+
+def test_build_codex_config_overrides_is_flat_dash_c_list():
+    from app.main import _build_codex_config_overrides
+    overrides = _build_codex_config_overrides("sid-1", r"C:\proj")
+    assert all(isinstance(tok, str) for tok in overrides)
+    assert overrides[0] == "-c"
+    # `-c` and its value strictly alternate.
+    assert overrides[::2] == ["-c"] * (len(overrides) // 2)
+    keys = [k for k, _ in _dash_c_pairs(overrides)]
+    assert "approval_policy" in keys
+    assert "sandbox_mode" in keys
+
+
+def test_build_codex_config_overrides_disables_update_check_as_bare_bool():
+    """SEC-1: `check_for_update_on_startup` is emitted as the RAW TOML boolean
+    `false`, never through `_toml_literal`. codex types this key as a bool and
+    rejects `'false'` (literal string) with a total config-load failure —
+    verified against codex-cli 0.153.2, `config.load: fail`. The pair must be
+    exactly ("check_for_update_on_startup", "false"), unquoted."""
+    from app.main import _build_codex_config_overrides
+    pairs = _dash_c_pairs(_build_codex_config_overrides("sid-1", None))
+    assert ("check_for_update_on_startup", "false") in pairs
+
+
+def test_build_codex_config_overrides_drops_whole_mcp_server_if_any_key_unencodable(monkeypatch):
+    """A single unencodable value takes the WHOLE server down (half a server —
+    stdio up, no callback env — is worse than none). The poison value carries
+    `&`, which `_toml_literal` forbids regardless of the SEC-3 `=` handling, so
+    this stays a clean test of the per-server degradation."""
+    import app.main as m
+
+    real = m._escritorio_mcp_servers
+
+    def poisoned(session_id):
+        spec = real(session_id)
+        spec["escritorio-cards"]["env"]["ESCRITORIO_HOOK_GET_URL"] = "http://x/?a&b"
+        return spec
+
+    monkeypatch.setattr(m, "_escritorio_mcp_servers", poisoned)
+    keys = [k for k, _ in _dash_c_pairs(m._build_codex_config_overrides("sid-1", None))]
+    # tarefas survives, cards is dropped entirely (not just the bad key).
+    assert any(k.startswith("mcp_servers.escritorio-tarefas.") for k in keys)
+    assert not any(k.startswith("mcp_servers.escritorio-cards.") for k in keys)
+
+
+def test_build_codex_config_overrides_env_values_are_quoted_strings():
+    from app.main import _build_codex_config_overrides
+    pairs = _dash_c_pairs(_build_codex_config_overrides("sid-1", None))
+    utf8 = [v for k, v in pairs if k.endswith(".env.PYTHONUTF8")]
+    assert utf8 and all(v == "'1'" for v in utf8)
+
+
+def test_build_codex_config_overrides_reuses_hook_url_suffixes():
+    import app.main as m
+
+    def suffixes_from(env):
+        out = set()
+        for value in env.values():
+            if "/api/hooks/" in value:
+                out.add(value.split("/api/hooks/", 1)[1])
+        return out
+
+    spec = m._escritorio_mcp_servers("sid-1")
+    expected = set()
+    for server in spec.values():
+        expected |= suffixes_from(server["env"])
+    assert expected == {
+        "task", "cards/create", "cards/move", "cards/update",
+        "cards/delete", "cards/get", "cards/list",
+    }
+
+    pairs = _dash_c_pairs(m._build_codex_config_overrides("sid-1", None))
+    got = set()
+    for key, value in pairs:
+        if key.startswith("mcp_servers.") and "/api/hooks/" in value:
+            got.add(value.strip("'").split("/api/hooks/", 1)[1])
+    assert got == expected
+
+
+def test_build_codex_config_overrides_base_url_http_vs_https(monkeypatch):
+    import app.main as m
+
+    monkeypatch.setattr(m, "_hook_callback_base_url", lambda: "https://box.example:9443")
+    pairs = _dash_c_pairs(m._build_codex_config_overrides("sid-1", None))
+    urls = [v for _, v in pairs if "example" in v]
+    assert urls
+    assert all(v.strip("'").startswith("https://box.example:9443/") or "https://box.example:9443" in v for v in urls)
+
+
+def test_build_codex_config_overrides_never_raises_on_hostile_session_id():
+    """QA gap: the docstring promises `_build_codex_config_overrides` NEVER
+    raises (a ValueError escaping the 2 OSError-only call sites of _ensure_pty
+    is a reconnect storm). Every existing test feeds a clean uuid4-shaped
+    session_id, so the `notify` try/except AND the per-MCP-server try/except
+    (session_id also lands in every server's env) had zero coverage —
+    removing either was a mutation no test caught. A session_id carrying a
+    forbidden char must degrade silently: notify + both MCP servers drop, the
+    two static keys survive, and NOTHING raises."""
+    from app.main import _build_codex_config_overrides
+    overrides = _build_codex_config_overrides("sid'%evil\n", cwd=None)
+    keys = [k for k, _ in _dash_c_pairs(overrides)]
+    assert "approval_policy" in keys
+    assert "sandbox_mode" in keys
+    assert "notify" not in keys
+    assert not any(k.startswith("mcp_servers.") for k in keys)
+
+
+# -- _build_codex_cmd ---------------------------------------------------
+
+def test_build_codex_cmd_fresh_has_no_resume_subcommand():
+    from app.main import _build_codex_cmd
+    cmd = _build_codex_cmd(_codex_agent(), "sid-1", False, r"C:\proj")
+    assert cmd[0] == "codex"
+    assert "resume" not in cmd
+    assert "--last" not in cmd
+
+
+def test_build_codex_cmd_resume_prepends_resume_last_before_dash_c():
+    from app.main import _build_codex_cmd
+    cmd = _build_codex_cmd(_codex_agent(), "sid-1", True, r"C:\proj")
+    assert cmd[:3] == ["codex", "resume", "--last"]
+    assert cmd.index("resume") < cmd.index("-c")
+
+
+def test_build_codex_cmd_ignores_system_prompt():
+    from app.main import _build_agent_cmd
+    cmd = _build_agent_cmd(_codex_agent(), "sid-1", resume=False,
+                           system_prompt="You are agent X", cwd=r"C:\proj")
+    assert "You are agent X" not in cmd
+    assert "--append-system-prompt" not in cmd
+    assert "--prompt-interactive" not in cmd
+
+
+def test_build_codex_cmd_never_raises_on_unencodable_session_id():
+    """`cwd` is no longer threaded into `_toml_literal` by
+    `_build_codex_config_overrides` (the dead trust override was removed), so
+    this invariant now needs a different risk vector to stay meaningful — a
+    session_id with a forbidden char, which still reaches `notify` and every
+    MCP server's env (ESCRITORIO_CLAUDE_SESSION_ID)."""
+    from app.main import _build_codex_cmd
+    cmd = _build_codex_cmd(_codex_agent(), "sid'%evil\n", False, r"C:\proj")
+    assert isinstance(cmd, list)
+    keys = [k for k, _ in _dash_c_pairs(cmd)]
+    assert "approval_policy" in keys
+    assert "notify" not in keys
+    assert not any(k.startswith("mcp_servers.") for k in keys)
+
+
+# -- dispatch through _build_agent_cmd --------------------------------
+
+def test_build_agent_cmd_routes_codex_ia_to_build_codex_cmd():
+    import app.main as m
+
+    agent = _codex_agent()
+    with patch("app.main._build_codex_cmd", return_value=["codex", "STUB"]) as spy:
+        out = m._build_agent_cmd(agent, "sid-1", resume=True,
+                                 system_prompt="ctx", cwd=r"C:\proj")
+    assert out == ["codex", "STUB"]
+    # The real agent object must be forwarded, not None: two of the three
+    # _ensure_pty call sites pass a resolved agent, and a mutation routing this
+    # branch to `_build_codex_cmd(None, ...)` would drop the agent's registered
+    # cmd/env. Assert identity, not `spy.call_args[0][0]` against itself.
+    spy.assert_called_once_with(agent, "sid-1", True, r"C:\proj")
+    assert spy.call_args[0][0] is agent
+
+
+def test_build_codex_cmd_honors_registered_agent_cmd():
+    """_build_codex_cmd must launch the agent's registered `cmd`, not the
+    hardcoded `["codex"]` fallback — the `if agent else ["codex"]` is only a
+    defensive default for a None agent, which the real dispatch never passes."""
+    from app.main import _build_codex_cmd
+
+    agent = _codex_agent(cmd=["codex-work", "--foo"])
+    cmd = _build_codex_cmd(agent, "sid-1", resume=False, cwd=r"C:\proj")
+    assert cmd[:2] == ["codex-work", "--foo"]
+    assert cmd[0] != "codex"
+    resumed = _build_codex_cmd(agent, "sid-1", resume=True, cwd=r"C:\proj")
+    assert resumed[:4] == ["codex-work", "--foo", "resume", "--last"]
+
+
+def test_build_agent_cmd_cwd_defaults_to_none_preserves_claude_contract():
+    from app.main import _build_agent_cmd, _build_pty_cmd
+    from app.models import Agent
+
+    claude_agent = Agent(id="c", nome="C", papel="A", ia="claude", cmd=["claude"])
+    assert _build_agent_cmd(claude_agent, "sid-1", resume=False, system_prompt="ctx") == \
+        _build_pty_cmd("sid-1", resume=False, system_prompt="ctx")
+
+
+def test_build_agent_cmd_passes_cwd_through_to_codex_branch():
+    import app.main as m
+
+    with patch("app.main._build_codex_cmd", return_value=["codex"]) as spy:
+        m._build_agent_cmd(_codex_agent(), "sid-1", resume=False,
+                           system_prompt=None, cwd=r"D:\projetos\meu")
+    assert spy.call_args[0][3] == r"D:\projetos\meu"
+
+
+def test_build_notify_argv_uses_sys_executable_and_abspath():
+    from app.main import _build_codex_notify_argv
+    argv = _build_codex_notify_argv("sid-1")
+    assert argv[0] == sys.executable
+    assert os.path.isabs(argv[1])
+    assert argv[1].endswith("codex_notify_adapter.py")
+    assert argv[2] == "sid-1"
+    assert argv[3].endswith("/api/hooks/stop")
+
+
+def test_codex_real_binary_registers_both_mcp_servers_from_dash_c_block():
+    """QA end-to-end: the Dev flagged `mcp_servers.*` (and notify / trust) as
+    NEVER exercised against the real codex binary. This closes the MCP half:
+    it feeds the EXACT `-c` list `_build_codex_config_overrides` produces to a
+    real `codex mcp list --json` (read-only, throwaway CODEX_HOME) and asserts
+    both Escritório servers register with the exact command/args/env. Proves
+    the encoder output is valid codex config, not just valid-looking. Skips
+    where the binary is absent (CI without codex-cli)."""
+    import shutil
+    codex_bin = shutil.which("codex")
+    if not codex_bin:
+        pytest.skip("codex CLI not installed")
+
+    import subprocess
+    import tempfile
+    from app.main import _build_codex_config_overrides
+
+    overrides = _build_codex_config_overrides("sid-e2e-qa", r"C:\proj\demo")
+    with tempfile.TemporaryDirectory() as codex_home:
+        env = dict(os.environ, CODEX_HOME=codex_home)
+        proc = subprocess.run(
+            [codex_bin, "mcp", "list", "--json", *overrides],
+            capture_output=True, text=True, timeout=60, env=env,
+        )
+    assert proc.returncode == 0, f"codex mcp list failed: {proc.stderr}"
+    # stdout may carry a leading non-JSON warning line; slice from the first '['.
+    payload = proc.stdout[proc.stdout.index("["):]
+    servers = {s["name"]: s for s in json.loads(payload)}
+    assert {"escritorio-tarefas", "escritorio-cards"} <= set(servers)
+    cards = servers["escritorio-cards"]["transport"]
+    assert cards["command"] == sys.executable
+    assert len(cards["args"]) == 1 and cards["args"][0].endswith("mcp_card_adapter.py")
+    assert cards["env"]["ESCRITORIO_CLAUDE_SESSION_ID"] == "sid-e2e-qa"
+    assert cards["env"]["PYTHONUTF8"] == "1"
+    assert cards["env"]["ESCRITORIO_HOOK_GET_URL"].endswith("/api/hooks/cards/get")
+
+
+def test_build_mcp_config_json_still_emits_both_servers():
+    from app.main import _build_mcp_config_json
+
+    config = json.loads(_build_mcp_config_json("sid-1"))
+    servers = config["mcpServers"]
+    assert set(servers) == {"escritorio-tarefas", "escritorio-cards"}
+    assert servers["escritorio-tarefas"]["env"]["ESCRITORIO_HOOK_URL"].endswith("/api/hooks/task")
+    assert servers["escritorio-tarefas"]["env"]["ESCRITORIO_CLAUDE_SESSION_ID"] == "sid-1"
+    cards_env = servers["escritorio-cards"]["env"]
+    for key in ("ESCRITORIO_HOOK_CREATE_URL", "ESCRITORIO_HOOK_MOVE_URL",
+                "ESCRITORIO_HOOK_UPDATE_URL", "ESCRITORIO_HOOK_DELETE_URL",
+                "ESCRITORIO_HOOK_GET_URL", "ESCRITORIO_HOOK_LIST_URL"):
+        assert key in cards_env
+    assert cards_env["PYTHONUTF8"] == "1"
+
+
+def test_pty_websocket_codex_project_uses_build_codex_cmd_not_claude(client, tmp_path):
+    """A project eligible via .codex/ with a registered global codex agent
+    must spawn through _build_codex_cmd (with the project cwd), never claude."""
+    import app.main as main_mod
+
+    root = main_mod.PROJECTS_ROOT
+    proj_dir = Path(root) / "meu-projeto-codex"
+    (proj_dir / ".codex").mkdir(parents=True)
+
+    client.post("/api/agents", json={
+        "id": "codex", "nome": "Codex", "papel": "Assistente",
+        "ia": "codex", "cmd": ["codex"],
+    })
+
+    fake_cmd = [sys.executable, "-c", "import time; time.sleep(2)"]
+    with patch("app.main._build_codex_cmd", return_value=fake_cmd) as spy:
+        with client.websocket_connect("/ws/pty/codex-cmd-test") as ws:
+            ws.send_text(json.dumps({
+                "type": "init", "project_id": "meu-projeto-codex", "agent_id": None,
+                "cols": 80, "rows": 24,
+            }))
+            time.sleep(0.2)
+
+    assert spy.called
+    assert spy.call_args[0][3] == str(proj_dir)

@@ -30,6 +30,9 @@ class Agent(BaseModel):
     # --prompt-interactive). Ou seja: um valor novo é cadastrável pela UI e já
     # funciona, sem migração de schema. Valores em uso hoje:
     #   "claude"      -> contrato --session-id/--resume + hook Stop + MCP
+    #   "codex"       -> OpenAI codex CLI: `resume --last` no resume + `-c`
+    #                     overrides para approval/sandbox/trust + notify (fim de
+    #                     turno) + os 2 MCP do Escritório (ver _build_codex_cmd)
     #   "antigravity"/"gemini"/"agy" -> --dangerously-skip-permissions +
     #                     --continue no resume (agy não aceita id externo,
     #                     ver docstring de _build_agent_cmd)
@@ -57,8 +60,8 @@ class Project(BaseModel):
     # subpasta ("podesubir") ou um projeto solto na raiz
     # ("projeto_2"), cliente_id == id (nenhum "/" no meio).
     cliente_id: str = ""
-    # Campo aditivo — reflete se a pasta do projeto tem `.claude/` OU
-    # `.gemini/` (ver agent_discovery.scan_projects). Substitui o proxy
+    # Campo aditivo — reflete se a pasta do projeto tem `.claude/`, `.gemini/`
+    # OU `.codex/` (ver agent_discovery.scan_projects). Substitui o proxy
     # `agentes non-empty` para o frontend distinguir "projeto elegível para
     # chat" de "pasta-pai sem agente configurado" (usado por
     # listSubProjectsForClient no seletor de "Novo chat"). Default False:

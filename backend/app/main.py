@@ -9,6 +9,7 @@ import time
 import uuid
 import asyncio
 import uvicorn
+from typing import TypedDict
 from contextlib import asynccontextmanager, contextmanager
 from fastapi import (
     FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
@@ -188,7 +189,23 @@ def _pretrust_projects() -> None:
         with open(config_path, "r") as f:
             data = json.load(f)
         changed = False
+        # Só pré-aceita o trust do `claude` para projetos que realmente têm
+        # `.claude/`. Desde que `.codex/` (e antes `.gemini/`) passou a tornar
+        # um projeto elegível, scan_projects() também devolve projetos sem
+        # `.claude/` nenhum; gravar `hasTrustDialogAccepted: true` para eles
+        # apagaria em silêncio a única confirmação de trust do `claude` para
+        # repositórios que ele nunca abriu. O `codex` não expõe um mecanismo de
+        # pre-trust via `-c` (medido contra o binário real: o override
+        # `projects.<cwd>.trust_level` parseia mas o gate de trust da TUI não o
+        # consulta) — a única forma de suprimir o prompt de trust da TUI é uma
+        # entrada on-disk em `~/.codex/config.toml`, que o TaskNexus
+        # deliberadamente não escreve (ADR: codex é agente de argv). O usuário
+        # responde o prompt de trust da TUI (um PTY real) na primeira vez que
+        # abre cada projeto com o `codex`, e o próprio codex persiste depois —
+        # não lê este arquivo.
         for proj in scan_projects(PROJECTS_ROOT):
+            if not os.path.isdir(os.path.join(proj.path, ".claude")):
+                continue
             entry = data.setdefault("projects", {}).setdefault(proj.path, {})
             if not entry.get("hasTrustDialogAccepted"):
                 entry["hasTrustDialogAccepted"] = True
@@ -707,6 +724,78 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
 }
 
 
+class _McpServerSpec(TypedDict):
+    """Forma estrutural de cada entrada de _escritorio_mcp_servers.
+
+    Existe para tornar o contrato explícito: _build_codex_config_overrides
+    consome `spec['command']` / `spec['args']` / `spec['env']` por índice
+    dentro de um bloco que só captura ValueError — um KeyError por chave
+    faltando escaparia daí e viraria uma tempestade de reconexão.
+    """
+
+    command: str
+    args: list[str]
+    env: dict[str, str]
+
+
+def _escritorio_mcp_servers(session_id: str) -> dict[str, _McpServerSpec]:
+    """Especificação (command/args/env) dos dois servidores MCP do Escritório.
+
+    Fonte única de verdade para os DOIS formatos de registro que existem hoje:
+    o `--mcp-config` inline JSON do `claude` (_build_mcp_config_json) e os
+    `-c mcp_servers.*` do `codex` (_build_codex_config_overrides). Extraído
+    para que os nomes de env var e os sufixos de URL de callback não possam
+    divergir entre os dois CLIs — se divergirem, um dos dois passa a chamar
+    endpoints que não existem, e o modo de falha é silencioso (POST
+    fire-and-forget).
+
+    Os abspaths são resolvidos a partir de __file__ (diretório deste módulo),
+    NÃO do cwd do PTY — o cwd do PTY é o diretório do projeto do usuário, onde
+    os scripts não existem.
+
+    session_id é repassado como env var (ESCRITORIO_CLAUDE_SESSION_ID) para o
+    processo filho de cada adaptador, que o inclui no POST aos respectivos
+    endpoints /api/hooks/... — é assim que o backend resolve de volta a
+    session_key do Escritório (via ConversationStore.get_session_key_by_claude_id).
+
+    As URLs de callback vão explícitas em vez de ficarem no default de cada
+    adaptador (`http://localhost:8000/...`): esse default só acerta no fluxo
+    de dev, e em produção o backend responde noutra porta — mesmo problema que
+    matava o hook Stop. Cada servidor recebe apenas as URLs que ele usa.
+    """
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    base_url = _hook_callback_base_url()
+    return {
+        "escritorio-tarefas": {
+            "command": sys.executable,
+            "args": [os.path.join(module_dir, "mcp_task_adapter.py")],
+            "env": {
+                "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
+                "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
+                # Defense in depth alongside the reconfigure() calls in
+                # mcp_task_adapter.main(): forces UTF-8 mode for the whole
+                # child interpreter (stdin/stdout/stderr + filesystem),
+                # not just the two streams reconfigure() touches.
+                "PYTHONUTF8": "1",
+            },
+        },
+        "escritorio-cards": {
+            "command": sys.executable,
+            "args": [os.path.join(module_dir, "mcp_card_adapter.py")],
+            "env": {
+                "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
+                "ESCRITORIO_HOOK_CREATE_URL": f"{base_url}/api/hooks/cards/create",
+                "ESCRITORIO_HOOK_MOVE_URL": f"{base_url}/api/hooks/cards/move",
+                "ESCRITORIO_HOOK_UPDATE_URL": f"{base_url}/api/hooks/cards/update",
+                "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/cards/delete",
+                "ESCRITORIO_HOOK_GET_URL": f"{base_url}/api/hooks/cards/get",
+                "ESCRITORIO_HOOK_LIST_URL": f"{base_url}/api/hooks/cards/list",
+                "PYTHONUTF8": "1",
+            },
+        },
+    }
+
+
 def _build_mcp_config_json(session_id: str) -> str:
     """Gera o --mcp-config inline JSON que registra os adaptadores MCP
     (mcp_task_adapter.py e mcp_card_adapter.py, ver esses arquivos) como
@@ -725,47 +814,221 @@ def _build_mcp_config_json(session_id: str) -> str:
     Spike validado manualmente (fora deste código) confirmou que
     --mcp-config inline JSON funciona com o `claude` CLI real: a tool é
     reconhecida e chamada com os argumentos exatos.
+
+    A especificação em si (comando, args e env de cada servidor) mora em
+    _escritorio_mcp_servers, compartilhada com o registro equivalente do
+    `codex` — aqui fica só a serialização no formato que o `claude` aceita.
+    """
+    return json.dumps({"mcpServers": _escritorio_mcp_servers(session_id)})
+
+
+# ---------------------------------------------------------------------------
+# codex (OpenAI CLI)
+#
+# O codex é um "agente de argv, não de arquivo": tudo o que o claude recebe via
+# --settings/--mcp-config, ele recebe via `-c chave=valor` no spawn, e cada `-c`
+# é MESCLADO com o ~/.codex/config.toml em disco (verificado contra o binário
+# real, codex-cli 0.153.2). Nada aqui escreve no CODEX_HOME do usuário, e o
+# backend deliberadamente NÃO seta CODEX_HOME: o codex roda com o perfil real do
+# usuário (login, plugins, MCPs próprios), e quem quiser um perfil separado põe
+# CODEX_HOME no campo `env` do cadastro do agente.
+# ---------------------------------------------------------------------------
+CODEX_APPROVAL_POLICY = "never"
+CODEX_SANDBOX_MODE = "workspace-write"
+# Desliga o check de "Update available" no startup do codex: com release nova no
+# npm, o codex abre com esse prompt e um Enter do usuário roda
+# `npm install -g @openai/codex` no meio da sessão do Escritório.
+#
+# Emitido como booleano TOML CRU (`check_for_update_on_startup=false`), FORA do
+# loop de _toml_literal abaixo: essa chave é tipada como bool pelo codex, e
+# passá-la como literal string (`'false'`) faz o carregamento do config INTEIRO
+# falhar — `config.load: fail, "config could not be loaded"`, PTY abre e fecha
+# (medido contra codex-cli 0.153.2; o bare `false` reflete em
+# `codex doctor --json` como `"check for update on startup": "false"`). É o
+# único `-c` que não passa pelo encoder, e o valor é uma constante fixa sem
+# entrada de usuário — nada a sanear.
+CODEX_CHECK_FOR_UPDATE = "false"
+# Subcomando de retomada. `--last` = "continue a sessão mais recente sem abrir o
+# seletor" — o seletor é uma TUI de escolha que travaria o PTY sem saída pela UI
+# do Escritório. Por padrão o codex já filtra as sessões pelo cwd (é o que
+# `--all` desliga), então na prática isso retoma a última conversa DAQUELE
+# projeto. Duas abas do Escritório no mesmo projeto continuam ambíguas entre si:
+# mesma limitação, já aceita, do `--continue` do agy.
+CODEX_RESUME_ARGS = ("resume", "--last")
+
+# Caracteres que nunca podem entrar num token `-c chave=valor`.
+#
+# `'` e `"`: encerrariam/derrubariam a literal string TOML que este encoder
+#   produz. ADR-C4: todo valor vai como literal string (aspas SIMPLES),
+#   justamente para a barra invertida de um path Windows continuar sendo barra
+#   invertida — numa basic string ("...") o TOML trataria `\U`, `\t` etc. como
+#   escapes, e o codex degrada em SILÊNCIO para "string crua" quando o parse
+#   falha (um array vira string e explode depois como erro de tipo).
+# `% & | < >`: o pywinpty resolve `codex` para `codex.CMD` e o executa ATRAVÉS
+#   do `cmd.exe` (winpty/ptyprocess.py: which() + subprocess.list2cmdline), ou
+#   seja, o cmd.exe reprocessa a linha de comando uma segunda vez. Medido contra
+#   o binário real num ConPTY de verdade:
+#     - `%NOME%` é expandido mesmo dentro de token citado (um path contendo
+#       `%PATH%` voltou com o PATH real no lugar);
+#     - `& | < >` só escapam ilesos enquanto o token por acaso contém um espaço,
+#       que é a ÚNICA razão pela qual o list2cmdline o coloca entre aspas — sem
+#       espaço, um `&` parte a linha de comando e o codex morre com
+#       "Invalid override (missing '=')".
+#   Fazer a regra depender de "esse token tem espaço?" seria uma armadilha, então
+#   os cinco são rejeitados sempre.
+# `^ ! ( )` NÃO estão aqui de propósito: os quatro foram medidos e atravessam
+#   intactos. O `!` só é especial sob delayed expansion do CMD, que o ConPTY não
+#   liga.
+# CR/LF: partiriam o token; impossível na prática, barato de excluir.
+_TOML_LITERAL_FORBIDDEN = "'\"%&|<>\r\n"
+
+
+def _toml_literal(value: str) -> str:
+    """Encoda `value` como uma literal string TOML para um `-c chave=valor`.
+
+    Literal string = aspas simples e NENHUM escape (é o ponto: a barra invertida
+    de um path Windows tem que chegar ao codex como barra invertida). Como não
+    há escape possível, qualquer caractere de _TOML_LITERAL_FORBIDDEN é
+    irrepresentável e vira ValueError — cabe a quem chama decidir o que degradar
+    (ver _build_codex_config_overrides, que nunca deixa esse erro escapar).
+
+    Vale inclusive para valores que "parecem" outro tipo: `1` nu viraria o
+    integer TOML 1, e o codex tipa `env` como map<string,string>, então
+    PYTHONUTF8 precisa sair daqui como `'1'`, não como `1`.
+    """
+    for char in _TOML_LITERAL_FORBIDDEN:
+        if char in value:
+            raise ValueError(
+                f"value cannot be encoded as a TOML literal string "
+                f"(contains {char!r}): {value!r}"
+            )
+    return f"'{value}'"
+
+
+def _toml_literal_array(values: list[str]) -> str:
+    """Encoda uma lista de strings como array TOML de literal strings.
+
+    Propaga o ValueError de _toml_literal: um array pela metade seria pior que
+    array nenhum (o codex receberia um comando truncado e o executaria).
+    """
+    return "[" + ",".join(_toml_literal(value) for value in values) + "]"
+
+
+def _build_codex_notify_argv(session_id: str) -> list[str]:
+    """argv do `notify` do codex — o equivalente do hook Stop do claude.
+
+    O codex executa esse argv acrescentando UM argumento final (o JSON do
+    evento), e não sabe nada sobre a session_key do Escritório; por isso o
+    session_id vai fixo em argv[1] e a URL em argv[2], e a correlação é feita
+    por posição, não pelo payload. Ver app/codex_notify_adapter.py.
+
+    O abspath do adaptador sai de __file__, NUNCA do cwd do PTY — o cwd é a
+    pasta do projeto do usuário, onde o script não existe.
     """
     module_dir = os.path.dirname(os.path.abspath(__file__))
-    task_adapter_path = os.path.join(module_dir, "mcp_task_adapter.py")
-    card_adapter_path = os.path.join(module_dir, "mcp_card_adapter.py")
-    # As URLs de callback vão explícitas em vez de ficarem no default de cada
-    # adaptador (`http://localhost:8000/...`): esse default só acerta no fluxo
-    # de dev, e em produção o backend responde noutra porta — mesmo problema que
-    # matava o hook Stop. Cada servidor recebe apenas as URLs que ele usa.
-    base_url = _hook_callback_base_url()
-    config = {
-        "mcpServers": {
-            "escritorio-tarefas": {
-                "command": sys.executable,
-                "args": [task_adapter_path],
-                "env": {
-                    "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
-                    "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
-                    # Defense in depth alongside the reconfigure() calls in
-                    # mcp_task_adapter.main(): forces UTF-8 mode for the whole
-                    # child interpreter (stdin/stdout/stderr + filesystem),
-                    # not just the two streams reconfigure() touches.
-                    "PYTHONUTF8": "1",
-                },
-            },
-            "escritorio-cards": {
-                "command": sys.executable,
-                "args": [card_adapter_path],
-                "env": {
-                    "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
-                    "ESCRITORIO_HOOK_CREATE_URL": f"{base_url}/api/hooks/cards/create",
-                    "ESCRITORIO_HOOK_MOVE_URL": f"{base_url}/api/hooks/cards/move",
-                    "ESCRITORIO_HOOK_UPDATE_URL": f"{base_url}/api/hooks/cards/update",
-                    "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/cards/delete",
-                    "ESCRITORIO_HOOK_GET_URL": f"{base_url}/api/hooks/cards/get",
-                    "ESCRITORIO_HOOK_LIST_URL": f"{base_url}/api/hooks/cards/list",
-                    "PYTHONUTF8": "1",
-                },
-            },
-        }
-    }
-    return json.dumps(config)
+    return [
+        sys.executable,
+        os.path.join(module_dir, "codex_notify_adapter.py"),
+        session_id,
+        f"{_hook_callback_base_url()}/api/hooks/stop",
+    ]
+
+
+def _build_codex_config_overrides(session_id: str, cwd: str | None) -> list[str]:
+    """Monta a lista PLANA de `-c chave=valor` do spawn do codex.
+
+    Devolve ["-c", "k=v", "-c", "k=v", ...] — plana porque é concatenada direto
+    no argv.
+
+    NUNCA levanta exceção. Isso é invariante duro, não zelo: dois dos três
+    call sites de _ensure_pty só capturam OSError (POST .../continue e
+    POST .../paste), então um ValueError vazando daqui viraria uma tempestade de
+    reconexão em vez de um erro visível. A degradação é por chave: se a chave de
+    UM servidor MCP não encoda, o servidor INTEIRO é omitido (meio servidor é
+    pior que nenhum — o codex subiria um stdio server sem as env vars de
+    callback e toda chamada de tool falharia em silêncio).
+
+    `cwd` não é consumido pelo corpo desta função: uma tentativa anterior de
+    usá-lo para pré-aceitar o trust do projeto via `-c
+    projects.'<cwd>'.trust_level=...` se mostrou NO-OP contra o binário real
+    (o valor parseia e desserializa, mas o gate de trust da TUI não consulta
+    esse override — só uma entrada on-disk em `~/.codex/config.toml` suprime o
+    prompt, e o TaskNexus deliberadamente não escreve nesse arquivo, ver ADR de
+    "agente de argv"). O parâmetro foi mantido na assinatura (call sites e
+    testes dependem dela) mas hoje não faz nada; o usuário responde o prompt de
+    trust da TUI uma vez por projeto e o próprio codex persiste depois. O gate
+    separado "workspace confiável OU repositório git" que o codex aplica antes
+    de liberar a sandbox workspace-write não foi verificado neste probe — não
+    está confirmado se ele também depende do trust_level ou se é satisfeito de
+    outra forma quando o projeto é um repo git.
+
+    Nota sobre a URL de callback: _hook_callback_base_url() cai no fallback
+    (porta do app principal) quando o listener de loopback não está no ar. É
+    exatamente o que o claude já faz hoje, aceito e fora do escopo desta feature.
+    """
+    overrides: list[str] = []
+
+    for key, value in (
+        ("approval_policy", CODEX_APPROVAL_POLICY),
+        ("sandbox_mode", CODEX_SANDBOX_MODE),
+    ):
+        try:
+            overrides += ["-c", f"{key}={_toml_literal(value)}"]
+        except ValueError as exc:
+            print(f"==> AVISO: codex: override '{key}' omitido: {exc}", flush=True)
+
+    # Booleano TOML cru, sem _toml_literal — ver CODEX_CHECK_FOR_UPDATE. Valor
+    # constante, sem encoder, então não há degradação a fazer.
+    overrides += ["-c", f"check_for_update_on_startup={CODEX_CHECK_FOR_UPDATE}"]
+
+    try:
+        overrides += [
+            "-c",
+            f"notify={_toml_literal_array(_build_codex_notify_argv(session_id))}",
+        ]
+    except ValueError as exc:
+        print(f"==> AVISO: codex: notify omitido: {exc}", flush=True)
+
+    for name, spec in _escritorio_mcp_servers(session_id).items():
+        try:
+            # Só os VALORES passam por _toml_literal. As porções de CHAVE
+            # (`name`, `env_name`) são constantes literais deste módulo, não
+            # entrada de usuário — não há o que sanear, e nenhuma delas contém
+            # um caractere proibido.
+            server = [
+                "-c", f"mcp_servers.{name}.command={_toml_literal(spec['command'])}",
+                "-c", f"mcp_servers.{name}.args={_toml_literal_array(spec['args'])}",
+            ]
+            for env_name, env_value in spec["env"].items():
+                server += [
+                    "-c",
+                    f"mcp_servers.{name}.env.{env_name}={_toml_literal(env_value)}",
+                ]
+        except ValueError as exc:
+            print(f"==> AVISO: codex: servidor MCP '{name}' omitido: {exc}", flush=True)
+            continue
+        overrides += server
+
+    return overrides
+
+
+def _build_codex_cmd(agent, session_id: str, resume: bool, cwd: str | None) -> list[str]:
+    """Monta o argv do codex para o PTY. Nunca levanta exceção (ver overrides).
+
+    Os `-c` vêm DEPOIS do subcomando `resume` de propósito: o parser do codex
+    aceita `-c` tanto global quanto por subcomando, e pô-los depois evita
+    qualquer dúvida sobre a que comando eles pertencem.
+
+    `system_prompt` é IGNORADO, mesmo tratamento dos ramos "cursor"/"terminal":
+    o codex não tem um equivalente de --append-system-prompt, e o PROMPT
+    posicional consumiria o primeiro turno da conversa (o agente responderia ao
+    system prompt em vez de esperar o usuário). O caminho do codex para
+    instruções persistentes é o AGENTS.md do projeto, fora do escopo daqui.
+    """
+    cmd = list(agent.cmd) if agent else ["codex"]
+    if resume:
+        cmd += list(CODEX_RESUME_ARGS)
+    return cmd + _build_codex_config_overrides(session_id, cwd)
 
 
 def _build_pty_cmd(
@@ -801,7 +1064,10 @@ def _build_pty_cmd(
     return cmd
 
 
-def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | None) -> list[str]:
+def _build_agent_cmd(
+    agent, session_id: str, resume: bool, system_prompt: str | None,
+    cwd: str | None = None,
+) -> list[str]:
     """Dispatches to the right CLI invocation based on the resolved agent's `ia`.
 
     Claude keeps the exact --session-id/--resume/--append-system-prompt contract
@@ -809,6 +1075,21 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
     cmd as the spawn base — e.g. a "claude-work" global agent launches that
     binary instead of the hardcoded "claude", while still getting the
     Stop-hook/mcp-config flags _build_pty_cmd always appends).
+
+    ia="codex" builds the OpenAI `codex` CLI invocation via _build_codex_cmd —
+    parity with claude (PTY + resume + end-of-turn notify + the two Escritório
+    MCP servers), delivered entirely through `-c key=value` spawn overrides
+    instead of config files. `cwd` (the resolved project directory) is
+    threaded through to this branch but currently unused by it: an earlier
+    attempt to pre-trust the workspace via a `-c projects.'<cwd>'.trust_level`
+    override proved to be a no-op against the real binary (see
+    _build_codex_config_overrides for the measurement) and was removed; the
+    parameter stays in the signature for call-site/test stability and possible
+    future use.
+
+    `cwd` defaults to None so every pre-existing call site (and contract test,
+    which passes `system_prompt=` by keyword) is unaffected — only claude/codex
+    care about it and claude ignores it.
 
     ia="terminal" is a raw terminal — no CLI contract to honor at all, so
     agent.cmd is returned completely unmodified (no --dangerously-skip-
@@ -844,6 +1125,8 @@ def _build_agent_cmd(agent, session_id: str, resume: bool, system_prompt: str | 
     """
     if agent is None or agent.ia == "claude":
         return _build_pty_cmd(session_id, resume, system_prompt, base_cmd=agent.cmd if agent else None)
+    if agent.ia == "codex":
+        return _build_codex_cmd(agent, session_id, resume, cwd)
     if agent.ia == "terminal":
         return list(agent.cmd)
     if agent.ia == "cursor":
@@ -963,7 +1246,7 @@ async def _ensure_pty_locked(session_key: str, project_id: str, agent_id: str | 
     proj, agent, cwd = _resolve_agent(project_id, agent_id)
     if agent_id and (agent is None or agent.id != agent_id):
         # Um agent_id explícito foi pedido mas _resolve_agent não achou (projeto
-        # não "elegível" — sem .claude/.gemini, então proj.agentes vem vazio —
+        # não "elegível" — sem .claude/.gemini/.codex, então proj.agentes vem vazio —
         # ou o id não existe mais no Global Agent Registry). SEM esse guard,
         # _build_agent_cmd(None, ...) cai silenciosamente no `claude` puro, sem
         # nenhum env/cmd customizado do agente pedido — ex.: um agente com
@@ -993,6 +1276,7 @@ async def _ensure_pty_locked(session_key: str, project_id: str, agent_id: str | 
         session_uuid,
         resume=resume,
         system_prompt=agent.system_prompt if agent else None,
+        cwd=cwd,
     )
     await store.set(session_key, session_uuid)
     proc = pty_manager.spawn(session_key, cmd, cwd=cwd, cols=cols, rows=rows,
@@ -1338,6 +1622,11 @@ async def hook_stop(request: Request):
     agente termina uma resposta e volta a aguardar o usuário. O corpo é o
     stdin cru do hook (contém session_id = UUID da CLI, não a session_key do
     Escritório) — resolve pela mesma tabela que já mapeia os dois.
+
+    Tem DOIS produtores hoje: além do hook Stop do `claude`, o
+    `codex_notify_adapter.py` também POSTa aqui ao fim de cada turno do `codex`
+    (registrado via `-c notify=[...]` no spawn, ver _build_codex_notify_argv),
+    com o mesmo corpo `{"session_id": <uuid da CLI>}`.
     """
     try:
         payload = await request.json()

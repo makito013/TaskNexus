@@ -100,6 +100,23 @@ describe('AgentForm — criação', () => {
     }));
   });
 
+  it('allows selecting "codex" as the ia and submits it unmodified', async () => {
+    const { onSubmit } = renderForm();
+
+    setInputValue(screen.getByLabelText('ID'), 'codex-1');
+    setInputValue(screen.getByLabelText('Nome'), 'Codex');
+    setInputValue(screen.getByLabelText('Papel'), 'Assistente');
+    fireEvent.change(screen.getByLabelText('IA'), { target: { value: 'codex' } });
+    setInputValue(screen.getByLabelText('Comando'), 'codex');
+
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({
+      id: 'codex-1', nome: 'Codex', papel: 'Assistente', ia: 'codex',
+      cmd: ['codex'], env: {},
+    }));
+  });
+
   it('surfaces the rejection message inline and does not call onSaved when onSubmit fails', async () => {
     const { onSubmit, onSaved } = renderForm({
       onSubmit: vi.fn().mockRejectedValue(new Error('Já existe um agente com esse id')),

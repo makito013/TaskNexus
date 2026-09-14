@@ -293,3 +293,28 @@ def test_put_projects_root_re_pretrusts_projects_in_new_root(client, tmp_path):
         r = client.put("/api/settings/projects-root", json={"projects_root_path": str(new_root)})
     assert r.status_code == 200
     mock_pretrust.assert_called_once()
+
+
+def test_pretrust_skips_projects_without_claude_dir(tmp_path, monkeypatch):
+    """SEC-2: `_pretrust_projects` writes `hasTrustDialogAccepted: true` to the
+    `claude` config only for projects that actually have `.claude/`. Since
+    `.codex/` (and `.gemini/`) now make a project eligible, blindly trusting
+    every scanned project would erase `claude`'s trust confirmation for repos it
+    has never opened. codex has its own trust gate and does not read this file."""
+    import json
+    import app.main as main_mod
+
+    (tmp_path / "proj-claude" / ".claude").mkdir(parents=True)
+    (tmp_path / "proj-codex" / ".codex").mkdir(parents=True)
+    (tmp_path / "proj-gemini" / ".gemini").mkdir(parents=True)
+    config = tmp_path / "claude.json"
+    config.write_text("{}")
+    monkeypatch.setenv("CLAUDE_CONFIG_PATH", str(config))
+    monkeypatch.setattr(main_mod, "PROJECTS_ROOT", str(tmp_path))
+
+    main_mod._pretrust_projects()
+
+    trusted = set(json.loads(config.read_text()).get("projects", {}))
+    assert str(tmp_path / "proj-claude") in trusted
+    assert str(tmp_path / "proj-codex") not in trusted
+    assert str(tmp_path / "proj-gemini") not in trusted
