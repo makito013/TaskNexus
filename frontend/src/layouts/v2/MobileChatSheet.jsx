@@ -99,6 +99,7 @@ export function MobileChatSheet({
   onRenameChat,
   onCloseChat,
   onStartNewChat,
+  onRetryProjects,
 }) {
   const [newChatSheetOpen, setNewChatSheetOpen] = useState(false);
 
@@ -213,6 +214,7 @@ export function MobileChatSheet({
           projects={projects}
           presentation="sheet"
           onSubmit={onStartNewChat}
+          onRetryProjects={onRetryProjects}
         />
       ) : null}
     </BottomSheet>

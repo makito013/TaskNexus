@@ -21,7 +21,10 @@ import { AppV2 } from './AppV2.jsx';
 
 vi.mock('../../hooks/useProjects.js', () => ({
   useProjects: () => [
-    [{ id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }], sub_projetos: [] }],
+    // `elegivel: true` is load-bearing since the project cascade round: the
+    // Novo chat form only enables "Criar chat" when the resolved target
+    // project is eligible.
+    [{ id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }], sub_projetos: [], elegivel: true }],
     vi.fn(),
   ],
 }));

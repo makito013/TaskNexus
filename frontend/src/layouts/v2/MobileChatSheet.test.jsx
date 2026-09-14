@@ -53,15 +53,19 @@ function getFooterNewChatButton() {
   return matches[matches.length - 1].closest('button');
 }
 
+// `elegivel: true` on the client entries is load-bearing since the cascade
+// round: `canSubmit` now requires `projectsById[targetProjectId].elegivel`,
+// so a client without it can never submit at its own root.
 const clienteComSub = {
   id: 'cliente_projeto_1',
   nome: 'Cliente 1',
   path: '/tmp/cliente_projeto_1',
   agentes: [],
+  elegivel: true,
 };
 
-// O select de Projeto agora lê de `projects` (flat, via
-// listSubProjectsForClient), não mais de `cliente.sub_projetos` — precisa de
+// O select de nível 1 lê de `projects` (flat, via
+// listPrimaryProjectsForClient), não de `cliente.sub_projetos` — precisa de
 // uma entrada própria pro sub-projeto, com `elegivel: true`.
 const subProjetoDoCliente = {
   id: 'cliente_projeto_1/subprojeto_1',
@@ -76,6 +80,7 @@ const clienteSemSub = {
   nome: 'Pode Subir',
   path: '/tmp/podesubir',
   agentes: [],
+  elegivel: true,
 };
 
 const projects = [clienteComSub, subProjetoDoCliente, clienteSemSub];
@@ -217,6 +222,33 @@ describe('MobileChatSheet — "criar novo chat" em modo "Todos" (select de Clien
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1', 'claude');
   });
+
+  // Revisor (rodada 3/integração): `isClienteId` is purely structural (no
+  // "/" in the id) — it does NOT filter by `elegivel`. A client whose own
+  // root is not eligible (scan_projects synthesises this as a
+  // `missing_parent`) must still show up as a normal option in the Cliente
+  // picker; ADR-3 is what keeps "Criar chat" locked afterwards, not the
+  // picker hiding the option. Local fixture only — no production change.
+  it('a client with a non-eligible root still appears in the Cliente picker, but "Criar chat" stays locked until an eligible target is picked (ADR-3)', () => {
+    const clienteRaizNaoElegivel = {
+      id: 'sem-raiz',
+      nome: 'Sem Raiz',
+      path: '/tmp/sem-raiz',
+      agentes: [],
+      elegivel: false,
+    };
+    const projectsWithIneligibleRoot = [...projects, clienteRaizNaoElegivel];
+    render(<MobileChatSheet {...baseProps({ selectedClienteId: null, projects: projectsWithIneligibleRoot })} />);
+    fireEvent.click(getFooterNewChatButton());
+
+    const clienteSelect = screen.getByLabelText('Cliente');
+    const optionTexts = Array.from(clienteSelect.querySelectorAll('option')).map((o) => o.textContent);
+    expect(optionTexts).toContain('Sem Raiz');
+
+    fireEvent.change(clienteSelect, { target: { value: 'sem-raiz' } });
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    expect(screen.getByText('Criar chat').closest('button').disabled).toBe(true);
+  });
 });
 
 // Achado do Revisor (feature de navegação mobile, aprovada com ressalvas
@@ -243,16 +275,16 @@ describe('MobileChatSheet — "criar novo chat" (fluxo completo, achado do Revis
     const onStartNewChat = vi.fn();
     render(<MobileChatSheet {...baseProps({ selectedClienteId: 'cliente_projeto_1', onStartNewChat })} />);
     fireEvent.click(getFooterNewChatButton());
-    fireEvent.change(screen.getByLabelText('Projeto'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto principal'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude');
   });
 
-  it('cliente sem sub-projeto elegível: não mostra o select de projeto, só o fallback único de que abre na raiz', () => {
+  it('client with no children: does not show the level-1 select, falls into state A (error + retry)', () => {
     render(<MobileChatSheet {...baseProps({ selectedClienteId: 'podesubir' })} />);
     fireEvent.click(getFooterNewChatButton());
-    expect(screen.queryByLabelText('Projeto')).toBeNull();
+    expect(screen.queryByLabelText('Projeto principal')).toBeNull();
     expect(screen.getByText('Nenhum projeto disponível agora. O chat abre na raiz de Pode Subir.')).toBeTruthy();
   });
 
