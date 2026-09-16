@@ -72,6 +72,28 @@ vi.mock('../../hooks/useCards.js', () => ({
   useCards: (...args) => mockUseCards(...args),
 }));
 
+// Mocked for the same reason as useCards: BoardV2 owns the board's columns
+// now (task #43), and without this these tests would hit a real fetch of
+// /api/board/columns and render a board with no columns at all.
+vi.mock('../../hooks/useColumns.js', () => ({
+  useColumns: () => ({
+    columns: [
+      { slug: 'a_fazer', label: 'A Fazer', position: 1, is_done: false },
+      { slug: 'em_andamento', label: 'Em Andamento', position: 2, is_done: false },
+      { slug: 'em_revisao', label: 'Em Revisão', position: 3, is_done: false },
+      { slug: 'feito', label: 'Feito', position: 4, is_done: true },
+    ],
+    loading: false,
+    doneSlug: 'feito',
+    firstSlug: 'a_fazer',
+    createColumn: vi.fn(),
+    renameColumn: vi.fn(),
+    reorderColumns: vi.fn(),
+    setDoneColumn: vi.fn(),
+    deleteColumn: vi.fn(),
+  }),
+}));
+
 vi.mock('../../hooks/useGlobalTasks.js', () => ({
   useGlobalTasks: () => ({
     tasks: [{ id: 1, titulo: 'Tarefa teste', status: 'pending', session_key: 'projA::claude', projeto_id: 'projA', agent_id: 'claude', session_display_name: null }],
@@ -235,7 +257,7 @@ describe('AppV2 — BoardV2 segue o cliente selecionado na sidebar (Fase 2, desa
     goTo('Board');
     // mockUseTerminal (topo do arquivo) tem selectedProjectId: 'projA', que
     // não tem "/" — clienteIdFromProjetoId('projA') === 'projA'.
-    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(mockUseCards).toHaveBeenCalledWith([], 'feito');
     expect(screen.getByText('Card Projeto A')).toBeTruthy();
     expect(screen.queryByText('Card Outro Cliente')).toBeNull();
   });
@@ -244,13 +266,13 @@ describe('AppV2 — BoardV2 segue o cliente selecionado na sidebar (Fase 2, desa
     mockTwoClientCards();
     render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
     goTo('Board');
-    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(mockUseCards).toHaveBeenCalledWith([], 'feito');
     expect(screen.queryByText('Card Outro Cliente')).toBeNull();
 
     // "Todos" na ClienteList da SidebarV2 (desktop) — via `title`.
     fireEvent.click(screen.getByTitle('Todos'));
 
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
     expect(screen.getByText('Card Outro Cliente')).toBeTruthy();
   });
 
@@ -259,11 +281,11 @@ describe('AppV2 — BoardV2 segue o cliente selecionado na sidebar (Fase 2, desa
     render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
     goTo('Board');
     fireEvent.click(screen.getByTitle('Todos'));
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
     expect(screen.getByText('Card Outro Cliente')).toBeTruthy();
 
     fireEvent.click(screen.getByTitle('Projeto A'));
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
     expect(screen.getByText('Card Projeto A')).toBeTruthy();
     expect(screen.queryByText('Card Outro Cliente')).toBeNull();
   });

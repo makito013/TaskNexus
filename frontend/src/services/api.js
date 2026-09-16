@@ -241,6 +241,87 @@ export const api = {
     return r.json()
   },
 
+  // -- Colunas do board (task #43, fase 1) --
+  //
+  // Escopo global: não há coluna por projeto, então nenhuma destas chamadas
+  // leva projeto_id. Só o Bruno gerencia coluna pela UI — um agente via MCP
+  // apenas move card entre colunas que já existem.
+
+  async fetchBoardColumns() {
+    const r = await fetch(`${BASE}/board/columns`)
+    if (!r.ok) throw new Error('Falha ao buscar colunas do board')
+    return r.json()
+  },
+
+  // A mensagem do backend viaja de volta como está (nome duplicado, nome
+  // vazio): é a única explicação que o usuário vai ver do porquê a criação
+  // foi recusada, e substituí-la por um texto genérico esconderia a causa.
+  async createBoardColumn(label) {
+    const r = await fetch(`${BASE}/board/columns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body.detail || 'Falha ao criar coluna')
+    }
+    return r.json()
+  },
+
+  async updateBoardColumn(slug, label) {
+    const r = await fetch(`${BASE}/board/columns/${encodeURIComponent(slug)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      throw new Error(body.detail || 'Falha ao renomear coluna')
+    }
+    return r.json()
+  },
+
+  // `slugs` é a ordem INTEIRA, não um par trocado — o backend exige uma
+  // permutação exata e responde 409 a qualquer outra coisa.
+  async reorderBoardColumns(slugs) {
+    const r = await fetch(`${BASE}/board/columns/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slugs }),
+    })
+    if (!r.ok) throw new Error('Falha ao reordenar colunas')
+    return r.json()
+  },
+
+  async setDoneColumn(slug) {
+    const r = await fetch(`${BASE}/board/columns/${encodeURIComponent(slug)}/done`, {
+      method: 'POST',
+    })
+    if (!r.ok) throw new Error('Falha ao marcar a coluna como concluída')
+    return r.json()
+  },
+
+  // Rejeição 409 carrega `detail.reason` (coluna_concluida / ultima_coluna /
+  // coluna_com_cards) e `detail.cards`. O erro lançado leva os dois em
+  // propriedades próprias porque o chamador escolhe QUAL diálogo mostrar a
+  // partir do motivo — casar por texto quebraria na primeira mudança de
+  // redação do backend.
+  async deleteBoardColumn(slug) {
+    const r = await fetch(`${BASE}/board/columns/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      const detail = body.detail || {}
+      const error = new Error(detail.message || 'Falha ao excluir coluna')
+      error.reason = detail.reason || null
+      error.cards = detail.cards || 0
+      throw error
+    }
+    return r.json()
+  },
+
   // -- Tarefas (visão global, Fase 05-tarefas-board-jira, Tarefa 27) --
 
   async fetchGlobalTasks() {

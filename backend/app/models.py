@@ -174,7 +174,12 @@ class Card(BaseModel):
     titulo: str
     projeto_id: str
     parent_id: int | None = None
-    status: str  # "a_fazer" | "em_andamento" | "em_revisao" | "feito"
+    # Slug de uma coluna de `board_columns` — essa tabela é a fonte da verdade,
+    # e o conjunto é DINÂMICO (o usuário cria, renomeia e exclui colunas). Não
+    # há lista fixa para enumerar aqui: os quatro slugs históricos
+    # (a_fazer/em_andamento/em_revisao/feito) são apenas a semeadura inicial e
+    # qualquer um deles pode deixar de existir.
+    status: str
     origem: str  # "bruno" | "agente:{agent_id}"
     ultima_atualizacao_por: str
     descricao: str | None = None
@@ -187,6 +192,12 @@ class Card(BaseModel):
     # REQUEST models (CardCreateRequest/CardUpdateRequest).
     tipo: str | None = None
     prazo: str | None = None
+    # Manual ordering inside a board column. READ-ONLY in this contract: it is
+    # never accepted on CardCreateRequest/CardUpdateRequest — the backend
+    # assigns it (end of the destination column) and, from Phase 3 on, the
+    # dedicated /move endpoint rewrites it. NULL on every subcard: subcards are
+    # ordered by id inside their parent, they have no board position.
+    board_position: float | None = None
     subcards: list["Card"] = []
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
@@ -311,6 +322,39 @@ class HookCardListRequest(BaseModel):
     redundante ou uma tentativa de acesso cross-tenant."""
     claude_session_id: str
     projeto_id: str | None = None
+
+
+class BoardColumn(BaseModel):
+    """Uma coluna do board. Escopo GLOBAL (não há coluna por projeto) e
+    `slug` IMUTÁVEL: ele é o valor gravado em `cards.status`, então renomear
+    uma coluna só troca o `label`. Exatamente uma coluna tem `is_done` — é
+    ela que define "concluído" para o resumo de subcards, para o cálculo de
+    prazo atrasado e para "limpar concluídos"."""
+    slug: str
+    label: str
+    position: int
+    is_done: bool
+
+
+class BoardColumnCreateRequest(BaseModel):
+    """Body de POST /api/board/columns. Só o label: o slug é derivado dele no
+    backend (board_columns.slugify_column_label) e a position é sempre o fim
+    da ordem."""
+    label: str
+
+
+class BoardColumnUpdateRequest(BaseModel):
+    """Body de PATCH /api/board/columns/{slug} — renomeio. Não aceita slug,
+    position nem is_done de propósito: cada um tem seu próprio caminho
+    (imutável / POST reorder / POST done)."""
+    label: str
+
+
+class BoardColumnReorderRequest(BaseModel):
+    """Body de POST /api/board/columns/reorder. `slugs` precisa ser uma
+    permutação exata do conjunto atual de colunas — a lista INTEIRA na nova
+    ordem, não um par de vizinhos trocados."""
+    slugs: list[str]
 
 
 class LimparConcluidosResult(BaseModel):

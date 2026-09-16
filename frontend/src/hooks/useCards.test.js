@@ -192,7 +192,9 @@ describe('useCards — createSubcard', () => {
   it('inserts the subcard under the correct parent card in local state', async () => {
     const parent = fakeCard({ id: 1, titulo: 'Pai' });
     global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([parent]) }));
-    const { result } = renderHook(() => useCards());
+    // `doneSlug` (2nd argument, from useColumns) is what "feitos" is counted
+    // against — the hook no longer hard-codes 'feito'.
+    const { result } = renderHook(() => useCards(undefined, 'feito'));
     await waitFor(() => expect(result.current.cards).toEqual([parent]));
 
     const subcard = fakeCard({ id: 99, titulo: 'Sub', parent_id: 1 });
@@ -291,7 +293,7 @@ describe('useCards — clearFinished', () => {
     global.fetch = vi.fn(() => Promise.resolve({
       ok: true, json: () => Promise.resolve([finishedA, pendingA, finishedB]),
     }));
-    const { result } = renderHook(() => useCards());
+    const { result } = renderHook(() => useCards(undefined, 'feito'));
     await waitFor(() => expect(result.current.cards).toHaveLength(3));
 
     global.fetch = vi.fn(() => Promise.resolve({
@@ -324,5 +326,100 @@ describe('useCards — clearFinished', () => {
 
     expect(result.current.cards).toEqual([finishedA]);
     expect(global.alert).toHaveBeenCalledWith(expect.stringContaining('Falha ao limpar concluídos'));
+  });
+});
+
+
+// The board's "done" column is user-managed (task #43): every local
+// recomputation that used to compare against the literal 'feito' now compares
+// against the `doneSlug` the caller threads in from useColumns.
+describe('useCards — doneSlug threading', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('counts the subcard summary against the done COLUMN, not the literal "feito"', async () => {
+    const parent = fakeCard({
+      id: 1,
+      subcards: [
+        fakeCard({ id: 2, parent_id: 1, status: 'em_revisao' }),
+        fakeCard({ id: 3, parent_id: 1, status: 'feito' }),
+      ],
+      subcards_resumo: { total: 2, feitos: 1 },
+    });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([parent]) }));
+    const { result } = renderHook(() => useCards(undefined, 'em_revisao'));
+    await waitFor(() => expect(result.current.cards).toHaveLength(1));
+
+    // Touching a subcard triggers the recount. With 'em_revisao' as the done
+    // column, the 'feito' subcard is the one that stops counting.
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(fakeCard({ id: 2, parent_id: 1, status: 'em_revisao', titulo: 'Sub editado' })),
+    }));
+    await act(async () => {
+      await result.current.updateCard(2, { titulo: 'Sub editado' });
+    });
+
+    expect(result.current.cards[0].subcards_resumo).toEqual({ total: 2, feitos: 1 });
+    expect(result.current.cards[0].subcards.map((s) => s.status)).toEqual(['em_revisao', 'feito']);
+  });
+
+  it('leaves the server-sent summary alone while doneSlug is still null', async () => {
+    const parent = fakeCard({
+      id: 1,
+      subcards: [fakeCard({ id: 2, parent_id: 1, status: 'feito' })],
+      subcards_resumo: { total: 1, feitos: 1 },
+    });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([parent]) }));
+    // No doneSlug: the columns have not loaded yet.
+    const { result } = renderHook(() => useCards());
+    await waitFor(() => expect(result.current.cards).toHaveLength(1));
+
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(fakeCard({ id: 2, parent_id: 1, status: 'feito', titulo: 'Sub editado' })),
+    }));
+    await act(async () => {
+      await result.current.updateCard(2, { titulo: 'Sub editado' });
+    });
+
+    // Recomputing here would have flashed a wrong "0 de 1" over a correct
+    // server-side count, because nothing is known to be done yet.
+    expect(result.current.cards[0].subcards_resumo).toEqual({ total: 1, feitos: 1 });
+  });
+
+  it('clears the cards of the done COLUMN, following it when the mark moves', async () => {
+    const revisao = fakeCard({ id: 1, projeto_id: 'projA', status: 'em_revisao' });
+    const feito = fakeCard({ id: 2, projeto_id: 'projA', status: 'feito' });
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true, json: () => Promise.resolve([revisao, feito]),
+    }));
+    const { result } = renderHook(() => useCards(undefined, 'em_revisao'));
+    await waitFor(() => expect(result.current.cards).toHaveLength(2));
+
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true, json: () => Promise.resolve({ cards: 1, imagens: 0, imagens_com_falha: 0 }),
+    }));
+    await act(async () => {
+      await result.current.clearFinished('projA');
+    });
+
+    expect(result.current.cards).toEqual([feito]);
+  });
+
+  it('removes nothing locally when clearing while doneSlug is still null', async () => {
+    const feito = fakeCard({ id: 1, projeto_id: 'projA', status: 'feito' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([feito]) }));
+    const { result } = renderHook(() => useCards());
+    await waitFor(() => expect(result.current.cards).toHaveLength(1));
+
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true, json: () => Promise.resolve({ cards: 1, imagens: 0, imagens_com_falha: 0 }),
+    }));
+    await act(async () => {
+      await result.current.clearFinished('projA');
+    });
+
+    // Guessing would risk hiding cards the backend kept; the 5s poll settles it.
+    expect(result.current.cards).toEqual([feito]);
   });
 });

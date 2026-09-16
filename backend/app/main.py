@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
 from app.task_store import TaskStore
 from app.agent_store import GlobalAgentStore
-from app.card_store import CardStore
+from app.card_store import CardStore, ColumnDeleteError
 from app.settings_store import SettingsStore
 from app.push_store import PushSubscriptionStore, TooManySubscriptionsError
 from app.push_payload import build_push_payload
@@ -54,6 +54,10 @@ from app.models import (
     CardCreateRequest,
     SubcardCreateRequest,
     CardUpdateRequest,
+    BoardColumn,
+    BoardColumnCreateRequest,
+    BoardColumnUpdateRequest,
+    BoardColumnReorderRequest,
     LimparConcluidosResult,
     HookCardCreateRequest,
     HookCardMoveRequest,
@@ -1899,6 +1903,42 @@ def _hydrate_card_images(card: dict) -> dict:
     return card
 
 
+async def _validate_card_status(status: str | None) -> str | None:
+    """Validate `status` against the columns that actually exist. Returns the
+    error message, or None if valid/absent.
+
+    Shared by BOTH write paths, which differ only in how they report it:
+    - UI/REST (create_card, create_subcard, update_card) -> HTTPException 400,
+      via `_require_valid_card_status` below;
+    - agent/MCP (hook_cards_create/move/update) -> {"success": False, "error"},
+      because a raised 422/400 is swallowed by mcp_card_adapter._post_json and
+      would reach the agent as a meaningless "connectivity error".
+
+    This is what replaced the fixed `enum` the MCP tool schemas used to carry,
+    and the column list is user-managed now, so nothing static can stand in for
+    it. Without this check a card written to an unknown status simply
+    DISAPPEARS: BoardV2 only renders columns it knows about, so the row is in
+    the database, counted nowhere, visible nowhere. The valid slugs are spelled
+    out in the error text on purpose — for the agent that message is the only
+    discovery mechanism left, and inventing a whole "list columns" tool for it
+    would be a bigger surface than the problem."""
+    if status is None:
+        return None
+    columns = await card_store.list_columns()
+    if any(c["slug"] == status for c in columns):
+        return None
+    validos = ", ".join(c["slug"] for c in columns)
+    return f"Coluna '{status}' não existe. Colunas válidas: {validos}."
+
+
+async def _require_valid_card_status(status: str | None) -> None:
+    """UI/REST half of the check above: 400, same mapping the card endpoints
+    already use for a ValueError out of CardStore."""
+    erro = await _validate_card_status(status)
+    if erro is not None:
+        raise HTTPException(status_code=400, detail=erro)
+
+
 @app.get("/api/cards", response_model=list[Card])
 async def list_cards(projeto_id: list[str] | None = Query(default=None)):
     cards = await card_store.list_top_level(projeto_id)
@@ -1907,6 +1947,11 @@ async def list_cards(projeto_id: list[str] | None = Query(default=None)):
 
 @app.post("/api/cards", response_model=Card, status_code=201)
 async def create_card(body: CardCreateRequest):
+    # `status` has a default of "a_fazer" here, so it is never absent — and
+    # that default is itself a column the user is now free to rename away or
+    # delete. Validated like any other value rather than trusted for being a
+    # default.
+    await _require_valid_card_status(body.status)
     try:
         card_id = await card_store.create(
             titulo=body.titulo,
@@ -1927,6 +1972,12 @@ async def create_card(body: CardCreateRequest):
 
 @app.post("/api/cards/{card_id}/subcards", response_model=Card, status_code=201)
 async def create_subcard(card_id: int, body: SubcardCreateRequest):
+    # Subcards were never covered indirectly: SubcardCreateRequest.status is a
+    # free `str` with the same "a_fazer" default, so this path accepted any
+    # value too. A subcard on an unknown status is worse than a top-level one —
+    # it is not even counted in the parent's subcards_resumo, which compares
+    # against the done column.
+    await _require_valid_card_status(body.status)
     try:
         subcard_id = await card_store.create(
             titulo=body.titulo,
@@ -1948,6 +1999,9 @@ async def create_subcard(card_id: int, body: SubcardCreateRequest):
 
 @app.patch("/api/cards/{card_id}", response_model=Card)
 async def update_card(card_id: int, body: CardUpdateRequest):
+    # None here means "status did not come in the PATCH" (same semantics as
+    # CardStore.update), and _validate_card_status passes it through untouched.
+    await _require_valid_card_status(body.status)
     updated = await card_store.update(
         card_id,
         ultima_atualizacao_por="bruno",
@@ -2046,6 +2100,84 @@ async def executar_limpar_concluidos(projeto_id: str):
     )
 
 
+# -- Colunas do board (task #43, Fase 1) -------------------------------------
+#
+# Superfície EXCLUSIVA do Bruno (UI). Nenhuma tool MCP gerencia coluna: um
+# agente só move card entre colunas que já existem (decisão de produto). Por
+# isso estes endpoints falham com HTTPException normal (4xx), em vez do
+# {"success": False, "error": ...} que os hooks de agente usam.
+
+
+@app.get("/api/board/columns", response_model=list[BoardColumn])
+async def list_board_columns():
+    return [BoardColumn(**c) for c in await card_store.list_columns()]
+
+
+@app.post("/api/board/columns", response_model=BoardColumn, status_code=201)
+async def create_board_column(body: BoardColumnCreateRequest):
+    try:
+        created = await card_store.create_column(body.label)
+    except ValueError as e:
+        # 409, não 400: o pedido está bem formado, o que colide é o estado
+        # atual do board (já existe uma coluna com esse nome).
+        raise HTTPException(status_code=409, detail=str(e))
+    return BoardColumn(**created)
+
+
+@app.patch("/api/board/columns/{slug}", response_model=BoardColumn)
+async def update_board_column(slug: str, body: BoardColumnUpdateRequest):
+    """Só o label. O slug é imutável — ver CardStore.update_column_label."""
+    try:
+        updated = await card_store.update_column_label(slug, body.label)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Coluna não encontrada: {slug}")
+    return BoardColumn(**updated)
+
+
+@app.post("/api/board/columns/reorder", response_model=list[BoardColumn])
+async def reorder_board_columns(body: BoardColumnReorderRequest):
+    """`slugs` é a ordem INTEIRA, não um par trocado. Uma lista que não é
+    permutação exata do conjunto atual vira 409: o cliente está operando sobre
+    uma leitura obsoleta (outra aba criou/excluiu uma coluna), e aplicar o que
+    ele mandou deixaria colunas com position antiga intercaladas."""
+    try:
+        columns = await card_store.reorder_columns(body.slugs)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return [BoardColumn(**c) for c in columns]
+
+
+@app.post("/api/board/columns/{slug}/done", response_model=list[BoardColumn])
+async def set_board_done_column(slug: str):
+    """Rádio, não toggle: marca esta coluna como a concluída e desmarca a
+    anterior. Devolve o board inteiro porque DUAS linhas mudaram."""
+    try:
+        columns = await card_store.set_done_column(slug)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return [BoardColumn(**c) for c in columns]
+
+
+@app.delete("/api/board/columns/{slug}")
+async def delete_board_column(slug: str):
+    """Os três motivos de recusa viajam DISCRIMINADOS em `detail.reason` (e
+    `detail.cards` na contagem), não só no texto: o frontend mostra um diálogo
+    diferente para cada um, e casar por prosa quebraria na primeira mudança de
+    redação."""
+    try:
+        result = await card_store.delete_column(slug)
+    except ColumnDeleteError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": e.reason, "message": str(e), "cards": e.cards},
+        )
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Coluna não encontrada: {slug}")
+    return {"status": "deleted", "slug": slug}
+
+
 # -- Tarefa 7 (05-TL.md): hooks do agente para o Board (criar_card/mover_card) -
 #
 # Consumidos pelo adaptador MCP (mcp_card_adapter.py, Tarefa 8 — ainda não
@@ -2111,6 +2243,24 @@ async def hook_cards_create(body: HookCardCreateRequest):
     tipo_erro = _validate_card_tipo(body.tipo)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
+
+    status_erro = await _validate_card_status(body.status)
+    if status_erro is not None:
+        return {"success": False, "error": status_erro}
+
+    # An agent may MOVE a card to the done column, but never OPEN one there:
+    # a card born done was never actually done by anybody. The old fixed enum
+    # on `criar_card` (["a_fazer", "em_andamento"]) enforced this implicitly;
+    # removing the enum would have silently dropped the rule with it.
+    done_slug = await card_store.get_done_slug()
+    if done_slug is not None and body.status == done_slug:
+        return {
+            "success": False,
+            "error": (
+                f"Não é possível criar um card direto na coluna concluída "
+                f"('{done_slug}'). Crie em outra coluna e mova depois."
+            ),
+        }
 
     own_projeto_id, _, agent_id = session_key.partition("::")
 
@@ -2196,6 +2346,10 @@ async def hook_cards_move(body: HookCardMoveRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
+    status_erro = await _validate_card_status(body.novo_status)
+    if status_erro is not None:
+        return {"success": False, "error": status_erro}
+
     origem = f"agente:{agent_id}"
     await card_store.update(body.card_id, status=body.novo_status, ultima_atualizacao_por=origem)
     return {"success": True}
@@ -2233,6 +2387,10 @@ async def hook_cards_update(body: HookCardUpdateRequest):
     tipo_erro = _validate_card_tipo(body.tipo)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
+
+    status_erro = await _validate_card_status(body.status)
+    if status_erro is not None:
+        return {"success": False, "error": status_erro}
 
     # Um update sem nenhum campo de conteúdo ainda toca atualizado_em e
     # ultima_atualizacao_por — mesmo comportamento do PATCH REST (update_card),

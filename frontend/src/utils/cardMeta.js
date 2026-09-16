@@ -62,8 +62,20 @@ export function formatPrazo(prazo, today = new Date()) {
 
 // A card is late when its due date is strictly before today AND it is not
 // done. A done card with a past due date is not late — it was delivered.
-export function isPrazoAtrasado(prazo, status, today = new Date()) {
-  if (!prazo || status === 'feito') return false;
+//
+// `doneSlug` sits BEFORE `today` in the signature on purpose. "Done" is no
+// longer the literal 'feito' — it is whichever column carries is_done, which
+// the user can move (task #43). Putting the new parameter last would let an
+// un-migrated call site keep compiling and silently mark delivered cards as
+// late; putting it third breaks such a call visibly (a Date lands where a
+// slug is expected) the first time anyone looks at the screen.
+//
+// `doneSlug` null/undefined (columns not loaded yet) means "nothing is known
+// to be done", so a card with a past due date reads as late for the one frame
+// before the columns arrive — the honest answer with no data, and the caller
+// re-renders as soon as they do.
+export function isPrazoAtrasado(prazo, status, doneSlug, today = new Date()) {
+  if (!prazo || (doneSlug != null && status === doneSlug)) return false;
   const parsed = parseIsoDate(prazo);
   if (!parsed) return false;
   const due = new Date(parsed.year, parsed.month - 1, parsed.day);

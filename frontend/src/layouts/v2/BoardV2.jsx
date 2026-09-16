@@ -1,7 +1,8 @@
 // frontend/src/layouts/v2/BoardV2.jsx
 // Milestone 3 (plano Layout v2, 05-TL.md, Tarefa 15): versão v2 do Board —
-// kanban horizontal com scroll-x, uma coluna FIXA de 300px por status (não
-// por projeto). Reaproveita `useCards` (frontend/src/hooks/useCards.js) tal
+// kanban horizontal com scroll-x, uma coluna de 300px por status (não por
+// projeto) — os STATUS eram fixos aqui até a task #43, ver nota de colunas
+// dinâmicas logo abaixo. Reaproveita `useCards` (frontend/src/hooks/useCards.js) tal
 // como está: mesmo hook, mesmas ações (createCard, updateCard) — só a
 // apresentação muda, conforme instrução do Designer/TL para este milestone.
 //
@@ -60,11 +61,20 @@
 // Continua sem exibir subcards nesta tela (decisão pré-existente acima):
 // o modal em modo 'edit' só usa `card.subcards.length` para a contagem do
 // aviso de exclusão em cascata, nunca renderiza a lista de subcards em si.
-import { useState } from 'react';
+//
+// Colunas dinâmicas (task #43, fase 1): as 4 colunas fixas por status saíram.
+// `useColumns()` é a fonte de verdade — criar (coluna-fantasma no fim do
+// scroller), renomear (clique no título), reordenar (setas ◀▶), marcar como
+// concluída e excluir (menu "⋯") acontecem todos no header da própria coluna.
+// Arrastar coluna e arrastar card ficam para as fases 2 e 3.
+import { useRef, useState } from 'react';
+import { BoardColumnDeleteDialog } from '../../components/board/BoardColumnDeleteDialog.jsx';
+import { BoardColumnMenu } from '../../components/board/BoardColumnMenu.jsx';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
 import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
+import { useColumns } from '../../hooks/useColumns.js';
 import {
   CARD_TIPO_COLORS,
   CARD_TIPO_LABELS,
@@ -79,13 +89,23 @@ import {
   useClienteProjetoFilter,
 } from './useClienteProjetoFilter.js';
 
-const STATUSES = ['a_fazer', 'em_andamento', 'em_revisao', 'feito'];
-const STATUS_LABELS = {
-  a_fazer: 'A Fazer',
-  em_andamento: 'Em Andamento',
-  em_revisao: 'Em Revisão',
-  feito: 'Feito',
-};
+// Reorder feedback is a border FLASH, not a position animation: the columns
+// swap instantly in the flex row (animating a 300px-wide box sliding past
+// another reads as lag, not as motion), and the moved column identifies itself
+// by pulsing its border. Keyframes cannot live in an inline style object, so
+// this is injected once as a real stylesheet by the component below.
+const COLUMN_FLASH_CSS = `
+@keyframes v2-column-flash {
+  from { border-color: var(--v2-accent); }
+  to { border-color: var(--v2-border); }
+}
+.v2-column-flash {
+  animation: v2-column-flash 200ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-column-flash { animation: none; }
+}
+`;
 
 const styles = {
   page: {
@@ -142,33 +162,126 @@ const styles = {
     overflowY: 'hidden',
     alignItems: 'flex-start',
   },
-  column: {
+  // `isDone` swaps the border colour for the accent — the done column is the
+  // one every other feature keys off (subcard summary, late-deadline rule,
+  // "limpar concluídos"), so it has to be identifiable at a glance without
+  // opening a menu. The "✓" pill next to the title carries the same meaning
+  // for anyone who cannot perceive the border colour.
+  column: (isDone) => ({
     width: '300px',
     minWidth: '300px',
     display: 'flex',
     flexDirection: 'column',
     background: 'var(--v2-surface)',
-    border: '1px solid var(--v2-border)',
+    border: `1px solid ${isDone ? 'var(--v2-accent)' : 'var(--v2-border)'}`,
     borderRadius: '12px',
     height: '100%',
     overflow: 'hidden',
-  },
+  }),
   columnHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '12px 14px',
+    gap: '6px',
+    padding: '12px 10px 12px 14px',
     borderBottom: '1px solid var(--v2-border)',
     flexShrink: 0,
   },
+  // A <button> reset to look like the plain text it replaced — same trick as
+  // `cardTitle` below. Clicking it turns the title into an inline input.
   columnTitle: {
+    flex: 1,
+    minWidth: 0,
+    display: 'block',
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    margin: 0,
+    textAlign: 'left',
+    font: 'inherit',
+    cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
     color: 'var(--v2-text)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  columnTitleInput: {
+    flex: 1,
+    minWidth: 0,
+    padding: '2px 6px',
+    borderRadius: '6px',
+    border: '1px solid var(--v2-accent)',
+    background: 'var(--v2-surface-2)',
+    color: 'var(--v2-text)',
+    font: 'inherit',
+    fontSize: '13px',
+    fontWeight: 600,
   },
   columnCount: {
     fontSize: '11px',
     color: 'var(--v2-text-faint)',
+    flexShrink: 0,
+  },
+  // Same vocabulary as `tipoChip`: soft accent background, strong accent text.
+  doneBadge: {
+    padding: '2px 6px',
+    borderRadius: '6px',
+    background: 'var(--v2-accent-soft)',
+    color: 'var(--v2-accent-strong)',
+    fontSize: '10px',
+    fontWeight: 700,
+    lineHeight: 1.4,
+    flexShrink: 0,
+  },
+  // Always visible, never hidden-until-hover: on a touch screen there is no
+  // hover to reveal them. Disabled state is a COLOUR change, never `opacity` —
+  // a faded arrow on this surface reads as a rendering glitch rather than as
+  // "you are already at the end".
+  arrowBtn: (disabled) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '28px',
+    height: '28px',
+    minWidth: '28px',
+    padding: 0,
+    borderRadius: '6px',
+    border: '1px solid var(--v2-border)',
+    background: 'var(--v2-surface-3)',
+    color: disabled ? 'var(--v2-text-faint)' : 'var(--v2-text-dim)',
+    fontSize: '11px',
+    lineHeight: 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    flexShrink: 0,
+  }),
+  // Ghost column: the "+ nova coluna" affordance, narrower than a real column
+  // and dashed so it never reads as a column that simply has no cards.
+  ghostColumn: {
+    width: '120px',
+    minWidth: '120px',
+    display: 'flex',
+    alignItems: 'flex-start',
+    padding: '12px 10px',
+    border: '1px dashed var(--v2-border)',
+    borderRadius: '12px',
+    background: 'transparent',
+    color: 'var(--v2-text-dim)',
+    fontSize: '12px',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  ghostInput: {
+    width: '120px',
+    minWidth: '120px',
+    padding: '12px 10px',
+    border: '1px solid var(--v2-accent)',
+    borderRadius: '12px',
+    background: 'var(--v2-surface-2)',
+    color: 'var(--v2-text)',
+    font: 'inherit',
+    fontSize: '12px',
+    flexShrink: 0,
   },
   columnBody: {
     flex: 1,
@@ -345,6 +458,23 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   const fetchProjectIds = effectiveClienteId != null && selectedProjetoId == null
     ? []
     : selectedProjectIds;
+
+  // Columns are GLOBAL — no project filter — so this hook takes no argument
+  // and does no polling (see useColumns.js). `doneSlug` is threaded into
+  // useCards so that every local recomputation of "done" agrees with the
+  // board instead of hard-coding 'feito'.
+  const {
+    columns,
+    loading: columnsLoading,
+    doneSlug,
+    firstSlug,
+    createColumn,
+    renameColumn,
+    reorderColumns,
+    setDoneColumn,
+    deleteColumn,
+  } = useColumns();
+
   const {
     cards: fetchedCards,
     createCard,
@@ -354,7 +484,7 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
     deleteCardImage,
     previewClearFinished,
     clearFinished,
-  } = useCards(fetchProjectIds);
+  } = useCards(fetchProjectIds, doneSlug);
 
   // Filtro de exibição client-side, sempre que um cliente está fixo — no
   // ramo "Tier 2 em Todos" acima ele é o que de fato restringe a tela a este
@@ -417,6 +547,118 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
 
   const handleMove = (cardId, status) => updateCard(cardId, { status });
 
+  // -- column management state ---------------------------------------------
+  //
+  // All of it is local and transient: which column's title is being edited,
+  // which "⋯" menu is open, whether the ghost column has turned into an
+  // input, and which column just moved (for the border flash). None of it
+  // belongs in useColumns, which owns the persisted list only.
+  const [editingColumnSlug, setEditingColumnSlug] = useState(null);
+  const [columnDraftLabel, setColumnDraftLabel] = useState('');
+  const [openMenuSlug, setOpenMenuSlug] = useState(null);
+  const [creatingColumn, setCreatingColumn] = useState(false);
+  const [newColumnLabel, setNewColumnLabel] = useState('');
+  const [flashedSlug, setFlashedSlug] = useState(null);
+  // { slug, label, reason, cards } — `reason: 'confirm'` is the real
+  // confirmation; the others are the backend's refusal codes.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingColumn, setDeletingColumn] = useState(false);
+
+  // Escape unmounts the inline input, and React fires `blur` on unmount in
+  // some paths — which would commit the very draft the user just cancelled.
+  // A ref, not state: `commitColumnLabel` closes over the render's state, so a
+  // setState in the Escape handler would not be visible to the blur that
+  // follows in the same tick.
+  const renameCancelledRef = useRef(false);
+
+  const startEditingColumn = (column) => {
+    renameCancelledRef.current = false;
+    setEditingColumnSlug(column.slug);
+    setColumnDraftLabel(column.label);
+  };
+
+  const cancelEditingColumn = () => {
+    renameCancelledRef.current = true;
+    setEditingColumnSlug(null);
+  };
+
+  // Enter and blur both commit; Escape reverts. An unchanged or empty draft
+  // is a silent no-op rather than a failed request — retyping the same name
+  // is not an error worth an alert.
+  const commitColumnLabel = async (column) => {
+    if (renameCancelledRef.current) return;
+    const label = columnDraftLabel.trim();
+    setEditingColumnSlug(null);
+    if (!label || label === column.label) return;
+    try {
+      await renameColumn(column.slug, label);
+    } catch (e) {
+      alert(e.message || 'Falha ao renomear a coluna.');
+    }
+  };
+
+  const commitNewColumn = async () => {
+    const label = newColumnLabel.trim();
+    setCreatingColumn(false);
+    setNewColumnLabel('');
+    if (!label) return;
+    try {
+      await createColumn(label);
+    } catch (e) {
+      alert(e.message || 'Falha ao criar a coluna.');
+    }
+  };
+
+  // The endpoint takes the WHOLE new order, not a pair of neighbours, so the
+  // swap is computed here and the full list is sent.
+  const handleMoveColumn = async (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= columns.length) return;
+    const slugs = columns.map((c) => c.slug);
+    [slugs[index], slugs[target]] = [slugs[target], slugs[index]];
+    const movedSlug = slugs[target];
+    try {
+      await reorderColumns(slugs);
+      // Re-arming the flash needs the class to actually leave the DOM first,
+      // otherwise moving the same column twice in a row replays nothing.
+      setFlashedSlug(null);
+      requestAnimationFrame(() => setFlashedSlug(movedSlug));
+    } catch (e) {
+      alert(e.message || 'Falha ao reordenar as colunas.');
+    }
+  };
+
+  const handleMarkDone = async (slug) => {
+    try {
+      await setDoneColumn(slug);
+    } catch (e) {
+      alert(e.message || 'Falha ao marcar a coluna como concluída.');
+    }
+  };
+
+  // The dialog is opened OPTIMISTICALLY as a real confirmation and only
+  // downgraded to one of the informational variants if the backend refuses:
+  // the frontend cannot count a column's cards on its own (the board may be
+  // showing a filtered subset, and subcards count too), so the server's
+  // answer is the only trustworthy one.
+  const handleConfirmDeleteColumn = async () => {
+    if (!deleteTarget) return;
+    setDeletingColumn(true);
+    try {
+      await deleteColumn(deleteTarget.slug);
+      setDeleteTarget(null);
+    } catch (e) {
+      if (e.reason) {
+        setDeleteTarget({ ...deleteTarget, reason: e.reason, cards: e.cards || 0 });
+      } else {
+        alert(e.message || 'Falha ao excluir a coluna.');
+        setDeleteTarget(null);
+      }
+    } finally {
+      setDeletingColumn(false);
+    }
+  };
+
   const handleEditSubmit = (payload) => updateCard(editingCardId, payload);
 
   const handleEditDelete = async (cardId) => {
@@ -450,14 +692,85 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           </button>
         </div>
       </div>
+      <style>{COLUMN_FLASH_CSS}</style>
+      {/* The scroller waits for the columns. Rendering it during `loading`
+          would paint a board with zero columns and a `doneSlug` of null for
+          one frame — every card would flash as "not done" and the ghost
+          column would sit alone on an empty board. */}
+      {!columnsLoading && (
       <div style={styles.scroller}>
-        {STATUSES.map((status) => {
+        {columns.map((column, columnIndex) => {
+          const status = column.slug;
           const columnCards = cards.filter((c) => c.status === status);
+          const isFirst = columnIndex === 0;
+          const isLast = columnIndex === columns.length - 1;
           return (
-            <div key={status} style={styles.column} data-testid={`board-v2-col-${status}`}>
+            <div
+              key={status}
+              style={styles.column(column.is_done)}
+              className={flashedSlug === status ? 'v2-column-flash' : undefined}
+              data-testid={`board-v2-col-${status}`}
+            >
               <div style={styles.columnHeader}>
-                <span style={styles.columnTitle}>{STATUS_LABELS[status]}</span>
+                <button
+                  type="button"
+                  style={styles.arrowBtn(isFirst)}
+                  disabled={isFirst}
+                  aria-label={`Mover coluna ${column.label} para a esquerda`}
+                  onClick={() => handleMoveColumn(columnIndex, -1)}
+                >
+                  ◀
+                </button>
+
+                {editingColumnSlug === status ? (
+                  <input
+                    style={styles.columnTitleInput}
+                    value={columnDraftLabel}
+                    autoFocus
+                    aria-label={`Renomear coluna ${column.label}`}
+                    onChange={(e) => setColumnDraftLabel(e.target.value)}
+                    onBlur={() => commitColumnLabel(column)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') cancelEditingColumn();
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    style={styles.columnTitle}
+                    onClick={() => startEditingColumn(column)}
+                  >
+                    {column.label}
+                  </button>
+                )}
+
+                {column.is_done && (
+                  <span style={styles.doneBadge} aria-label="Coluna concluída">✓</span>
+                )}
                 <span style={styles.columnCount}>({columnCards.length})</span>
+
+                <button
+                  type="button"
+                  style={styles.arrowBtn(isLast)}
+                  disabled={isLast}
+                  aria-label={`Mover coluna ${column.label} para a direita`}
+                  onClick={() => handleMoveColumn(columnIndex, 1)}
+                >
+                  ▶
+                </button>
+
+                <BoardColumnMenu
+                  columnLabel={column.label}
+                  isDone={column.is_done}
+                  isLastColumn={columns.length === 1}
+                  open={openMenuSlug === status}
+                  onToggle={(next) => setOpenMenuSlug(next ? status : null)}
+                  onMarkDone={() => handleMarkDone(status)}
+                  onRequestDelete={() => setDeleteTarget({
+                    slug: status, label: column.label, reason: 'confirm', cards: 0,
+                  })}
+                />
               </div>
 
               <div style={styles.columnBody}>
@@ -466,7 +779,7 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
                   // projeto é de fato diferente do cliente (um
                   // cliente-como-projeto repetiria o mesmo nome duas vezes).
                   const { clienteNome, projetoNome } = resolveCardTags(card.projeto_id, projects);
-                  const atrasado = isPrazoAtrasado(card.prazo, card.status);
+                  const atrasado = isPrazoAtrasado(card.prazo, card.status, doneSlug);
                   return (
                     <div key={card.id} style={styles.card} data-testid={`board-v2-card-${card.id}`}>
                       <div style={styles.cardMetaRow}>
@@ -505,8 +818,8 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
                           aria-label={`Mover "${card.titulo}"`}
                           onChange={(e) => handleMove(card.id, e.target.value)}
                         >
-                          {STATUSES.map((s) => (
-                            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                          {columns.map((c) => (
+                            <option key={c.slug} value={c.slug}>{c.label}</option>
                           ))}
                         </select>
                       </div>
@@ -524,18 +837,71 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
             </div>
           );
         })}
-      </div>
 
+        {/* Ghost column — the only way to create a column. It sits at the END
+            of the scroller because a new column is always appended there
+            (the backend assigns position = max + 1); putting the affordance
+            anywhere else would promise a placement it cannot deliver. */}
+        {creatingColumn ? (
+          <input
+            style={styles.ghostInput}
+            value={newColumnLabel}
+            autoFocus
+            aria-label="Nome da nova coluna"
+            placeholder="Nome"
+            onChange={(e) => setNewColumnLabel(e.target.value)}
+            onBlur={commitNewColumn}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                // Clear BEFORE unmounting the input: blur fires on unmount in
+                // some browsers, and a stale draft would create the column
+                // the user just cancelled.
+                setNewColumnLabel('');
+                setCreatingColumn(false);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            style={styles.ghostColumn}
+            onClick={() => setCreatingColumn(true)}
+          >
+            + Nova coluna
+          </button>
+        )}
+      </div>
+      )}
+
+      {/* `defaultStatus`: the clicked column wins; `firstSlug` is the fallback
+          for the product rule "a new card is born in the first column of the
+          order", which only applies if the click somehow arrives without a
+          column of its own. */}
       {creatingStatus && (
         <CardFormModal
           open
           mode="create"
+          columns={columns}
+          doneSlug={doneSlug}
           projetos={projects}
           defaultClienteId={effectiveClienteId}
           defaultProjetoId={selectedProjetoId}
-          defaultStatus={creatingStatus}
+          defaultStatus={creatingStatus || firstSlug}
           onSubmit={handleCreateSubmit}
           onClose={() => setCreatingStatus(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <BoardColumnDeleteDialog
+          open
+          columnLabel={deleteTarget.label}
+          reason={deleteTarget.reason}
+          cards={deleteTarget.cards}
+          deleting={deletingColumn}
+          onConfirm={handleConfirmDeleteColumn}
+          onClose={() => setDeleteTarget(null)}
         />
       )}
 
@@ -544,6 +910,8 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           open
           mode="edit"
           card={editingCard}
+          columns={columns}
+          doneSlug={doneSlug}
           projetos={projects}
           onSubmit={handleEditSubmit}
           onDelete={handleEditDelete}

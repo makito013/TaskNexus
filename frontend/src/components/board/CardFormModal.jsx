@@ -62,22 +62,6 @@ import { ImageAttachments } from './ImageAttachments.jsx';
 
 const NARROW_QUERY = '(max-width: 720px)';
 
-const STATUS_LABELS = {
-  a_fazer: 'A Fazer',
-  em_andamento: 'Em Andamento',
-  em_revisao: 'Em Revisão',
-  feito: 'Feito',
-};
-
-const STATUS_DOT_COLOR = {
-  a_fazer: 'var(--v2-text-faint)',
-  em_andamento: 'var(--v2-accent-2)',
-  em_revisao: 'var(--v2-warn)',
-  feito: 'var(--v2-accent)',
-};
-
-const STATUS_ORDER = ['a_fazer', 'em_andamento', 'em_revisao', 'feito'];
-
 const MODE_TITLES = { create: 'Novo Card', edit: 'Editar Card' };
 const SUBMIT_LABELS = { create: 'Criar Card', edit: 'Salvar' };
 const SUBMIT_LABELS_SAVING = { create: 'Criando…', edit: 'Salvando…' };
@@ -231,28 +215,6 @@ const styles = {
     textDecoration: 'underline',
     cursor: 'pointer',
   },
-  chipsRow: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
-  statusChip: (active, color) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '8px 14px',
-    minHeight: '38px',
-    borderRadius: '999px',
-    border: `1px solid ${active ? color : 'var(--v2-border)'}`,
-    background: active ? 'var(--v2-surface-3)' : 'transparent',
-    color: active ? 'var(--v2-text)' : 'var(--v2-text-dim)',
-    fontSize: '13px',
-    fontWeight: active ? 600 : 400,
-    cursor: 'pointer',
-  }),
-  dot: (color) => ({
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    flexShrink: 0,
-    background: color,
-  }),
   tipoChip: (tipo) => ({
     alignSelf: 'flex-start',
     padding: '3px 8px',
@@ -334,6 +296,11 @@ export function CardFormModal({
   mode,
   card,
   projetos,
+  // The board's columns, in board order. Owned by the caller (BoardV2's
+  // useColumns) rather than fetched here: the modal is mounted and unmounted
+  // constantly, and a fetch per opening would flicker the status select.
+  columns = [],
+  doneSlug = null,
   defaultClienteId = null,
   defaultProjetoId = null,
   defaultStatus = null,
@@ -370,7 +337,12 @@ export function CardFormModal({
   );
 
   const [titulo, setTitulo] = useState(() => card?.titulo || '');
-  const [status, setStatus] = useState(() => card?.status || defaultStatus || 'a_fazer');
+  // Falls back to the FIRST column of the board order — the product rule for
+  // where a new card is born. `'a_fazer'` is the last resort for the one frame
+  // before the columns arrive; it is also still the backend's own default.
+  const [status, setStatus] = useState(
+    () => card?.status || defaultStatus || columns[0]?.slug || 'a_fazer'
+  );
   const [descricao, setDescricao] = useState(() => card?.descricao || '');
   const [tipo, setTipo] = useState(() => card?.tipo || '');
   const [prazo, setPrazo] = useState(() => card?.prazo || '');
@@ -530,21 +502,27 @@ export function CardFormModal({
                 />
               </div>
 
+              {/* Native <select> instead of the old fixed chip row: the board's
+                  columns are user-managed now (task #43), so a row of pills
+                  would have to stretch to an unbounded number of columns and
+                  wrap unpredictably. The options mirror the column ORDER 1:1.
+                  No colour per option — a <select> cannot style them portably,
+                  and the done column is marked by a plain text suffix rather
+                  than a glyph so a screen reader reads it as a word. */}
               <div style={styles.field}>
-                <span style={styles.label}>Status</span>
-                <div style={styles.chipsRow}>
-                  {STATUS_ORDER.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      style={styles.statusChip(status === s, STATUS_DOT_COLOR[s])}
-                      onClick={() => { setStatus(s); markDirty('status'); }}
-                    >
-                      <span style={styles.dot(STATUS_DOT_COLOR[s])} />
-                      {STATUS_LABELS[s]}
-                    </button>
+                <label style={styles.label} htmlFor="card-status">Status</label>
+                <select
+                  id="card-status"
+                  style={styles.control(3)}
+                  value={status}
+                  onChange={(e) => { setStatus(e.target.value); markDirty('status'); }}
+                >
+                  {columns.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.slug === doneSlug ? `${c.label} (concluída)` : c.label}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div style={styles.field}>

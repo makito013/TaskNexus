@@ -90,15 +90,29 @@ TOOL_CRIAR_CARD = {
     "description": (
         "Cria um card de tarefa no board do Escritório para o projeto atual. "
         "Use para registrar trabalho a fazer que o usuário deve acompanhar "
-        "fora do chat. NÃO cria diretamente em 'Feito' — use 'a_fazer' ou "
-        "'em_andamento'. Pode opcionalmente ser criado como subtarefa de um "
-        "card existente via parent_id."
+        "fora do chat. NÃO cria diretamente na coluna marcada como concluída "
+        "— o backend rejeita. Pode opcionalmente ser criado como subtarefa de "
+        "um card existente via parent_id."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "titulo": {"type": "string"},
-            "status": {"type": "string", "enum": ["a_fazer", "em_andamento"]},
+            # No `enum`: as colunas do board são criadas/renomeadas/excluídas
+            # pelo usuário em tempo de execução, então um enum estático no
+            # schema da tool ficaria errado no minuto seguinte. A validação é
+            # SERVER-SIDE (main._validate_card_status), e a mensagem de erro
+            # lista os slugs válidos — é ela que faz as vezes de descoberta.
+            "status": {
+                "type": "string",
+                "description": (
+                    "Slug da coluna de destino. Se omitido, usa o slug legado "
+                    "'a_fazer' — que NÃO é garantido: se essa coluna tiver "
+                    "sido excluída, a criação é rejeitada como qualquer outro "
+                    "slug inexistente. Toda rejeição traz a lista de slugs "
+                    "válidos na mensagem de erro."
+                ),
+            },
             "descricao": {"type": "string"},
             "tipo": {
                 "type": "string",
@@ -125,25 +139,28 @@ TOOL_CRIAR_CARD = {
 TOOL_MOVER_CARD = {
     "name": "mover_card",
     "description": (
-        "Move um card para outra coluna do board, inclusive para 'feito'. "
-        "Qualquer agente pode mover qualquer card — não importa quem o criou "
-        "— desde que o card pertença ao mesmo cliente da conversa atual. "
-        "Cards de outro cliente não podem ser movidos."
+        "Move um card para outra coluna do board, inclusive para a coluna "
+        "concluída. Qualquer agente pode mover qualquer card — não importa "
+        "quem o criou — desde que o card pertença ao mesmo cliente da conversa "
+        "atual. Cards de outro cliente não podem ser movidos."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "card_id": {"type": "integer"},
+            # Sem `enum` pelo mesmo motivo de criar_card acima.
             "novo_status": {
                 "type": "string",
-                "enum": ["a_fazer", "em_andamento", "em_revisao", "feito"],
+                "description": (
+                    "Slug da coluna de destino. Um slug inexistente é "
+                    "rejeitado com a lista de slugs válidos na mensagem de "
+                    "erro."
+                ),
             },
         },
         "required": ["card_id", "novo_status"],
     },
 }
-
-_STATUS_ENUM = ["a_fazer", "em_andamento", "em_revisao", "feito"]
 
 TOOL_EDITAR_CARD = {
     "name": "editar_card",
@@ -160,7 +177,15 @@ TOOL_EDITAR_CARD = {
             "card_id": {"type": "integer"},
             "titulo": {"type": "string"},
             "descricao": {"type": "string"},
-            "status": {"type": "string", "enum": _STATUS_ENUM},
+            # Sem `enum` pelo mesmo motivo de criar_card/mover_card acima.
+            "status": {
+                "type": "string",
+                "description": (
+                    "Slug da coluna de destino. Um slug inexistente é "
+                    "rejeitado com a lista de slugs válidos na mensagem de "
+                    "erro."
+                ),
+            },
             "tipo": {
                 "type": "string",
                 "enum": _TIPO_ENUM,

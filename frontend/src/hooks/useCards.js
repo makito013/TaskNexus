@@ -81,11 +81,17 @@ import { api } from '../services/api.js';
 
 const CARDS_POLL_INTERVAL_MS = 5000;
 
-function recomputeResumo(subcards) {
+// `doneSlug === null` means the column list has not loaded yet (useColumns).
+// The summary is then left EXACTLY as the backend sent it, instead of being
+// recomputed against a "done" nobody knows yet — recomputing would flash a
+// wrong "0 de 3" over a correct server-side count for one frame. No extra
+// loading gate is needed for this: the null itself is the gate.
+function recomputeResumo(subcards, doneSlug, previousResumo = null) {
   if (!subcards || !subcards.length) return null;
+  if (doneSlug == null) return previousResumo;
   return {
     total: subcards.length,
-    feitos: subcards.filter((s) => s.status === 'feito').length,
+    feitos: subcards.filter((s) => s.status === doneSlug).length,
   };
 }
 
@@ -93,7 +99,7 @@ function recomputeResumo(subcards) {
 // topo e depois dentro de `subcards` de cada card de topo. Ao atualizar um
 // subcard, recalcula `subcards_resumo` do pai a partir da lista já
 // atualizada (não confia em contagem antiga).
-function updateCardInTree(cards, cardId, updater) {
+function updateCardInTree(cards, cardId, updater, doneSlug) {
   let touched = false;
   const next = cards.map((card) => {
     if (card.id === cardId) {
@@ -111,7 +117,11 @@ function updateCardInTree(cards, cardId, updater) {
       });
       if (subTouched) {
         touched = true;
-        return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+        return {
+          ...card,
+          subcards: nextSubcards,
+          subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+        };
       }
     }
     return card;
@@ -122,7 +132,7 @@ function updateCardInTree(cards, cardId, updater) {
 // Remove o card com `cardId` do estado local, seja ele de topo (remove o
 // próprio + subcards aninhados junto, de graça) ou um subcard (remove da
 // lista `subcards` do pai e recalcula `subcards_resumo`).
-function removeCardFromTree(cards, cardId) {
+function removeCardFromTree(cards, cardId, doneSlug) {
   const withoutTop = cards.filter((c) => c.id !== cardId);
   if (withoutTop.length !== cards.length) return withoutTop;
 
@@ -130,11 +140,18 @@ function removeCardFromTree(cards, cardId) {
     if (!card.subcards || !card.subcards.length) return card;
     const nextSubcards = card.subcards.filter((s) => s.id !== cardId);
     if (nextSubcards.length === card.subcards.length) return card;
-    return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+    return {
+      ...card,
+      subcards: nextSubcards,
+      subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+    };
   });
 }
 
-export function useCards(selectedProjectIds) {
+// `doneSlug` comes from useColumns (the caller owns both hooks) rather than
+// being fetched here: the two would otherwise race on mount and the board
+// would hold two answers to "which column means done".
+export function useCards(selectedProjectIds, doneSlug = null) {
   const [cards, setCards] = useState([]);
 
   // Chave estável derivada de `selectedProjectIds` (ordenada + joinada) em
@@ -216,14 +233,18 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => prev.map((card) => {
         if (card.id !== parentId) return card;
         const nextSubcards = [...(card.subcards || []), created];
-        return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+        return {
+          ...card,
+          subcards: nextSubcards,
+          subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+        };
       }));
       return created;
     } catch (e) {
       alert('Falha ao criar subtarefa. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const updateCard = useCallback(async (cardId, payload) => {
     try {
@@ -240,24 +261,24 @@ export function useCards(selectedProjectIds) {
         // imagens/subcards/subcards_resumo propositalmente NÃO vêm de
         // `updated` — ver nota no topo do arquivo sobre a resposta do PATCH
         // sempre vir com esses campos vazios/null.
-      })));
+      }), doneSlug));
       return updated;
     } catch (e) {
       alert('Falha ao atualizar card. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const deleteCard = useCallback(async (cardId) => {
     try {
       const result = await api.deleteCard(cardId);
-      setCards((prev) => removeCardFromTree(prev, cardId));
+      setCards((prev) => removeCardFromTree(prev, cardId, doneSlug));
       return result;
     } catch (e) {
       alert('Falha ao excluir card. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const uploadCardImage = useCallback(async (cardId, file) => {
     try {
@@ -265,13 +286,13 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
         ...card,
         imagens: [...(card.imagens || []), image],
-      })));
+      }), doneSlug));
       return image;
     } catch (e) {
       alert('Falha ao enviar imagem. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const deleteCardImage = useCallback(async (cardId, imageId) => {
     try {
@@ -279,12 +300,12 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
         ...card,
         imagens: (card.imagens || []).filter((img) => img.id !== imageId),
-      })));
+      }), doneSlug));
     } catch (e) {
       alert('Falha ao remover imagem. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   // Leitura sob demanda (não é poll de fundo) — ver nota no topo do arquivo
   // sobre por que não tem alert() aqui: o erro propaga pro chamador
@@ -297,15 +318,22 @@ export function useCards(selectedProjectIds) {
     try {
       const result = await api.clearFinished(projetoId);
       // Regra determinística (05-ARQUITETO.md §5.4): remove exatamente os
-      // cards de TOPO do projeto com status 'feito' — subcards somem
-      // junto por estarem aninhados. Ver nota no topo do arquivo.
-      setCards((prev) => prev.filter((card) => !(card.projeto_id === projetoId && card.status === 'feito')));
+      // cards de TOPO do projeto na coluna CONCLUÍDA — subcards somem junto
+      // por estarem aninhados. Ver nota no topo do arquivo. Com `doneSlug`
+      // ainda null (colunas não carregadas), não remove nada localmente: o
+      // poll de 5s traz a lista já sem eles, e apagar pelo palpite errado
+      // sumiria com cards que o backend manteve.
+      if (doneSlug != null) {
+        setCards((prev) => prev.filter(
+          (card) => !(card.projeto_id === projetoId && card.status === doneSlug)
+        ));
+      }
       return result;
     } catch (e) {
       alert('Falha ao limpar concluídos. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   return {
     cards,

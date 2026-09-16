@@ -442,3 +442,274 @@ def test_get_cards_embeds_subcard_tipo_in_the_nested_array(client):
     listed = client.get("/api/cards").json()
     top = next(c for c in listed if c["id"] == parent["id"])
     assert top["subcards"][0]["tipo"] == "hotfix"
+
+
+
+# -- /api/board/columns (task #43, phase 1) ----------------------------------
+
+
+def test_list_columns_returns_the_four_seeded_columns(client):
+    r = client.get("/api/board/columns")
+    assert r.status_code == 200
+    columns = r.json()
+    assert [c["slug"] for c in columns] == [
+        "a_fazer", "em_andamento", "em_revisao", "feito",
+    ]
+    assert [c["is_done"] for c in columns] == [False, False, False, True]
+
+
+def test_create_column_returns_201_with_the_derived_slug(client):
+    r = client.post("/api/board/columns", json={"label": "Em Homologação"})
+    assert r.status_code == 201, r.text
+    assert r.json() == {
+        "slug": "em_homologacao", "label": "Em Homologação",
+        "position": 5, "is_done": False,
+    }
+
+
+def test_create_column_with_a_duplicate_label_is_409(client):
+    client.post("/api/board/columns", json={"label": "Em Homologação"})
+    r = client.post("/api/board/columns", json={"label": "em homologação"})
+    assert r.status_code == 409
+
+
+def test_create_column_with_a_blank_label_is_409(client):
+    r = client.post("/api/board/columns", json={"label": "   "})
+    assert r.status_code == 409
+
+
+def test_patch_column_renames_without_changing_the_slug(client):
+    r = client.patch("/api/board/columns/a_fazer", json={"label": "Backlog"})
+    assert r.status_code == 200
+    assert r.json()["slug"] == "a_fazer"
+    assert r.json()["label"] == "Backlog"
+
+
+def test_patch_an_unknown_column_is_404(client):
+    r = client.patch("/api/board/columns/nao_existe", json={"label": "X"})
+    assert r.status_code == 404
+
+
+def test_patch_with_another_columns_label_is_409(client):
+    r = client.patch("/api/board/columns/a_fazer", json={"label": "Feito"})
+    assert r.status_code == 409
+
+
+def test_reorder_columns_returns_the_new_order(client):
+    r = client.post(
+        "/api/board/columns/reorder",
+        json={"slugs": ["feito", "a_fazer", "em_revisao", "em_andamento"]},
+    )
+    assert r.status_code == 200
+    assert [c["slug"] for c in r.json()] == [
+        "feito", "a_fazer", "em_revisao", "em_andamento",
+    ]
+
+
+def test_reorder_with_a_non_permutation_is_409(client):
+    r = client.post("/api/board/columns/reorder", json={"slugs": ["feito"]})
+    assert r.status_code == 409
+
+
+def test_set_done_column_moves_the_mark(client):
+    r = client.post("/api/board/columns/em_revisao/done")
+    assert r.status_code == 200
+    done = [c["slug"] for c in r.json() if c["is_done"]]
+    assert done == ["em_revisao"]
+
+
+def test_set_done_on_an_unknown_column_is_404(client):
+    r = client.post("/api/board/columns/nao_existe/done")
+    assert r.status_code == 404
+
+
+def test_delete_an_empty_column(client):
+    client.post("/api/board/columns", json={"label": "Em Homologação"})
+    r = client.delete("/api/board/columns/em_homologacao")
+    assert r.status_code == 200
+    assert "em_homologacao" not in [
+        c["slug"] for c in client.get("/api/board/columns").json()
+    ]
+
+
+def test_delete_an_unknown_column_is_404(client):
+    r = client.delete("/api/board/columns/nao_existe")
+    assert r.status_code == 404
+
+
+def test_delete_the_done_column_is_409_with_a_discriminable_reason(client):
+    r = client.delete("/api/board/columns/feito")
+    assert r.status_code == 409
+    assert r.json()["detail"]["reason"] == "coluna_concluida"
+
+
+def test_delete_a_column_with_cards_is_409_carrying_the_count(client):
+    client.post("/api/board/columns", json={"label": "Em Homologação"})
+    _create_card(client, status="em_homologacao")
+    _create_card(client, status="em_homologacao")
+
+    r = client.delete("/api/board/columns/em_homologacao")
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["reason"] == "coluna_com_cards"
+    assert detail["cards"] == 2
+
+
+def test_deleting_down_to_the_last_column_is_409_as_the_done_column(client):
+    """Renamed from "…is_409_with_its_own_reason": it never reached
+    `ultima_coluna`, and it cannot. Deleting the done column is refused, so the
+    sole survivor of any deletion sequence always carries the done mark and the
+    done check — which runs first — is what stops it.
+
+    `ultima_coluna` is therefore unreachable over HTTP; it is defensive depth
+    for a board whose mark was cleared outside the API, covered directly in
+    test_card_store.py::test_delete_column_is_last_fires_on_a_board_with_no_done_mark.
+    Either way the frontend gets a non-destructive dialog."""
+    client.post("/api/board/columns", json={"label": "Sobrevivente"})
+    client.post("/api/board/columns/a_fazer/done")
+    for slug in ("em_andamento", "em_revisao", "feito"):
+        assert client.delete(f"/api/board/columns/{slug}").status_code == 200
+    client.post("/api/board/columns/sobrevivente/done")
+    assert client.delete("/api/board/columns/a_fazer").status_code == 200
+
+    r = client.delete("/api/board/columns/sobrevivente")
+    assert r.status_code == 409
+    assert r.json()["detail"]["reason"] == "coluna_concluida"
+
+
+# -- board_position through the REST surface ---------------------------------
+
+
+def test_created_cards_are_listed_in_creation_order_within_a_column(client):
+    first = _create_card(client, titulo="Primeiro")
+    second = _create_card(client, titulo="Segundo")
+
+    listed = [c["id"] for c in client.get("/api/cards").json()]
+    assert listed.index(first["id"]) < listed.index(second["id"])
+    assert first["board_position"] == 0.0
+    assert second["board_position"] == 1.0
+
+
+def test_patching_a_card_with_its_current_status_keeps_its_position(client):
+    first = _create_card(client, titulo="Primeiro")
+    _create_card(client, titulo="Segundo")
+
+    # The whole form comes back on every save from CardFormModal, status
+    # included — that must NOT re-append the card to the end of its column.
+    r = client.patch(
+        f"/api/cards/{first['id']}",
+        json={"titulo": "Primeiro editado", "status": "a_fazer"},
+    )
+    assert r.status_code == 200
+    assert r.json()["board_position"] == first["board_position"]
+
+
+def test_patching_a_card_to_another_status_appends_it_there(client):
+    _create_card(client, titulo="Já em andamento", status="em_andamento")
+    moving = _create_card(client, titulo="Vai mover")
+
+    r = client.patch(f"/api/cards/{moving['id']}", json={"status": "em_andamento"})
+    assert r.status_code == 200
+    assert r.json()["board_position"] == 1.0
+
+
+def test_subcards_are_created_without_a_board_position(client):
+    parent = _create_card(client, titulo="Pai")
+    r = client.post(f"/api/cards/{parent['id']}/subcards", json={"titulo": "Sub"})
+    assert r.status_code == 201
+    assert r.json()["board_position"] is None
+
+
+# -- status validation on the UI/REST write path -----------------------------
+#
+# The agent path (hooks) got this in task 14; the human path is the same rule
+# reported as a 400 instead of {"success": False}. Without it, a card written
+# to a column that does not exist is in the database, counted nowhere and
+# visible nowhere — BoardV2 only renders columns it knows about.
+
+
+def test_create_card_with_an_unknown_status_is_400_listing_the_valid_slugs(client):
+    r = client.post("/api/cards", json={
+        "titulo": "Card em coluna inexistente",
+        "projeto_id": "proj-a",
+        "status": "coluna_que_nao_existe",
+    })
+    assert r.status_code == 400, r.text
+    for slug in ("a_fazer", "em_andamento", "em_revisao", "feito"):
+        assert slug in r.json()["detail"]
+
+    assert client.get("/api/cards").json() == []
+
+
+def test_create_card_accepts_a_column_the_user_just_created(client):
+    assert client.post(
+        "/api/board/columns", json={"label": "Em Homologação"}
+    ).status_code == 201
+
+    created = _create_card(client, status="em_homologacao")
+    assert created["status"] == "em_homologacao"
+
+
+def test_create_card_is_400_once_its_default_column_has_been_deleted(client):
+    # "a_fazer" is only a default, not a guarantee: the user can delete it.
+    assert client.delete("/api/board/columns/a_fazer").status_code == 200
+
+    r = client.post("/api/cards", json={"titulo": "Sem coluna", "projeto_id": "proj-a"})
+    assert r.status_code == 400
+    assert "a_fazer" in r.json()["detail"]
+
+
+def test_create_subcard_with_an_unknown_status_is_400(client):
+    parent = _create_card(client, titulo="Pai")
+
+    r = client.post(f"/api/cards/{parent['id']}/subcards", json={
+        "titulo": "Sub em coluna inexistente",
+        "status": "coluna_que_nao_existe",
+    })
+    assert r.status_code == 400
+    assert "em_andamento" in r.json()["detail"]
+
+    # The parent gained no subcard at all.
+    listed = next(c for c in client.get("/api/cards").json() if c["id"] == parent["id"])
+    assert listed["subcards"] == []
+
+
+def test_patch_card_with_an_unknown_status_is_400_and_changes_nothing(client):
+    created = _create_card(client, titulo="Card original")
+
+    r = client.patch(f"/api/cards/{created['id']}", json={
+        "titulo": "Titulo novo",
+        "status": "coluna_que_nao_existe",
+    })
+    assert r.status_code == 400
+    assert "feito" in r.json()["detail"]
+
+    # The whole PATCH is refused, not just the status half of it.
+    unchanged = next(c for c in client.get("/api/cards").json() if c["id"] == created["id"])
+    assert unchanged["status"] == "a_fazer"
+    assert unchanged["titulo"] == "Card original"
+
+
+def test_patch_without_a_status_is_unaffected_by_the_new_validation(client):
+    created = _create_card(client, titulo="Card original")
+
+    r = client.patch(f"/api/cards/{created['id']}", json={"titulo": "Titulo novo"})
+    assert r.status_code == 200
+    assert r.json()["titulo"] == "Titulo novo"
+    assert r.json()["status"] == "a_fazer"
+
+
+def test_patch_to_a_renamed_column_still_uses_the_slug_not_the_label(client):
+    created = _create_card(client, titulo="Card")
+    assert client.patch(
+        "/api/board/columns/em_andamento", json={"label": "Fazendo"}
+    ).status_code == 200
+
+    # The slug is immutable; renaming never invalidates a status already in use.
+    r = client.patch(f"/api/cards/{created['id']}", json={"status": "em_andamento"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "em_andamento"
+
+    # The new LABEL is not a valid status — only slugs are.
+    r = client.patch(f"/api/cards/{created['id']}", json={"status": "Fazendo"})
+    assert r.status_code == 400

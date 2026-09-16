@@ -13,7 +13,7 @@
 // The `selectedProjectId` prop is gone: card creation no longer takes a
 // target from a prop, it comes from the CardFormModal's own payload.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
 import { BoardV2 } from './BoardV2.jsx';
 
@@ -22,6 +22,43 @@ vi.mock('../../hooks/useCards.js', () => ({
   useCards: (...args) => mockUseCards(...args),
 }));
 
+// `useColumns` is mocked at the HOOK level, the same way `useCards` already is
+// in this file — not at the `api.*` level. These tests assert synchronously
+// right after `render`, and a stubbed fetch would only resolve on a later tick,
+// turning every `getByTestId('board-v2-col-…')` in this file into a `findBy`.
+// The default stub returns the four legacy columns already loaded, so the
+// pre-existing tests keep describing the same board they always did.
+const mockUseColumns = vi.fn();
+vi.mock('../../hooks/useColumns.js', () => ({
+  useColumns: (...args) => mockUseColumns(...args),
+}));
+
+const LEGACY_COLUMNS = [
+  { slug: 'a_fazer', label: 'A Fazer', position: 1, is_done: false },
+  { slug: 'em_andamento', label: 'Em Andamento', position: 2, is_done: false },
+  { slug: 'em_revisao', label: 'Em Revisão', position: 3, is_done: false },
+  { slug: 'feito', label: 'Feito', position: 4, is_done: true },
+];
+
+function mockColumns(columns = LEGACY_COLUMNS, overrides = {}) {
+  const doneColumn = columns.find((c) => c.is_done);
+  const actions = {
+    columns,
+    loading: false,
+    doneSlug: doneColumn ? doneColumn.slug : null,
+    firstSlug: columns.length ? columns[0].slug : null,
+    createColumn: vi.fn().mockResolvedValue({}),
+    renameColumn: vi.fn().mockResolvedValue({}),
+    reorderColumns: vi.fn().mockResolvedValue(columns),
+    setDoneColumn: vi.fn().mockResolvedValue(columns),
+    deleteColumn: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+  mockUseColumns.mockReturnValue(actions);
+  return actions;
+}
+
+beforeEach(() => { mockColumns(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const projects = [{ id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [], sub_projetos: [] }];
@@ -217,7 +254,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
   it('with no client selected ("Todos"), fetches cards for all projects — useCards([])', () => {
     mockNoCards();
     render(<BoardV2 projects={projects} selectedClienteId={null} />);
-    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(mockUseCards).toHaveBeenCalledWith([], 'feito');
   });
 
   // Órfãos (decisão do Bruno, sessão "card/tarefa órfão"): com QUALQUER
@@ -230,7 +267,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
   it('with any client fixed and Tier 2 on "Todos os projetos", fetches ALL cards (useCards([])) instead of a scoped query', () => {
     mockNoCards();
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 
   it('with a client that has subprojects selected, still fetches everything (Tier 2 stays "Todos")', () => {
@@ -366,7 +403,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
     fireEvent.change(clienteSelect, { target: { value: 'clienteB' } });
     fireEvent.change(clienteSelect, { target: { value: '' } });
 
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 
   it('the project select lists only DIRECT children, but filtering by one of them reaches its whole subtree (shallow dropdown, deep result)', () => {
@@ -427,7 +464,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
     rerender(<BoardV2 projects={allProjects} selectedClienteId={null} />);
 
     expect(screen.getByLabelText('Filtrar por cliente').value).toBe('');
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 });
 
@@ -849,5 +886,445 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
     expect(within(card).queryAllByTestId('card-tag')).toHaveLength(0);
     expect(within(card).queryByText('Projeto A')).toBeNull();
     expect(card.textContent).not.toContain('null');
+  });
+});
+
+
+// Dynamic columns (task #43, phase 1). Everything below is new surface: the
+// board no longer has four fixed statuses, and the column header is where
+// creating, renaming, reordering, marking-done and deleting all happen.
+describe('BoardV2 - dynamic columns', () => {
+  it('renders one column per entry of useColumns, in board order', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.getByTestId('board-v2-col-backlog')).toBeTruthy();
+    expect(screen.getByTestId('board-v2-col-entregue')).toBeTruthy();
+    // The four legacy statuses are not hard-coded anywhere any more.
+    expect(screen.queryByTestId('board-v2-col-a_fazer')).toBeNull();
+  });
+
+  it('renders no column scroller at all while the columns are loading', () => {
+    mockColumns(LEGACY_COLUMNS, { loading: true, columns: [], doneSlug: null, firstSlug: null });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Painting an empty board with doneSlug=null for one frame would flash
+    // every card as "not done" and strand the ghost column on its own.
+    expect(screen.queryByTestId('board-v2-col-a_fazer')).toBeNull();
+    expect(screen.queryByText('+ Nova coluna')).toBeNull();
+  });
+
+  it('populates the card status select from the columns, not from a fixed list', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockUseCards.mockReturnValue({
+      cards: [fakeCard({ id: 1, status: 'backlog' })],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const select = screen.getByLabelText('Mover "Card 1"');
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Backlog', 'Entregue']);
+  });
+
+  it('marks the done column with a "✓" badge and only that one', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const badges = screen.getAllByLabelText('Coluna concluída');
+    expect(badges).toHaveLength(1);
+    expect(within(screen.getByTestId('board-v2-col-feito')).getByLabelText('Coluna concluída')).toBeTruthy();
+  });
+});
+
+describe('BoardV2 - creating a column through the ghost column', () => {
+  it('turns the ghost into an input and creates the column on Enter', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Em Homologação' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(createColumn).toHaveBeenCalledWith('Em Homologação'));
+  });
+
+  it('creates the column on blur too', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Bloqueado' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(createColumn).toHaveBeenCalledWith('Bloqueado'));
+  });
+
+  it('creates nothing on Escape, and the draft does not survive to the next opening', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Descartada' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(createColumn).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    expect(screen.getByLabelText('Nome da nova coluna').value).toBe('');
+  });
+
+  it('creates nothing for a blank name', () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+
+    expect(createColumn).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoardV2 - renaming a column inline', () => {
+  it('turns the title into an input and renames on Enter', async () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('A Fazer'));
+    const input = screen.getByLabelText('Renomear coluna A Fazer');
+    fireEvent.change(input, { target: { value: 'Backlog' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(renameColumn).toHaveBeenCalledWith('a_fazer', 'Backlog'));
+  });
+
+  it('does not rename on Escape', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('A Fazer'));
+    const input = screen.getByLabelText('Renomear coluna A Fazer');
+    fireEvent.change(input, { target: { value: 'Backlog' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(renameColumn).not.toHaveBeenCalled();
+    expect(screen.getByText('A Fazer')).toBeTruthy();
+  });
+
+  it('does not rename when a blur follows the Escape that cancelled the edit', () => {
+    // React fires blur on unmount in some paths; without the cancel guard that
+    // blur would commit the very draft the user just discarded.
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('A Fazer'));
+    const input = screen.getByLabelText('Renomear coluna A Fazer');
+    fireEvent.change(input, { target: { value: 'Backlog' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.blur(input);
+
+    expect(renameColumn).not.toHaveBeenCalled();
+  });
+
+  it('does not call the API when the name is unchanged', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('A Fazer'));
+    fireEvent.blur(screen.getByLabelText('Renomear coluna A Fazer'));
+
+    expect(renameColumn).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoardV2 - reordering columns with the arrows', () => {
+  it('sends the WHOLE new order, with the two neighbours swapped', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByLabelText('Mover coluna Em Andamento para a esquerda'));
+
+    await waitFor(() => expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'a_fazer', 'em_revisao', 'feito',
+    ]));
+  });
+
+  it('moves a column right with the ▶ arrow', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByLabelText('Mover coluna A Fazer para a direita'));
+
+    await waitFor(() => expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'a_fazer', 'em_revisao', 'feito',
+    ]));
+  });
+
+  it('disables ◀ on the first column and ▶ on the last, and never calls the API from them', () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const leftOnFirst = screen.getByLabelText('Mover coluna A Fazer para a esquerda');
+    const rightOnLast = screen.getByLabelText('Mover coluna Feito para a direita');
+    expect(leftOnFirst.disabled).toBe(true);
+    expect(rightOnLast.disabled).toBe(true);
+
+    fireEvent.click(leftOnFirst);
+    fireEvent.click(rightOnLast);
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('greys a disabled arrow by COLOUR, never by opacity', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const disabled = screen.getByLabelText('Mover coluna A Fazer para a esquerda');
+    const enabled = screen.getByLabelText('Mover coluna A Fazer para a direita');
+    expect(disabled.style.color).toBe('var(--v2-text-faint)');
+    expect(enabled.style.color).toBe('var(--v2-text-dim)');
+    expect(disabled.style.opacity).toBe('');
+  });
+});
+
+describe('BoardV2 - the column "⋯" menu', () => {
+  function openMenu(columnLabel) {
+    fireEvent.click(screen.getByLabelText(`Ações da coluna ${columnLabel}`));
+  }
+
+  it('marks a column as done from the menu', async () => {
+    const { setDoneColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    fireEvent.click(screen.getByText('Marcar como concluída'));
+
+    await waitFor(() => expect(setDoneColumn).toHaveBeenCalledWith('a_fazer'));
+  });
+
+  it('shows an informational line instead of the action on the done column itself', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Feito');
+    // Done is a radio, not a toggle: there is nothing to un-check here.
+    expect(screen.getByText('✓ Esta é a coluna concluída')).toBeTruthy();
+    expect(screen.queryByText('Marcar como concluída')).toBeNull();
+  });
+
+  it('closes on Escape', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    expect(screen.getByTestId('board-column-menu')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('board-column-menu')).toBeNull();
+  });
+
+  it('closes on a click outside', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('board-column-menu')).toBeNull();
+  });
+
+  it('is born disabled, with a tooltip, when there is only one column left', () => {
+    mockColumns([{ slug: 'unica', label: 'Única', position: 1, is_done: true }]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Única');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(true);
+    expect(item.title).toBe('O board precisa ter pelo menos uma coluna.');
+  });
+
+  // The component already knows `is_done` — sending the user through a
+  // guaranteed 409 taught them nothing the menu could not say up front.
+  it('is born disabled on the DONE column, without a round-trip to the 409', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Feito');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(true);
+    expect(item.title).toMatch(/concluída não pode ser excluída/);
+  });
+
+  it('stays enabled on an ordinary column', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(false);
+    expect(item.title).toBeFalsy();
+  });
+
+  it('prefers the last-column message when a single column is also the done one', () => {
+    mockColumns([{ slug: 'unica', label: 'Única', position: 1, is_done: true }]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Única');
+    expect(screen.getByText('Excluir coluna').title)
+      .toBe('O board precisa ter pelo menos uma coluna.');
+  });
+});
+
+describe('BoardV2 - deleting a column', () => {
+  function requestDelete(columnLabel) {
+    fireEvent.click(screen.getByLabelText(`Ações da coluna ${columnLabel}`));
+    fireEvent.click(screen.getByText('Excluir coluna'));
+  }
+
+  it('confirms and deletes an empty column', async () => {
+    const { deleteColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    expect(screen.getByRole('dialog', { name: 'Excluir coluna — A Fazer' })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+    await waitFor(() => expect(deleteColumn).toHaveBeenCalledWith('a_fazer'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('downgrades to the card-count dialog when the backend refuses, with no destructive button left', async () => {
+    const refusal = Object.assign(new Error('A coluna ainda tem 3 card(s).'), {
+      reason: 'coluna_com_cards', cards: 3,
+    });
+    mockColumns(LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(screen.getByText(/3 card\(s\)/)).toBeTruthy());
+    // Only "Cancelar" survives — offering a button that always fails is worse
+    // than offering none.
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Cancelar')).toBeTruthy();
+    expect(within(dialog).queryByText('Excluir coluna')).toBeNull();
+  });
+
+  it('downgrades to the informational dialog, with "Entendi", for the done column', async () => {
+    const refusal = Object.assign(new Error('A coluna concluída não pode ser excluída.'), {
+      reason: 'coluna_concluida', cards: 0,
+    });
+    mockColumns(LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('Em Andamento');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(screen.getByText('Entendi')).toBeTruthy());
+    expect(within(screen.getByRole('dialog')).queryByText('Cancelar')).toBeNull();
+  });
+
+  it('closes without deleting when cancelled', () => {
+    const { deleteColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    expect(deleteColumn).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // Fail-safe: a refusal code this build does not know must NOT degrade to the
+  // destructive variant. It used to — the old test was "destructive unless the
+  // reason is one of two known refusals", so a newer backend, a typo or a proxy
+  // rewriting the body would re-offer a deletion the server had just refused.
+  it('falls back to a SAFE variant for a reason it does not recognise', async () => {
+    const refusal = Object.assign(new Error('Recusado por um motivo novo'), {
+      reason: 'motivo_que_este_build_nao_conhece', cards: 0,
+    });
+    const { deleteColumn } = mockColumns(
+      LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) }
+    );
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(
+      screen.getByText(/Não foi possível excluir a coluna/)
+    ).toBeTruthy());
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByText('Excluir coluna')).toBeNull();
+    expect(within(dialog).getByText('Cancelar')).toBeTruthy();
+
+    // And no second attempt is reachable from the dialog.
+    expect(deleteColumn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BoardV2 - doneSlug threading', () => {
+  it('marks a card as late against the DONE COLUMN, not the literal "feito"', () => {
+    mockColumns([
+      { slug: 'feito', label: 'Feito', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockUseCards.mockReturnValue({
+      cards: [
+        fakeCard({ id: 1, prazo: '2020-01-01', status: 'feito', titulo: 'Em "Feito", mas nao concluido' }),
+        fakeCard({ id: 2, prazo: '2020-01-01', status: 'entregue', titulo: 'Concluido de verdade' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // 'feito' lost the done mark, so a past deadline there IS late now.
+    expect(within(screen.getByTestId('board-v2-card-1')).getByText('1 jan 2020').style.color)
+      .toBe('var(--v2-danger)');
+    expect(within(screen.getByTestId('board-v2-card-2')).getByText('1 jan 2020').style.color)
+      .toBe('var(--v2-text-faint)');
+  });
+
+  it('hands the resolved doneSlug down to useCards', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'entregue');
   });
 });

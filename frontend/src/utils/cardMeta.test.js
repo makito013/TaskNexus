@@ -50,21 +50,33 @@ describe('formatPrazo', () => {
 
 describe('isPrazoAtrasado', () => {
   it('is true for a past date on a card that is not done', () => {
-    expect(isPrazoAtrasado('2026-09-02', 'a_fazer', today)).toBe(true);
+    expect(isPrazoAtrasado('2026-09-02', 'a_fazer', 'feito', today)).toBe(true);
   });
 
   it('is false today and in the future', () => {
-    expect(isPrazoAtrasado('2026-09-03', 'a_fazer', today)).toBe(false);
-    expect(isPrazoAtrasado('2026-09-04', 'a_fazer', today)).toBe(false);
+    expect(isPrazoAtrasado('2026-09-03', 'a_fazer', 'feito', today)).toBe(false);
+    expect(isPrazoAtrasado('2026-09-04', 'a_fazer', 'feito', today)).toBe(false);
   });
 
   it('is ALWAYS false when the card is done, however old the prazo', () => {
-    expect(isPrazoAtrasado('2020-01-01', 'feito', today)).toBe(false);
+    expect(isPrazoAtrasado('2020-01-01', 'feito', 'feito', today)).toBe(false);
   });
 
   it('is false without a prazo, and false for an unparseable one', () => {
-    expect(isPrazoAtrasado(null, 'a_fazer', today)).toBe(false);
-    expect(isPrazoAtrasado('amanhã', 'a_fazer', today)).toBe(false);
+    expect(isPrazoAtrasado(null, 'a_fazer', 'feito', today)).toBe(false);
+    expect(isPrazoAtrasado('amanhã', 'a_fazer', 'feito', today)).toBe(false);
+  });
+
+  // Done-ness follows the is_done COLUMN, not the literal 'feito' string —
+  // the user can move the mark to any column (task #43).
+  it('follows the done column when the mark moves off "feito"', () => {
+    expect(isPrazoAtrasado('2020-01-01', 'em_revisao', 'em_revisao', today)).toBe(false);
+    // ...and 'feito' stops being special once it is no longer the done column.
+    expect(isPrazoAtrasado('2020-01-01', 'feito', 'em_revisao', today)).toBe(true);
+  });
+
+  it('treats a null doneSlug (columns not loaded yet) as "nothing is done"', () => {
+    expect(isPrazoAtrasado('2020-01-01', 'feito', null, today)).toBe(true);
   });
 });
 
