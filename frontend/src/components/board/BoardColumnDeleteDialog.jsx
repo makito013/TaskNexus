@@ -28,35 +28,26 @@
 // never reach here at all: BoardColumnMenu disables the menu item up front for
 // both. 'coluna_concluida' is still handled because the mark can move in
 // another tab between the render and the click.
+//
+// RESPONSIVE (Bruno's call after testing phase 2 live): bottom sheet on a
+// phone, real centred modal on desktop with the actions SIDE BY SIDE. Same
+// mechanism as `NewChatSheet` — the 640px breakpoint and the two container
+// primitives — reused rather than reinvented, and shared with the rename
+// dialog next door so the two stay siblings in both modes.
+
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
+import { BottomSheet } from '../../layouts/v2/BottomSheet.jsx';
+import { CenteredModal } from '../../layouts/v2/CenteredModal.jsx';
+import { MOBILE_VIEWPORT_QUERY } from '../../utils/viewport.js';
 
 // The `reason` the caller uses for "the server has not refused anything; ask
 // the user to confirm". Deliberately not a backend refusal code.
 const CONFIRM_REASON = 'confirm';
 
-import { useEffect } from 'react';
-
 const styles = {
-  backdrop: {
-    position: 'fixed',
-    inset: 0,
-    background: 'var(--v2-scrim)',
-    zIndex: 400,
-  },
-  sheet: {
-    position: 'fixed',
-    left: '50%',
-    bottom: 0,
-    transform: 'translateX(-50%)',
-    width: '420px',
-    maxWidth: '92vw',
-    background: 'var(--v2-surface)',
-    border: '1px solid var(--v2-border)',
-    borderBottom: 'none',
-    borderTopLeftRadius: '12px',
-    borderTopRightRadius: '12px',
-    zIndex: 401,
-    overflow: 'hidden',
-  },
+  // No `sheet`/`backdrop` entries any more: BottomSheet renders the scrim and
+  // the panel itself, so the hand-rolled pair this file used to carry would
+  // have been a second panel inside the first.
   title: {
     padding: '16px 16px 8px',
     fontSize: '12px',
@@ -90,6 +81,78 @@ const styles = {
   // and the rule above it.
   destructive: { color: 'var(--v2-danger)', borderTopColor: 'var(--v2-danger)' },
   cancel: { color: 'var(--v2-text-dim)', background: 'var(--v2-surface-2)' },
+
+  // -- modal mode: the 3 regions CenteredModal expects ----------------------
+  // Same measurements as NewChatSheet's modal chrome and the rename dialog's,
+  // so every centred modal in the app reads as one component family.
+  modalHeader: {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    padding: '14px 16px',
+    borderBottom: '1px solid var(--v2-border)',
+    background: 'var(--v2-surface-2)',
+  },
+  modalHeaderTitle: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: 'var(--v2-text)',
+  },
+  modalCloseBtn: {
+    width: '40px',
+    height: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '8px',
+    color: 'var(--v2-text-dim)',
+    fontSize: '18px',
+    lineHeight: 1,
+    cursor: 'pointer',
+  },
+  modalBody: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+    padding: '16px',
+    fontSize: '14px',
+    color: 'var(--v2-text-dim)',
+    lineHeight: 1.5,
+  },
+  modalFooter: {
+    flexShrink: 0,
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    padding: '12px 16px',
+    borderTop: '1px solid var(--v2-border)',
+    background: 'var(--v2-surface-2)',
+  },
+  modalCancelBtn: {
+    padding: '0 16px',
+    height: '40px',
+    borderRadius: '8px',
+    border: '1px solid var(--v2-border)',
+    background: 'transparent',
+    color: 'var(--v2-text-dim)',
+    fontSize: '13px',
+    cursor: 'pointer',
+  },
+  // Danger on the border AND the text, the same pair the sheet variant uses
+  // and that CardFormModal's deleteBtn established.
+  modalDestructiveBtn: (disabled) => ({
+    padding: '0 16px',
+    height: '40px',
+    borderRadius: '8px',
+    border: '1px solid var(--v2-danger)',
+    background: 'transparent',
+    color: disabled ? 'var(--v2-text-faint)' : 'var(--v2-danger)',
+    fontSize: '13px',
+    fontWeight: 600,
+    cursor: disabled ? 'default' : 'pointer',
+  }),
 };
 
 export function BoardColumnDeleteDialog({
@@ -101,18 +164,16 @@ export function BoardColumnDeleteDialog({
   onConfirm,
   onClose,
 }) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && !deleting) onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, deleting, onClose]);
+  const isMobile = useMediaQuery(MOBILE_VIEWPORT_QUERY);
 
   if (!open) return null;
 
   const title = `Excluir coluna — ${columnLabel}`;
+
+  // Both containers own their Escape handling and their scrim click, so this
+  // component no longer registers a key listener of its own — it only guards
+  // the close against firing mid-delete.
+  const requestClose = () => { if (!deleting) onClose(); };
 
   // Opt-IN: only the exact confirm reason gets the destructive button. Every
   // other value — known refusal or not — lands on a safe variant.
@@ -155,14 +216,62 @@ export function BoardColumnDeleteDialog({
     );
   }
 
+  // Wording is identical in both modes — only the layout differs. On the
+  // informational variant the sole button says "Entendi", because there is
+  // nothing being cancelled.
+  const closeLabel = reason === 'coluna_concluida' ? 'Entendi' : 'Cancelar';
+
+  if (!isMobile) {
+    return (
+      // No `role`/`aria-label` here: CenteredModal already renders
+      // role="dialog" + aria-modal + the accessible name from `ariaLabel`.
+      <CenteredModal open onClose={requestClose} ariaLabel={title}>
+        <header style={styles.modalHeader}>
+          <span style={styles.modalHeaderTitle}>{title}</span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            style={styles.modalCloseBtn}
+            onClick={requestClose}
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+
+        <div style={styles.modalBody}>{body}</div>
+
+        {/* Side by side, destructive action last — same footer geometry as
+            NewChatSheet and the rename dialog. */}
+        <footer style={styles.modalFooter}>
+          <button
+            type="button"
+            style={styles.modalCancelBtn}
+            disabled={deleting}
+            onClick={requestClose}
+          >
+            {closeLabel}
+          </button>
+          {isConfirm && (
+            <button
+              type="button"
+              style={styles.modalDestructiveBtn(deleting)}
+              disabled={deleting}
+              onClick={onConfirm}
+            >
+              {deleting ? 'Excluindo…' : 'Excluir coluna'}
+            </button>
+          )}
+        </footer>
+      </CenteredModal>
+    );
+  }
+
   return (
-    <>
-      <div
-        data-testid="board-column-delete-backdrop"
-        style={styles.backdrop}
-        onClick={deleting ? undefined : onClose}
-      />
-      <div style={styles.sheet} role="dialog" aria-label={title}>
+    // BottomSheet carries no dialog semantics of its own, so the role and the
+    // name are this component's job in sheet mode.
+    <BottomSheet open onClose={requestClose}>
+      <div role="dialog" aria-modal="true" aria-label={title}>
         <div style={styles.title}>{title}</div>
         <div style={styles.body}>{body}</div>
 
@@ -180,11 +289,11 @@ export function BoardColumnDeleteDialog({
           type="button"
           style={{ ...styles.action(deleting), ...styles.cancel }}
           disabled={deleting}
-          onClick={onClose}
+          onClick={requestClose}
         >
-          {reason === 'coluna_concluida' ? 'Entendi' : 'Cancelar'}
+          {closeLabel}
         </button>
       </div>
-    </>
+    </BottomSheet>
   );
 }
