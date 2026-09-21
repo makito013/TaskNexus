@@ -28,12 +28,40 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def _free_port() -> int:
-    """Grabs a port the OS says is free right now.
+def _occupy_free_port() -> socket.socket:
+    """A LISTENING socket on an OS-chosen free port, handed over still OPEN.
 
-    Inherently a small race (the port is released before the app claims it),
-    which is why no test here retries on bind failure — a collision would be a
-    flake, not a silent pass.
+    For the tests that need a port to be BUSY. There is no window here at all:
+    the socket that picks the port is the same one that keeps holding it, so
+    nothing can slip in between choosing and occupying. Callers read the number
+    off `getsockname()` and close the socket when done.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+    except BaseException:
+        sock.close()
+        raise
+    return sock
+
+
+def _candidate_port() -> int:
+    """A port the OS reported free a moment ago — a CANDIDATE, not a promise.
+
+    Binding port 0 and closing the probe is inherently TOCTOU: the port is
+    released before the app claims it, and anything else on the machine can
+    take it in between. This bit the suite twice in one day under concurrent
+    runs (the live backend plus a second pytest).
+
+    Holding the probe open instead is not an option: the app binds the very
+    same port, and `_bind_hook_loopback_socket` sets SO_REUSEADDR only on
+    POSIX, where it still does not permit two live listeners. A held socket
+    would guarantee the failure it was meant to prevent.
+
+    So the race is CLOSED BY DETECTION rather than by avoidance: callers go
+    through `_running_app_with_listener`, which notices a lost race and retries
+    on a fresh port. Never call this directly for a port that has to work.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -66,6 +94,38 @@ def _running_app(tmp_path, **env_overrides):
         importlib.reload(main_mod)
         with TestClient(main_mod.app) as client:
             yield main_mod, client
+
+
+@contextmanager
+def _running_app_with_listener(tmp_path, attempts=6, **env_overrides):
+    """`_running_app` on a loopback port the listener ACTUALLY came up on.
+
+    Yields `(main_mod, client, port)`. If the port was stolen between
+    `_candidate_port` and the app's own bind, `_hook_loopback_server` comes
+    back None — that is the lost race, and it is retried on a fresh port with a
+    short backoff instead of failing the test.
+
+    Losing every attempt still fails loudly: the retry only absorbs a race, it
+    never turns a genuinely broken listener into a pass. Any test that asserts
+    the listener is UP should use this; the two that deliberately occupy a port
+    should use `_occupy_free_port` instead.
+    """
+    for attempt in range(attempts):
+        port = _candidate_port()
+        with _running_app(
+            tmp_path, HOOK_LOOPBACK_PORT=str(port), **env_overrides
+        ) as (main_mod, client):
+            if main_mod._hook_loopback_server is not None:
+                yield main_mod, client, port
+                return
+        # Lost the race — back off briefly so the winner has a chance to move
+        # on, then try a different port.
+        time.sleep(0.05 * (2 ** attempt))
+
+    raise AssertionError(
+        f"loopback listener failed to bind on {attempts} different free ports; "
+        "that is no longer explainable as a port race"
+    )
 
 
 def _register_session(client, session_key, claude_session_id):
@@ -138,10 +198,9 @@ def test_stop_hook_reaches_the_backend_through_the_loopback_port(tmp_path):
     nowhere else — exactly the production situation where the app's own port
     (443) is not where the hook is pointed.
     """
-    port = _free_port()
     claude_session_id = uuid_mod.UUID("33333333-3333-3333-3333-333333333333")
 
-    with _running_app(tmp_path, HOOK_LOOPBACK_PORT=str(port)) as (main_mod, client):
+    with _running_app_with_listener(tmp_path) as (main_mod, client, port):
         assert main_mod._hook_loopback_server is not None
         _register_session(client, "loopback-test", claude_session_id)
 
@@ -159,8 +218,7 @@ def test_loopback_listener_binds_loopback_only(tmp_path):
     """Never reachable from the tailnet/LAN: the listener exists to be called by
     processes on this machine, and binding 0.0.0.0 would publish an unauthenticated
     hook surface to the network."""
-    port = _free_port()
-    with _running_app(tmp_path, HOOK_LOOPBACK_PORT=str(port)) as (main_mod, _client):
+    with _running_app_with_listener(tmp_path) as (main_mod, _client, port):
         server = main_mod._hook_loopback_server
         deadline = time.time() + 5
         while not server.started and time.time() < deadline:
@@ -177,11 +235,11 @@ def test_app_survives_a_loopback_port_that_is_already_taken(tmp_path):
     Server.startup) and kill the whole process; pre-binding turns it into a
     warning.
     """
-    port = _free_port()
-    squatter = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # The squatter picks its OWN port and never lets go of it, so there is no
+    # window between choosing and occupying for another process to slip into.
+    squatter = _occupy_free_port()
     try:
-        squatter.bind(("127.0.0.1", port))
-        squatter.listen(1)
+        port = squatter.getsockname()[1]
 
         with _running_app(tmp_path, HOOK_LOOPBACK_PORT=str(port)) as (main_mod, client):
             assert main_mod._hook_loopback_server is None
@@ -213,7 +271,7 @@ def test_starting_the_listener_leaves_process_wide_logging_untouched(tmp_path):
     access_logger.addHandler(sentinel_handler)
     error_logger.addFilter(sentinel_filter)
     try:
-        with _running_app(tmp_path, HOOK_LOOPBACK_PORT=str(_free_port())) as (main_mod, _c):
+        with _running_app_with_listener(tmp_path) as (main_mod, _c, _port):
             assert main_mod._hook_loopback_server is not None, "listener never started"
             assert sentinel_handler in access_logger.handlers
             assert access_logger.propagate is propagate_before
@@ -334,11 +392,11 @@ def test_hook_callback_url_falls_back_when_the_loopback_bind_fails(tmp_path):
     HOOK_LOOPBACK_PORT. This asserts the fallback (DEFAULT_HOOK_PORT) is used
     instead whenever the listener object is not actually up.
     """
-    port = _free_port()
-    squatter = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # The squatter picks its OWN port and never lets go of it, so there is no
+    # window between choosing and occupying for another process to slip into.
+    squatter = _occupy_free_port()
     try:
-        squatter.bind(("127.0.0.1", port))
-        squatter.listen(1)
+        port = squatter.getsockname()[1]
 
         with _running_app(tmp_path, HOOK_LOOPBACK_PORT=str(port)) as (main_mod, _client):
             assert main_mod._hook_loopback_server is None, "bind should have failed"

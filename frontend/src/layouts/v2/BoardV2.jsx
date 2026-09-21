@@ -64,12 +64,52 @@
 //
 // Colunas dinâmicas (task #43, fase 1): as 4 colunas fixas por status saíram.
 // `useColumns()` é a fonte de verdade — criar (coluna-fantasma no fim do
-// scroller), renomear (clique no título), reordenar (setas ◀▶), marcar como
-// concluída e excluir (menu "⋯") acontecem todos no header da própria coluna.
-// Arrastar coluna e arrastar card ficam para as fases 2 e 3.
-import { useRef, useState } from 'react';
+// scroller), renomear, marcar como concluída e excluir acontecem todos no
+// header da própria coluna, as três últimas pelo menu "⋯".
+//
+// Arrastar coluna (task #43, fase 2): o CABEÇALHO INTEIRO de cada coluna é a
+// superfície de arrasto — pega em qualquer ponto da barra e arrasta, como no
+// Jira (decisão do Bruno depois de testar a fase 2 ao vivo; a primeira versão
+// tinha um grip ⠿ dedicado de 28px, que ele achou pequeno demais para mirar).
+// O botão "⋯" dentro do header continua clicável: os sensores só armam depois
+// de 6px de movimento (mouse) ou 280ms segurando (touch), e um clique não
+// cruza nenhum dos dois limiares. Renomear saiu do clique-no-título por causa
+// disso e virou item do menu "⋯" (BoardColumnRenameDialog) — editar inline e
+// arrastar disputariam os mesmos pixels.
+//
+// ⚠️ As setas ◀▶ da fase 1 foram REMOVIDAS a pedido do Bruno, que aceitou a
+// troca de olhos abertos: eram o único caminho de reordenar por teclado, e
+// como não há `KeyboardSensor` registrado aqui, hoje NÃO existe rota de
+// teclado para reordenar coluna. Consciente e fora de escopo por ora — quem
+// for resolver, o lugar é um KeyboardSensor no `DndContext` abaixo.
+//
+// Por baixo: dnd-kit, `DndContext` + `SortableContext` horizontal em volta do
+// scroller, com `DragOverlay` portalado para `document.body`. O cálculo da
+// nova ordem mora em `utils/boardColumnOrder.js` (puro, e é o que os testes
+// exercitam de verdade — gesto de dnd-kit não é simulável em jsdom); o POST
+// vai pelo `reorderColumns` de `useColumns`, otimista com rollback.
+//
+// Arrastar CARD entre colunas, com posição fina, continua pendente (fase 3):
+// `cards.board_position` já existe e é gravado desde a fase 1, mas ainda não
+// há endpoint `/move` nem drop de card — mover card aqui é só o `<select>` de
+// status no rodapé, que realoca para o FIM da coluna de destino.
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
+import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { SortableBoardColumn } from '../../components/board/SortableBoardColumn.jsx';
+import { reorderColumns as reorderSlugs } from '../../utils/boardColumnOrder.js';
 import { BoardColumnDeleteDialog } from '../../components/board/BoardColumnDeleteDialog.jsx';
 import { BoardColumnMenu } from '../../components/board/BoardColumnMenu.jsx';
+import { BoardColumnRenameDialog } from '../../components/board/BoardColumnRenameDialog.jsx';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
 import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
@@ -88,6 +128,61 @@ import {
   resolveProjectName,
   useClienteProjetoFilter,
 } from './useClienteProjetoFilter.js';
+
+// How long a finger must rest on the header before the drag arms, and how far
+// it may wander in the meantime without cancelling.
+//
+// 280 is DELIBERATELY DUPLICATED from `LONG_PRESS_MS` in
+// layouts/v2/TerminalShortcutsFab.jsx (~line 50) rather than imported. The two
+// gestures are independent — that one toggles the shortcuts panel, this one
+// picks up a board column — and they share the number only because the same
+// constraint produced it: comfortably under the ~500ms at which iOS Safari
+// raises its own callout/selection, so the system never fights us for the
+// gesture. Importing would make a future tuning of one silently retune the
+// other.
+const COLUMN_DRAG_LONG_PRESS_MS = 280;
+// Finger tremor during those 280ms. Independent of the FAB's own slop for the
+// same reason as above.
+const COLUMN_DRAG_TOLERANCE_PX = 8;
+// Mouse only: a few pixels of travel before a press on the header becomes a
+// drag. This is what keeps the "⋯" button inside it clickable — a plain click
+// never travels far enough to arm anything.
+const COLUMN_DRAG_POINTER_DISTANCE_PX = 6;
+
+// dnd-kit ships English screen-reader strings and mounts its live region
+// unconditionally, so it announces during POINTER drags too — not only
+// keyboard ones. Left alone, a pt-BR board would speak English, and the
+// default instructions describe a space-bar/arrow-key drag this build does not
+// implement (the sensor list is Pointer + Touch, with no KeyboardSensor).
+//
+// `draggable` is the text dnd-kit puts in its hidden instructions node. That
+// node is only read when something references it, and nothing does any more
+// (SortableBoardColumn drops `aria-describedby` — see the block there), so
+// this is belt-and-braces: correct if anything ever points at it again.
+const COLUMN_DND_SCREEN_READER_INSTRUCTIONS = {
+  // Says only what is true: dragging the header works, and nothing else does.
+  // It no longer points at the ◀▶ arrows, which have been removed — promising
+  // a keyboard route that does not exist is the failure this whole round was
+  // about.
+  draggable: 'Para reordenar, arraste o cabeçalho da coluna.',
+};
+
+// `active.id`/`over.id` are SLUGS (`em_andamento`), which is what the sortable
+// items are keyed by — never announce those. `labelOf` resolves them to what
+// the user actually reads on screen, falling back to the slug only if a column
+// vanished mid-drag.
+function buildColumnDndAnnouncements(labelOf) {
+  return {
+    onDragStart: ({ active }) => `Coluna ${labelOf(active.id)} levantada.`,
+    onDragOver: ({ active, over }) => (over
+      ? `Coluna ${labelOf(active.id)} sobre ${labelOf(over.id)}.`
+      : `Coluna ${labelOf(active.id)} fora de qualquer posição válida.`),
+    onDragEnd: ({ active, over }) => (over
+      ? `Coluna ${labelOf(active.id)} solta sobre ${labelOf(over.id)}.`
+      : `Coluna ${labelOf(active.id)} solta fora do board. A ordem não mudou.`),
+    onDragCancel: ({ active }) => `Movimento da coluna ${labelOf(active.id)} cancelado.`,
+  };
+}
 
 // Reorder feedback is a border FLASH, not a position animation: the columns
 // swap instantly in the flex row (animating a 300px-wide box sliding past
@@ -186,37 +281,18 @@ const styles = {
     borderBottom: '1px solid var(--v2-border)',
     flexShrink: 0,
   },
-  // A <button> reset to look like the plain text it replaced — same trick as
-  // `cardTitle` below. Clicking it turns the title into an inline input.
+  // Plain text since renaming moved to the "⋯" menu — no button reset, no
+  // pointer cursor. The header's own `cursor: grab` applies here too, which is
+  // right: the title is part of the drag surface like the rest of the bar.
   columnTitle: {
     flex: 1,
     minWidth: 0,
-    display: 'block',
-    border: 'none',
-    background: 'transparent',
-    padding: 0,
-    margin: 0,
-    textAlign: 'left',
-    font: 'inherit',
-    cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
     color: 'var(--v2-text)',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-  },
-  columnTitleInput: {
-    flex: 1,
-    minWidth: 0,
-    padding: '2px 6px',
-    borderRadius: '6px',
-    border: '1px solid var(--v2-accent)',
-    background: 'var(--v2-surface-2)',
-    color: 'var(--v2-text)',
-    font: 'inherit',
-    fontSize: '13px',
-    fontWeight: 600,
   },
   columnCount: {
     fontSize: '11px',
@@ -234,26 +310,18 @@ const styles = {
     lineHeight: 1.4,
     flexShrink: 0,
   },
-  // Always visible, never hidden-until-hover: on a touch screen there is no
-  // hover to reveal them. Disabled state is a COLOUR change, never `opacity` —
-  // a faded arrow on this surface reads as a rendering glitch rather than as
-  // "you are already at the end".
-  arrowBtn: (disabled) => ({
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '28px',
-    height: '28px',
-    minWidth: '28px',
-    padding: 0,
-    borderRadius: '6px',
-    border: '1px solid var(--v2-border)',
-    background: 'var(--v2-surface-3)',
-    color: disabled ? 'var(--v2-text-faint)' : 'var(--v2-text-dim)',
-    fontSize: '11px',
-    lineHeight: 1,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    flexShrink: 0,
+  // The element that follows the pointer. Header only — carrying the whole
+  // card list would make a heavy, laggy object and say nothing extra about
+  // where it is going. Raised with the existing shadow token so it reads as
+  // lifted off the board rather than as another column in the row.
+  dragOverlayColumn: (isDone) => ({
+    width: '300px',
+    background: 'var(--v2-surface)',
+    border: `1px solid ${isDone ? 'var(--v2-accent)' : 'var(--v2-border)'}`,
+    borderRadius: '12px',
+    boxShadow: 'var(--v2-shadow-lg)',
+    cursor: 'grabbing',
+    overflow: 'hidden',
   }),
   // Ghost column: the "+ nova coluna" affordance, narrower than a real column
   // and dashed so it never reads as a column that simply has no cards.
@@ -553,8 +621,13 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   // which "⋯" menu is open, whether the ghost column has turned into an
   // input, and which column just moved (for the border flash). None of it
   // belongs in useColumns, which owns the persisted list only.
-  const [editingColumnSlug, setEditingColumnSlug] = useState(null);
-  const [columnDraftLabel, setColumnDraftLabel] = useState('');
+  // { slug, label } of the column being renamed, or null. Renaming is a modal
+  // now, not an inline input on the title: the whole header became the drag
+  // surface, and click-to-edit could not share those pixels with
+  // click-and-drag.
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [renamingColumn, setRenamingColumn] = useState(false);
+  const [renameError, setRenameError] = useState(null);
   const [openMenuSlug, setOpenMenuSlug] = useState(null);
   const [creatingColumn, setCreatingColumn] = useState(false);
   const [newColumnLabel, setNewColumnLabel] = useState('');
@@ -564,36 +637,31 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletingColumn, setDeletingColumn] = useState(false);
 
-  // Escape unmounts the inline input, and React fires `blur` on unmount in
-  // some paths — which would commit the very draft the user just cancelled.
-  // A ref, not state: `commitColumnLabel` closes over the render's state, so a
-  // setState in the Escape handler would not be visible to the blur that
-  // follows in the same tick.
-  const renameCancelledRef = useRef(false);
-
-  const startEditingColumn = (column) => {
-    renameCancelledRef.current = false;
-    setEditingColumnSlug(column.slug);
-    setColumnDraftLabel(column.label);
+  const openRenameDialog = (column) => {
+    setRenameTarget({ slug: column.slug, label: column.label });
+    setRenameError(null);
   };
 
-  const cancelEditingColumn = () => {
-    renameCancelledRef.current = true;
-    setEditingColumnSlug(null);
-  };
-
-  // Enter and blur both commit; Escape reverts. An unchanged or empty draft
-  // is a silent no-op rather than a failed request — retyping the same name
-  // is not an error worth an alert.
-  const commitColumnLabel = async (column) => {
-    if (renameCancelledRef.current) return;
-    const label = columnDraftLabel.trim();
-    setEditingColumnSlug(null);
-    if (!label || label === column.label) return;
+  // The rejection message is shown INSIDE the dialog and the dialog stays
+  // open, holding what the user typed. The old inline input reverted silently
+  // on a duplicate name, which left them retyping the same thing with no idea
+  // why it kept snapping back.
+  const handleConfirmRename = async (label) => {
+    if (!renameTarget) return;
+    // Renaming to the current name is a no-op, not a request.
+    if (label === renameTarget.label) {
+      setRenameTarget(null);
+      return;
+    }
+    setRenamingColumn(true);
+    setRenameError(null);
     try {
-      await renameColumn(column.slug, label);
+      await renameColumn(renameTarget.slug, label);
+      setRenameTarget(null);
     } catch (e) {
-      alert(e.message || 'Falha ao renomear a coluna.');
+      setRenameError(e.message || 'Falha ao renomear a coluna.');
+    } finally {
+      setRenamingColumn(false);
     }
   };
 
@@ -609,21 +677,66 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
     }
   };
 
-  // The endpoint takes the WHOLE new order, not a pair of neighbours, so the
-  // swap is computed here and the full list is sent.
-  const handleMoveColumn = async (index, delta) => {
-    const target = index + delta;
-    if (target < 0 || target >= columns.length) return;
-    const slugs = columns.map((c) => c.slug);
-    [slugs[index], slugs[target]] = [slugs[target], slugs[index]];
-    const movedSlug = slugs[target];
+  // -- drag to reorder (phase 2) -------------------------------------------
+  //
+  // Drag is the ONLY way to reorder a column. The ◀▶ arrows that shipped in
+  // phase 1 are gone at Bruno's request, and he accepted the trade knowingly:
+  // they were the only keyboard-reachable path, and this build registers no
+  // KeyboardSensor, so until someone adds one there is no keyboard route to
+  // reordering. Deliberate, documented, and out of scope to fix here.
+  const [draggingSlug, setDraggingSlug] = useState(null);
+  const draggingColumn = draggingSlug
+    ? columns.find((c) => c.slug === draggingSlug)
+    : null;
+
+  const columnSlugs = useMemo(() => columns.map((c) => c.slug), [columns]);
+
+  const columnDndAccessibility = useMemo(() => {
+    const labelBySlug = new Map(columns.map((c) => [c.slug, c.label]));
+    return {
+      screenReaderInstructions: COLUMN_DND_SCREEN_READER_INSTRUCTIONS,
+      announcements: buildColumnDndAnnouncements(
+        (slug) => labelBySlug.get(slug) ?? slug
+      ),
+    };
+  }, [columns]);
+
+  const columnDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: COLUMN_DRAG_POINTER_DISTANCE_PX },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: COLUMN_DRAG_LONG_PRESS_MS,
+        tolerance: COLUMN_DRAG_TOLERANCE_PX,
+      },
+    })
+  );
+
+  const handleColumnDragStart = (event) => setDraggingSlug(event.active.id);
+  const handleColumnDragCancel = () => setDraggingSlug(null);
+
+  const handleColumnDragEnd = async (event) => {
+    setDraggingSlug(null);
+    const { active, over } = event;
+    const current = columns.map((c) => c.slug);
+    // `over` is null when the column was released outside every droppable.
+    const next = reorderSlugs(current, active?.id, over?.id);
+    // Identity, not deep comparison: the pure helper returns the array it was
+    // handed when the drag changed nothing, so a cancelled or same-slot drop
+    // costs no optimistic update and no request.
+    if (next === current) return;
+
     try {
-      await reorderColumns(slugs);
-      // Re-arming the flash needs the class to actually leave the DOM first,
-      // otherwise moving the same column twice in a row replays nothing.
+      // Optimistic locally, with rollback, inside useColumns — the same path
+      // the arrows use, so drag and arrows can never drift apart.
+      await reorderColumns(next);
       setFlashedSlug(null);
-      requestAnimationFrame(() => setFlashedSlug(movedSlug));
+      requestAnimationFrame(() => setFlashedSlug(active.id));
     } catch (e) {
+      // The hook already restored the previous order; this only explains it.
+      // No automatic retry/refetch in this phase (deliberately out of scope) —
+      // the board is back where it was and the arrows still work.
       alert(e.message || 'Falha ao reordenar as colunas.');
     }
   };
@@ -698,67 +811,55 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           one frame — every card would flash as "not done" and the ghost
           column would sit alone on an empty board. */}
       {!columnsLoading && (
+      <DndContext
+        accessibility={columnDndAccessibility}
+        sensors={columnDragSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleColumnDragStart}
+        onDragEnd={handleColumnDragEnd}
+        onDragCancel={handleColumnDragCancel}
+      >
+      <SortableContext items={columnSlugs} strategy={horizontalListSortingStrategy}>
       <div style={styles.scroller}>
-        {columns.map((column, columnIndex) => {
+        {columns.map((column) => {
           const status = column.slug;
           const columnCards = cards.filter((c) => c.status === status);
-          const isFirst = columnIndex === 0;
-          const isLast = columnIndex === columns.length - 1;
           return (
+            <SortableBoardColumn key={status} slug={status} label={column.label}>
+            {({ headerDragProps }) => (
             <div
-              key={status}
               style={styles.column(column.is_done)}
               className={flashedSlug === status ? 'v2-column-flash' : undefined}
               data-testid={`board-v2-col-${status}`}
             >
-              <div style={styles.columnHeader}>
-                <button
-                  type="button"
-                  style={styles.arrowBtn(isFirst)}
-                  disabled={isFirst}
-                  aria-label={`Mover coluna ${column.label} para a esquerda`}
-                  onClick={() => handleMoveColumn(columnIndex, -1)}
-                >
-                  ◀
-                </button>
+              {/* The WHOLE header bar is the drag surface (Bruno's call after
+                  testing phase 2 live — grab anywhere, like Jira). The "⋯"
+                  button inside keeps working: the sensors only arm after 6px
+                  of travel (mouse) or a 280ms hold (touch), so a plain click
+                  never crosses the threshold and its native `click` fires.
 
-                {editingColumnSlug === status ? (
-                  <input
-                    style={styles.columnTitleInput}
-                    value={columnDraftLabel}
-                    autoFocus
-                    aria-label={`Renomear coluna ${column.label}`}
-                    onChange={(e) => setColumnDraftLabel(e.target.value)}
-                    onBlur={() => commitColumnLabel(column)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
-                      if (e.key === 'Escape') cancelEditingColumn();
-                    }}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    style={styles.columnTitle}
-                    onClick={() => startEditingColumn(column)}
-                  >
-                    {column.label}
-                  </button>
-                )}
+                  `role="group"` is load-bearing, not decoration. ARIA 1.2
+                  forbids naming a generic element, so on a roleless <div> the
+                  `aria-label` below would be DROPPED — the same role-gating
+                  that made dnd-kit's own `aria-roledescription` inert here.
+                  `group` is the right one: it names the bar without putting it
+                  in the tab order and without impersonating a button while
+                  containing one. */}
+              <div
+                {...headerDragProps}
+                role="group"
+                style={{ ...styles.columnHeader, ...headerDragProps.style }}
+                data-testid={`board-v2-col-header-${status}`}
+              >
+                {/* Plain text: clicking the title used to open an inline
+                    rename, which moved to the "⋯" menu when the header became
+                    the drag surface. */}
+                <span style={styles.columnTitle}>{column.label}</span>
 
                 {column.is_done && (
                   <span style={styles.doneBadge} aria-label="Coluna concluída">✓</span>
                 )}
                 <span style={styles.columnCount}>({columnCards.length})</span>
-
-                <button
-                  type="button"
-                  style={styles.arrowBtn(isLast)}
-                  disabled={isLast}
-                  aria-label={`Mover coluna ${column.label} para a direita`}
-                  onClick={() => handleMoveColumn(columnIndex, 1)}
-                >
-                  ▶
-                </button>
 
                 <BoardColumnMenu
                   columnLabel={column.label}
@@ -766,6 +867,7 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
                   isLastColumn={columns.length === 1}
                   open={openMenuSlug === status}
                   onToggle={(next) => setOpenMenuSlug(next ? status : null)}
+                  onRequestRename={() => openRenameDialog(column)}
                   onMarkDone={() => handleMarkDone(status)}
                   onRequestDelete={() => setDeleteTarget({
                     slug: status, label: column.label, reason: 'confirm', cards: 0,
@@ -835,6 +937,8 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
                 + Adicionar card
               </button>
             </div>
+            )}
+            </SortableBoardColumn>
           );
         })}
 
@@ -872,6 +976,35 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           </button>
         )}
       </div>
+      </SortableContext>
+
+      {/* Portaled to document.body. The columns are SIBLINGS of the fixed
+          CardFormModal, not ancestors, so a transform on one could not break
+          the fixed-positioning invariant either way — but the overlay is the
+          library's recommended shape and takes the moving element out of the
+          scroller entirely, so it is never clipped by `overflow: auto`. */}
+      {createPortal(
+        <DragOverlay>
+          {draggingColumn ? (
+            <div
+              style={styles.dragOverlayColumn(draggingColumn.is_done)}
+              data-testid="board-v2-drag-overlay"
+            >
+              <div style={styles.columnHeader}>
+                <span style={styles.columnTitle}>{draggingColumn.label}</span>
+                {draggingColumn.is_done && (
+                  <span style={styles.doneBadge} aria-hidden="true">✓</span>
+                )}
+                <span style={styles.columnCount}>
+                  ({cards.filter((c) => c.status === draggingColumn.slug).length})
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </DragOverlay>,
+        document.body
+      )}
+      </DndContext>
       )}
 
       {/* `defaultStatus`: the clicked column wins; `firstSlug` is the fallback
@@ -890,6 +1023,17 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           defaultStatus={creatingStatus || firstSlug}
           onSubmit={handleCreateSubmit}
           onClose={() => setCreatingStatus(null)}
+        />
+      )}
+
+      {renameTarget && (
+        <BoardColumnRenameDialog
+          open
+          columnLabel={renameTarget.label}
+          saving={renamingColumn}
+          error={renameError}
+          onConfirm={handleConfirmRename}
+          onClose={() => { setRenameTarget(null); setRenameError(null); }}
         />
       )}
 

@@ -18,7 +18,8 @@
 //   suffixes) without duplicating the slug rules in JS.
 //
 // - Mutation errors are RE-THROWN, never swallowed and never `alert()`ed here.
-//   Each caller already has a surface for them: the inline rename/create input
+//   Each caller already has a surface for them: the rename dialog shows the
+//   message inline and stays open, the ghost-column create input
 //   reverts, and the delete dialog needs the `reason` field to choose which of
 //   its three variants to show.
 //
@@ -59,11 +60,39 @@ export function useColumns() {
     return updated;
   }, []);
 
+  // The ONLY optimistic mutation here, and phase 2's drag is why: a column has
+  // to follow the finger immediately, so it cannot wait for a round-trip. The
+  // arrows share the path and get the same snappiness for free.
+  //
+  // Optimism needs a rollback, so the pre-drag order is captured BEFORE the
+  // local write and restored if the server refuses (a 409 when another tab has
+  // since created or deleted a column, making this list no longer a
+  // permutation). Rolling back to a snapshot rather than re-fetching is
+  // deliberate for this phase: there is no automatic retry/refetch yet, and
+  // silently swapping the user's board for a different one after a failed drag
+  // would be a second surprise on top of the first.
   const reorderColumns = useCallback(async (slugs) => {
-    const next = await api.reorderBoardColumns(slugs);
-    setColumns(next);
-    return next;
-  }, []);
+    const previous = columns;
+    const bySlug = new Map(previous.map((c) => [c.slug, c]));
+    const optimistic = slugs
+      .map((slug, index) => {
+        const column = bySlug.get(slug);
+        return column ? { ...column, position: index + 1 } : null;
+      })
+      .filter(Boolean);
+    setColumns(optimistic);
+
+    try {
+      // The server's answer still wins: it is the authority on `position`,
+      // and it may carry a label another tab changed mid-drag.
+      const next = await api.reorderBoardColumns(slugs);
+      setColumns(next);
+      return next;
+    } catch (e) {
+      setColumns(previous);
+      throw e;
+    }
+  }, [columns]);
 
   const setDoneColumn = useCallback(async (slug) => {
     // Replaces the whole list on purpose: marking a column done also UNMARKS

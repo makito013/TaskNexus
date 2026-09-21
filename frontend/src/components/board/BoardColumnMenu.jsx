@@ -13,6 +13,12 @@
 // done", which the backend's partial unique index does not allow and the
 // product decision forbids.
 //
+// Three items: "Renomear coluna", "Marcar como concluída" and "Excluir
+// coluna". Renaming lives here rather than on the column title because the
+// whole header became the drag surface — click-to-edit and click-and-drag
+// cannot share the same pixels without the result depending on how far the
+// pointer happened to drift.
+//
 // Two of the three deletion refusals are pre-empted right here, with the item
 // born disabled plus a `title`, instead of being discovered by pressing a
 // destructive button and getting a 409 back:
@@ -92,6 +98,7 @@ export function BoardColumnMenu({
   isLastColumn,
   open,
   onToggle,
+  onRequestRename,
   onMarkDone,
   onRequestDelete,
 }) {
@@ -141,6 +148,17 @@ export function BoardColumnMenu({
 
       {open && (
         <div style={styles.popover} role="menu" data-testid="board-column-menu">
+          {/* Renaming moved in here from "click the title" when the whole
+              header became the drag surface — click-to-edit and
+              click-and-drag were competing for the same pixels. */}
+          <button
+            type="button"
+            role="menuitem"
+            style={styles.item(false, false)}
+            onClick={() => { onToggle(false); onRequestRename(); }}
+          >
+            Renomear coluna
+          </button>
           {isDone ? (
             <span style={styles.info}>✓ Esta é a coluna concluída</span>
           ) : (
