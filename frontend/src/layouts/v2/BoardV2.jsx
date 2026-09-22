@@ -133,6 +133,7 @@ import {
 } from '../../components/board/SortableBoardCard.jsx';
 import { reorderColumns as reorderSlugs } from '../../utils/boardColumnOrder.js';
 import { computeCardDrop } from '../../utils/boardCardOrder.js';
+import { vibrateDragPickup } from '../../utils/haptics.js';
 import { BoardColumnDeleteDialog } from '../../components/board/BoardColumnDeleteDialog.jsx';
 import { BoardColumnMenu } from '../../components/board/BoardColumnMenu.jsx';
 import { BoardColumnRenameDialog } from '../../components/board/BoardColumnRenameDialog.jsx';
@@ -408,6 +409,17 @@ const styles = {
     border: `1px solid ${isDone ? 'var(--v2-accent)' : 'var(--v2-border)'}`,
     borderRadius: '12px',
     boxShadow: 'var(--v2-shadow-lg)',
+    // Lifts the moment the drag arms, which is BEFORE the finger has moved —
+    // dnd-kit's long press fires on a timer, not on travel. At that instant
+    // the overlay sits exactly on top of the column it came from, under the
+    // finger, so the only parts of it the user can see are its edges: this
+    // pushes them ~6px outwards on each side of a 300px bar, far outside the
+    // contact patch, and the shadow above separates it from the board.
+    //
+    // Safe next to dnd-kit's own transform: the library renders its positioned
+    // wrapper (`PositionedOverlay`) as a SEPARATE element and this style is on
+    // its child, so the two transforms nest instead of overwriting.
+    transform: 'scale(1.04)',
     cursor: 'grabbing',
     overflow: 'hidden',
   }),
@@ -507,6 +519,10 @@ const styles = {
     fontSize: '13px',
     fontWeight: 600,
     lineHeight: 1.35,
+    // Same pickup "pop" as the column overlay, same reason — see the block
+    // there. It matters at least as much here: a card is roughly the size of
+    // the finger holding it down.
+    transform: 'scale(1.04)',
     cursor: 'grabbing',
   },
   card: {
@@ -1026,11 +1042,26 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   // as a harmless no-op: that would be true only by accident (`indexOf`
   // returning -1), which is not a property worth depending on — and it would
   // silently swallow a card drop the moment the namespaces changed.
-  const handleDragStart = (event) => (
-    isCardDndId(event.active.id)
+  const handleDragStart = (event) => {
+    // Fires at the exact instant the drag arms, for BOTH kinds — which on
+    // touch is 280ms after the finger lands, with no movement at all
+    // (dnd-kit's delay constraint is a plain `setTimeout`, see haptics.js).
+    //
+    // This is the fix for the one thing Bruno found confusing on the tablet:
+    // every other signal of "you have picked this up" is drawn exactly where
+    // his finger already was, so he could not tell the column was live until
+    // he dragged it and found out. A tick under the fingertip is the only
+    // channel the fingertip does not block.
+    //
+    // Once per drag, here in the shared dispatcher rather than in an effect
+    // inside each sortable: `onDragStart` is called once by the library, while
+    // an `isDragging` effect would have to be written twice and kept in sync.
+    // No-op wherever the API is missing (all of iOS, desktop Safari).
+    vibrateDragPickup();
+    return isCardDndId(event.active.id)
       ? handleCardDragStart(event)
-      : handleColumnDragStart(event)
-  );
+      : handleColumnDragStart(event);
+  };
 
   // Only the card drag has anything to do here: the drop indicator has to be
   // recomputed as the pointer travels. A column drag needs no `onDragOver` —

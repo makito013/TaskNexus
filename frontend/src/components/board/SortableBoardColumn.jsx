@@ -114,13 +114,29 @@ export function SortableBoardColumn({ slug, label, children }) {
   // definite height here that chain breaks and every column collapses to the
   // height of its cards. jsdom cannot see it (no layout engine), so it is
   // reasoned about rather than tested.
+  // The outline is 2px, not the 1px this shipped with, and that is the fix for
+  // a real complaint from the tablet test: the long press arms the drag after
+  // 280ms WITHOUT any movement (dnd-kit runs `setTimeout(handleStart, delay)`),
+  // but every signal that fired at that moment was drawn underneath the finger
+  // that caused it — so Bruno held the column, nothing seemed to happen, and he
+  // only discovered it was live by dragging it. A ring around the whole column
+  // is the part of the feedback a fingertip cannot cover: the column is 300px
+  // wide and full height, so its edges are nowhere near the contact patch.
+  //
+  // `outlineOffset` pushes it clear of the column's own border so the two do
+  // not read as one thick line.
   const wrapperStyle = {
     height: '100%',
     flexShrink: 0,
     transform: toTranslate(transform),
     transition,
     ...(isDragging
-      ? { opacity: 0.4, borderRadius: '12px', outline: '1px dashed var(--v2-accent)' }
+      ? {
+        opacity: 0.4,
+        borderRadius: '12px',
+        outline: '2px dashed var(--v2-accent)',
+        outlineOffset: '2px',
+      }
       : null),
   };
 

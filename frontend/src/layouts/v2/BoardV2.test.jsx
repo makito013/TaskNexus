@@ -1818,6 +1818,52 @@ describe('BoardV2 — arrastar card (fase 3)', () => {
     expect(moveCard).not.toHaveBeenCalled();
   });
 
+  it('confirms the pickup with a haptic tick the instant the drag arms', async () => {
+    // The fix for the tablet complaint: on touch, dnd-kit arms the drag 280ms
+    // after the finger lands with NO movement, and every visual signal of that
+    // is drawn under the finger that caused it. `onDragStart` is the exact
+    // moment of activation, so this is where the tick belongs.
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', {
+      value: vibrate, configurable: true, writable: true,
+    });
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    delete navigator.vibrate;
+  });
+
+  it('confirms a COLUMN pickup the same way — same gesture, same expectation', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', {
+      value: vibrate, configurable: true, writable: true,
+    });
+    mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    delete navigator.vibrate;
+  });
+
+  it('starts a drag normally on a platform with no vibration API', async () => {
+    // All of iOS and desktop Safari. A missing haptic must not stop the drag
+    // it was only meant to decorate.
+    delete navigator.vibrate;
+    const { setCardDragActive } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(() => {
+      act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    }).not.toThrow();
+    expect(setCardDragActive).toHaveBeenLastCalledWith(true);
+  });
+
   it('suspends the poll while a card drag is in progress, and resumes after', async () => {
     const { setCardDragActive } = mockCards();
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);

@@ -110,8 +110,16 @@ export function SortableBoardCard({ cardId, titulo, children }) {
       transform: toTranslate(transform),
       transition,
       ...styles.drag(isDragging),
+      // 2px with an offset, matching SortableBoardColumn — see the block
+      // there. The drag arms on the 280ms timer with no movement, and a card
+      // is roughly finger-sized, so the ring around it is most of what is left
+      // visible at the instant it becomes draggable.
       ...(isDragging
-        ? { opacity: 0.4, outline: '1px dashed var(--v2-accent)' }
+        ? {
+          opacity: 0.4,
+          outline: '2px dashed var(--v2-accent)',
+          outlineOffset: '2px',
+        }
         : null),
     },
     // The accessible name is ours, not dnd-kit's. It only works because
