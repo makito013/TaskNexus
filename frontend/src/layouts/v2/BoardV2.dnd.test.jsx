@@ -19,11 +19,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, within, fireEvent, waitFor } from '@testing-library/react';
 import { BoardV2 } from './BoardV2.jsx';
 
+// Two cards in one column so phase 3's card sortables really mount here — an
+// empty board would let a misconfigured card `SortableContext` pass unnoticed,
+// which is exactly the class of bug this file exists to catch.
+const CARDS = [
+  { id: 1, titulo: 'Card 1', projeto_id: 'projA', status: 'a_fazer', ultima_atualizacao_por: 'bruno' },
+  { id: 2, titulo: 'Card 2', projeto_id: 'projA', status: 'a_fazer', ultima_atualizacao_por: 'bruno' },
+];
+
+const moveCard = vi.fn().mockResolvedValue({});
+const setCardDragActive = vi.fn();
+
 vi.mock('../../hooks/useCards.js', () => ({
   useCards: () => ({
-    cards: [],
+    cards: CARDS,
     createCard: vi.fn(),
     updateCard: vi.fn(),
+    moveCard,
+    setCardDragActive,
     deleteCard: vi.fn(),
     uploadCardImage: vi.fn(),
     deleteCardImage: vi.fn(),
@@ -276,11 +289,96 @@ describe('BoardV2 - real dnd-kit provider tree', () => {
     expect(screen.queryByTestId('board-v2-drag-overlay')).toBeNull();
   });
 
+  // -- phase 3: the card sortables, with the real providers mounted ---------
+
+  it('makes the whole card the drag surface, with the touch package applied', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    for (const card of CARDS) {
+      const node = screen.getByTestId(`board-v2-card-${card.id}`);
+      // touchAction must stay 'none', or the column body claims the gesture as
+      // a vertical scroll before the 280ms long press ever arms — and a card
+      // lives inside a scrolling body, so this matters more here than on the
+      // column header.
+      expect(node.style.touchAction).toBe('none');
+      expect(node.style.cursor).toBe('grab');
+      expect(node.style.webkitUserSelect || node.style.WebkitUserSelect).toBe('none');
+      // The card keeps its own layout styles — the drag props are MERGED into
+      // them, not substituted for them.
+      expect(node.style.display).toBe('flex');
+      // Named for AT, with the `role="group"` that keeps ARIA 1.2 from
+      // discarding the label (same pairing as the column header).
+      expect(node.getAttribute('role')).toBe('group');
+      expect(node.getAttribute('aria-label'))
+        .toBe(`Card ${card.titulo} — arraste para reposicionar`);
+    }
+  });
+
+  it('exposes no dnd-kit ARIA on the card either', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const node = screen.getByTestId('board-v2-card-1');
+    // The live one of the three: it points at dnd-kit's hidden English
+    // instructions for a space-bar drag this build does not implement.
+    expect(node.getAttribute('aria-describedby')).toBeNull();
+    expect(node.getAttribute('aria-roledescription')).toBeNull();
+    expect(node.getAttribute('tabindex')).toBeNull();
+  });
+
+  it('keeps the card title and the status select clickable inside the drag surface', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const trigger = screen.getByText('Card 1');
+    // A real press is pointerdown → pointerup → click, and the sensor listens
+    // to the first of those. Only with the REAL providers is there a listener
+    // to out-compete (the passthrough-mocked file gets an empty activator
+    // list, where a click "passes" for the wrong reason).
+    fireEvent.pointerDown(trigger, { button: 0, clientX: 40, clientY: 10, pointerId: 1, isPrimary: true });
+    fireEvent.pointerMove(document, { clientX: 43, clientY: 10, pointerId: 1 });
+    fireEvent.pointerUp(trigger, { button: 0, clientX: 43, clientY: 10, pointerId: 1 });
+    fireEvent.click(trigger, { button: 0, clientX: 43, clientY: 10 });
+
+    // The click opened the edit modal...
+    expect(screen.getByText('Editar Card')).toBeTruthy();
+    // ...and no drag came along with it.
+    expect(screen.queryByTestId('board-v2-card-drag-overlay')).toBeNull();
+  });
+
+  it('gives every column body a card dropzone, so an empty column can receive one', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // `em_andamento` holds no cards at all — its SortableContext registers no
+    // item, so the body's own droppable is the ONLY thing a card could be
+    // dropped onto there.
+    expect(screen.getByTestId('board-v2-col-body-em_andamento')).toBeTruthy();
+    for (const column of COLUMNS) {
+      expect(screen.getByTestId(`board-v2-col-body-${column.slug}`)).toBeTruthy();
+    }
+  });
+
+  it('announces cards by title and mentions both drags in the instructions', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const text = [...document.querySelectorAll('div')].map((el) => el.textContent).join(' ');
+    // The column half, unchanged from phase 2.
+    expect(text).toMatch(/arraste o cabeçalho da coluna/);
+    // The card half, plus the keyboard route that DOES exist for a card.
+    expect(text).toMatch(/arraste o card/);
+    expect(text).toMatch(/seletor de coluna no pé do card/);
+  });
+
+  it('renders no card drag overlay and no drop indicator while idle', () => {
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.queryByTestId('board-v2-card-drag-overlay')).toBeNull();
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
   // POSITIVE CONTROL, and it must stay LAST in this file.
   //
   // Why it exists: "no overlay appeared" proves nothing on its own. A press
   // that never travels produces no drag no matter WHAT the threshold is —
-  // measured, by setting COLUMN_DRAG_POINTER_DISTANCE_PX to 0 and watching the
+  // measured, by setting BOARD_DRAG_POINTER_DISTANCE_PX to 0 and watching the
   // mitigation tests above still pass. This test is what gives them teeth: it
   // pins that a move PAST the threshold really does arm a drag here, so the
   // ones that assert "no drag" are asserting a difference rather than a

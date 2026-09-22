@@ -25,7 +25,32 @@
 // passthrough-mocked file the listeners are empty, so a click there would
 // "pass" for the wrong reason.
 
+import { useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
+
+// Phase 3 addition: besides being sortable itself, a column is also a DROP
+// TARGET for cards. It has to be, and an empty column is why — a
+// `SortableContext` with zero items registers no collision target at all, so
+// without this there would be literally nothing to drop the first card of a
+// new column onto.
+//
+// Separate id namespace from both the column's own sortable id (a bare slug)
+// and a card's (`card:` prefixed), so `onDragEnd` can tell all three apart by
+// inspecting the id instead of guessing from context.
+export const COLUMN_DROPZONE_ID_PREFIX = 'dropzone:';
+
+export function columnDropzoneId(slug) {
+  return `${COLUMN_DROPZONE_ID_PREFIX}${slug}`;
+}
+
+export function isColumnDropzoneId(id) {
+  return String(id ?? '').startsWith(COLUMN_DROPZONE_ID_PREFIX);
+}
+
+export function slugFromColumnDropzoneId(id) {
+  if (!isColumnDropzoneId(id)) return null;
+  return String(id).slice(COLUMN_DROPZONE_ID_PREFIX.length);
+}
 
 // Written by hand instead of importing `CSS.Transform.toString` from
 // `@dnd-kit/utilities`: that package is a TRANSITIVE dependency of core and
@@ -66,6 +91,15 @@ export function SortableBoardColumn({ slug, label, children }) {
     transition,
     isDragging,
   } = useSortable({ id: slug });
+
+  // The card drop target, covering the column's card list (see the block at
+  // the top of this file for why an empty column needs one of its own). It is
+  // NOT gated on the column being empty: the whole body is the target, and the
+  // collision detection in BoardV2 prefers a card over it whenever the pointer
+  // is actually over one, so this only ever wins in genuinely empty space.
+  const { setNodeRef: setDropzoneRef, isOver: isCardOver } = useDroppable({
+    id: columnDropzoneId(slug),
+  });
 
   // The source column stays IN FLOW while dragging — it is not removed and not
   // absolutely positioned — so the row never collapses by 300px mid-gesture.
@@ -132,9 +166,19 @@ export function SortableBoardColumn({ slug, label, children }) {
     ...listeners,
   };
 
+  // Merged into the column BODY's own style by BoardV2. `isCardOver` is the
+  // "you can drop here" cue for a column with no cards in it — an empty column
+  // has no card for the drop indicator line to sit above, so the body tints
+  // its own border instead. A populated column gets the line, drawn by
+  // BoardV2, and does not need this.
+  const bodyDropProps = {
+    ref: setDropzoneRef,
+    isCardOver,
+  };
+
   return (
     <div ref={setNodeRef} style={wrapperStyle}>
-      {children({ headerDragProps, isDragging })}
+      {children({ headerDragProps, bodyDropProps, isDragging })}
     </div>
   );
 }

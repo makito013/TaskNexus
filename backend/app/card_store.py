@@ -6,6 +6,7 @@ import time
 import aiosqlite
 
 from .board_columns import normalize_column_label, slugify_column_label
+from .board_positions import compute_insert_position, needs_rebalance
 
 # The four columns every pre-existing board had hard-coded. They are seeded
 # into `board_columns` on the first initialize() that finds the table empty —
@@ -44,6 +45,23 @@ class ColumnDeleteError(ValueError):
         super().__init__(message)
         self.reason = reason
         self.cards = cards
+
+
+class UnknownColumnError(ValueError):
+    """The destination column named by a write does not exist in
+    `board_columns`.
+
+    A SUBCLASS of ValueError, like ColumnDeleteError, and for the same reason:
+    `move_card` already signals "the anchors no longer describe the board" with
+    a plain ValueError, which the endpoint answers with 409. This condition is
+    a different thing — the request names a column that was never created, or
+    was deleted while the user dragged — and it answers 400, matching what the
+    other three card endpoints already return for an unknown status. Matching on
+    prose to tell the two apart would break on the first rewording, so the
+    distinction travels as a type.
+
+    Carries the valid slugs in the message on purpose: for anything that
+    receives this error, the enumeration IS the discovery mechanism."""
 
 
 class CardStore:
@@ -620,6 +638,255 @@ class CardStore:
                 values,
             )
             await self._conn.commit()
+        return await self.get(card_id)
+
+    # -- reposicionamento fino (task #43, fase 3) ---------------------------
+
+    async def _require_existing_column(self, status: str) -> None:
+        """Raise UnknownColumnError unless `status` is a slug in
+        `board_columns`.
+
+        Read-only and lock-free, like every other helper called from inside a
+        locked block — it must stay that way, since `_tx_lock` is not
+        reentrant.
+
+        The message enumerates the valid slugs, matching what
+        `main._validate_card_status` produces for the other card endpoints, so
+        the two doors into "that column does not exist" read identically to
+        whoever receives them."""
+        columns = await self.list_columns()
+        if any(c["slug"] == status for c in columns):
+            return
+        validos = ", ".join(c["slug"] for c in columns)
+        raise UnknownColumnError(
+            f"Coluna '{status}' não existe. Colunas válidas: {validos}."
+        )
+
+    async def _anchor_position(
+        self, anchor_id: int | None, status: str, role: str
+    ) -> float | None:
+        """Resolve a neighbour id to its `board_position`, or None when no
+        neighbour was given (the card was dropped at an edge of the column).
+
+        Read-only and lock-free, like every other helper called from inside a
+        locked block. Raises ValueError — which the endpoint maps to 409 — for
+        an anchor that cannot be a neighbour: the request is well formed, it
+        just describes a board that no longer exists (the other tab deleted the
+        card, or moved it to another column, since this client last read it).
+
+        A subcard is refused for the same reason a subcard cannot be MOVED:
+        it has no board position at all, so there is no gap to land next to."""
+        if anchor_id is None:
+            return None
+
+        anchor = await self.get(anchor_id)
+        if anchor is None or anchor["deleted_at"] is not None:
+            raise ValueError(
+                f"O card {role} ({anchor_id}) não existe mais no board."
+            )
+        if anchor["parent_id"] is not None:
+            raise ValueError(
+                f"O card {role} ({anchor_id}) é um subcard e não tem posição "
+                "no board."
+            )
+        if anchor["status"] != status:
+            raise ValueError(
+                f"O card {role} ({anchor_id}) não está mais na coluna "
+                f"'{status}'."
+            )
+        # Defensive: a top-level card with a NULL position predates the
+        # backfill. Treating it as "no anchor" would silently move the card to
+        # an edge the user did not aim at.
+        if anchor["board_position"] is None:
+            raise ValueError(
+                f"O card {role} ({anchor_id}) ainda não tem posição no board."
+            )
+        return anchor["board_position"]
+
+    async def _rebalance_column(self, status: str) -> None:
+        """Renumber every ACTIVE top-level card of one column as 1.0, 2.0,
+        3.0…, preserving the order the board already shows
+        (`board_position ASC, id ASC` — the very same ordering
+        `list_top_level` reads with, so nothing visibly moves).
+
+        Must be called INSIDE the caller's open transaction: the move that
+        triggered it computes its own position on top of these new values, and
+        the two have to land or fail together.
+
+        The UPDATE is DELIBERATELY bare — `board_position` and nothing else. A
+        rebalance is bookkeeping, not an edit: stamping `atualizado_em`/
+        `ultima_atualizacao_por` here would mark every card in the column as
+        "just updated by whoever dragged one of them", poisoning audit trails
+        and any ordering by date.
+
+        No `projeto_id` filter, on purpose. Positions are GLOBAL per column
+        (see `_NEXT_POSITION_SQL`): renumbering only one project's cards would
+        interleave them with the other projects' untouched values."""
+        async with self._conn.execute(
+            "SELECT id FROM cards "
+            "WHERE status = ? AND parent_id IS NULL AND deleted_at IS NULL "
+            "ORDER BY board_position ASC, id ASC",
+            (status,),
+        ) as cursor:
+            ids = [row[0] async for row in cursor]
+
+        for position, row_id in enumerate(ids, start=1):
+            await self._conn.execute(
+                "UPDATE cards SET board_position = ? WHERE id = ?",
+                (float(position), row_id),
+            )
+
+    async def _read_position(self, card_id: int | None) -> float | None:
+        """`board_position` of one card, read straight from the row. Used to
+        re-read an anchor AFTER a rebalance rewrote it."""
+        if card_id is None:
+            return None
+        async with self._conn.execute(
+            "SELECT board_position FROM cards WHERE id = ?", (card_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def move_card(
+        self,
+        card_id: int,
+        *,
+        status: str,
+        after_id: int | None = None,
+        before_id: int | None = None,
+        ultima_atualizacao_por: str,
+    ) -> dict | None:
+        """Move a top-level card to `status`, landing it BETWEEN `after_id`
+        (the card above) and `before_id` (the card below). Either anchor may be
+        None: no `after_id` means the top of the column, no `before_id` the
+        bottom, and neither means the column is empty.
+
+        Returns the updated card, or None when `card_id` does not identify a
+        movable card (missing / soft-deleted / a subcard) — the same
+        None-means-404 contract `update()` already has. Raises:
+
+        - UnknownColumnError (-> 400) when `status` is not a column that
+          exists. Validated INSIDE the transaction, see the block below.
+        - plain ValueError (-> 409) when the ANCHORS do not describe the board
+          as it is now.
+
+        A path of its OWN, deliberately not routed through `update()`. That
+        method carries the automatic "a status change re-appends to the end of
+        the destination" rule (`_NEXT_POSITION_SQL`); going through it would
+        write `max + 1` and then overwrite it with the midpoint — two writes,
+        and a moment in between where the card is visibly at the bottom of the
+        column it was never dropped at.
+
+        Bypassing `update()` means this method has to do by hand the one thing
+        `update()` did for free: stamp `atualizado_em`/`ultima_atualizacao_por`
+        on the moved card. It does. Dragging a card IS an edit by a person, and
+        this must not become the only write path in the app that leaves no
+        trace. (The rebalance it may trigger is the opposite case — see
+        `_rebalance_column`.)
+
+        Adjacency is NOT required. The anchors only have to be in the
+        destination column, in the right order relative to each other; another
+        card may have appeared between them since the client read the list. The
+        moved card still lands between the two the user aimed at, which is what
+        they asked for.
+        """
+        # Reads first, inside the lock but BEFORE the explicit BEGIN — the same
+        # shape `create_column` uses. Validating after BEGIN would make every
+        # early return responsible for closing a transaction it never wrote to
+        # (the hand-patched `commit()` in `delete_column`'s not-found branch is
+        # what that costs).
+        async with self._tx_lock:
+            current = await self.get(card_id)
+            if current is None or current["deleted_at"] is not None:
+                return None
+            if current["parent_id"] is not None:
+                # A subcard has no board position at all — it is ordered by id
+                # inside its parent. 404 rather than 409: this card is not a
+                # thing that can be dropped on the board, which is not a
+                # conflict that retrying would resolve.
+                return None
+
+            # The destination column is revalidated HERE, inside the lock, and
+            # not merely trusted from the endpoint's pre-flight check.
+            #
+            # This closes a real TOCTOU window the QA demonstrated
+            # deterministically: another tab can delete the destination column
+            # in the gap between the endpoint validating it and this method
+            # taking the lock, and `delete_column` does not refuse, because it
+            # only protects columns that still HOLD cards — and the column being
+            # dragged into is empty precisely because the card has not been
+            # dropped yet. The write then succeeded into a column that no longer
+            # existed, leaving the card saved but rendered by nothing: invisible
+            # on every board, and therefore impossible to drag back out.
+            #
+            # Same remedy as the two column races closed in phase 1
+            # (`delete_column`'s `is_done` guard, `set_done_column`'s existence
+            # check): the guard has to read inside the transaction that depends
+            # on it. Being logically in the right place and transactionally in
+            # the wrong one is the same as not being there.
+            #
+            # ⚠️ This closes the window for THIS path only. `move_card` is the
+            # only caller of `_require_existing_column` today, and the class of
+            # race is NOT retired on this board: six other paths still write
+            # `cards.status` after validating it in the HANDLER, outside any
+            # transaction, through `_validate_card_status` /
+            # `_require_valid_card_status` in main.py — create_card,
+            # create_subcard, update_card, hook_cards_create, hook_cards_move
+            # and hook_cards_update. All six can still land a card in a column
+            # deleted in the meantime.
+            #
+            # Pre-existing debt, deliberately NOT fixed here: closing it means
+            # `create()`/`update()` raising UnknownColumnError, which changes
+            # the error contract of six handlers that currently catch nothing
+            # of the sort — a change with its own blast radius, and nothing to
+            # do with dragging a card. Recorded, not resolved.
+            await self._require_existing_column(status)
+
+            if after_id == card_id or before_id == card_id:
+                raise ValueError(
+                    "Um card não pode ser posicionado em relação a si mesmo."
+                )
+
+            pos_after = await self._anchor_position(after_id, status, "de cima")
+            pos_before = await self._anchor_position(before_id, status, "de baixo")
+            if (
+                pos_after is not None
+                and pos_before is not None
+                and pos_after >= pos_before
+            ):
+                raise ValueError(
+                    "Os cards vizinhos informados não estão mais nessa ordem "
+                    "na coluna."
+                )
+
+            now = time.time()
+            await self._conn.execute("BEGIN")
+            try:
+                if needs_rebalance(pos_after, pos_before):
+                    await self._rebalance_column(status)
+                    # RE-READ, never reuse the values resolved above: the
+                    # rebalance rewrote the whole column, so the old numbers
+                    # belong to a coordinate space that no longer exists and
+                    # their midpoint would land the card anywhere.
+                    pos_after = await self._read_position(after_id)
+                    pos_before = await self._read_position(before_id)
+
+                position = compute_insert_position(pos_after, pos_before)
+                # ONE statement for status + position: the two describe a
+                # single user action, and a card that has arrived in the new
+                # column but not at the new position is a state no reader
+                # should ever be able to observe.
+                await self._conn.execute(
+                    "UPDATE cards SET status = ?, board_position = ?, "
+                    "atualizado_em = ?, ultima_atualizacao_por = ? WHERE id = ?",
+                    (status, position, now, ultima_atualizacao_por, card_id),
+                )
+            except Exception:
+                await self._conn.rollback()
+                raise
+            else:
+                await self._conn.commit()
+
         return await self.get(card_id)
 
     # -- colunas do board ---------------------------------------------------

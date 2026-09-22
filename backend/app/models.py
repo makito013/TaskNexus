@@ -255,6 +255,25 @@ class CardUpdateRequest(BaseModel):
     prazo: str | None = None
 
 
+class CardMoveRequest(BaseModel):
+    """Body de POST /api/cards/{card_id}/move — reposicionamento fino por
+    arrasto (task #43, fase 3).
+
+    `after_id`/`before_id` são os VIZINHOS no ponto de soltura: o card que
+    ficará logo acima e o que ficará logo abaixo. `after_id` nulo = topo da
+    coluna, `before_id` nulo = fim, os dois nulos = coluna vazia.
+
+    Não existe campo de posição numérica: `board_position` é calculado pelo
+    backend e NUNCA aceito do cliente (mesma regra que já vale em
+    CardCreateRequest/CardUpdateRequest — ver o campo em `Card`). Dois clientes
+    mandando posições absolutas calculadas sobre leituras diferentes é
+    exatamente o conflito que as âncoras evitam: um id obsoleto é detectável e
+    vira 409, um float obsoleto é gravável e corrompe a ordem em silêncio."""
+    status: str
+    after_id: int | None = None
+    before_id: int | None = None
+
+
 class HookCardCreateRequest(BaseModel):
     """Body de POST /api/hooks/cards/create. `parent_id` é usado pelo agente
     para criar um subcard — diferente do caminho da UI, que usa

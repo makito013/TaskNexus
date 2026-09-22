@@ -713,3 +713,237 @@ def test_patch_to_a_renamed_column_still_uses_the_slug_not_the_label(client):
     # The new LABEL is not a valid status — only slugs are.
     r = client.patch(f"/api/cards/{created['id']}", json={"status": "Fazendo"})
     assert r.status_code == 400
+
+
+# -- POST /api/cards/{id}/move (task #43, fase 3) ----------------------------
+#
+# A matemática de posição e as regras de âncora são exercitadas em
+# test_board_positions.py / test_card_store.py. O que fica para cá é o
+# CONTRATO HTTP: o corpo que o frontend manda, o card que volta, e o código de
+# cada recusa — 404, 422 e 409 são três reações diferentes na UI.
+
+
+def _move(client, card_id, status="a_fazer", after_id=None, before_id=None):
+    return client.post(
+        f"/api/cards/{card_id}/move",
+        json={"status": status, "after_id": after_id, "before_id": before_id},
+    )
+
+
+def _column_ids(client, status="a_fazer"):
+    return [c["id"] for c in client.get("/api/cards").json() if c["status"] == status]
+
+
+def test_move_card_between_two_anchors_returns_200_and_the_updated_card(client):
+    first = _create_card(client, titulo="Primeiro")
+    second = _create_card(client, titulo="Segundo")
+    third = _create_card(client, titulo="Terceiro")
+
+    r = _move(client, third["id"], after_id=first["id"], before_id=second["id"])
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == third["id"]
+    # `board_position` viaja na resposta: é ela que o frontend usa para
+    # reconciliar o splice otimista com a verdade do servidor.
+    assert first["board_position"] < body["board_position"] < second["board_position"]
+    assert _column_ids(client) == [first["id"], third["id"], second["id"]]
+
+
+def test_move_card_to_another_column_changes_status_in_the_same_request(client):
+    card = _create_card(client, titulo="Card")
+
+    r = _move(client, card["id"], status="em_andamento")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "em_andamento"
+    assert _column_ids(client, "em_andamento") == [card["id"]]
+
+
+def test_move_with_both_anchors_null_lands_in_an_empty_column(client):
+    card = _create_card(client, titulo="Card")
+
+    r = _move(client, card["id"], status="em_revisao", after_id=None, before_id=None)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["board_position"] == 0.0
+
+
+def test_move_omitting_the_anchor_keys_entirely_is_accepted(client):
+    """`after_id`/`before_id` têm default None — um corpo só com `status` é o
+    caminho mais curto de "solte numa coluna vazia"."""
+    card = _create_card(client, titulo="Card")
+
+    r = client.post(f"/api/cards/{card['id']}/move", json={"status": "feito"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "feito"
+
+
+def test_move_unknown_card_returns_404(client):
+    assert _move(client, 999999).status_code == 404
+
+
+def test_move_deleted_card_returns_404(client):
+    card = _create_card(client, titulo="Card")
+    assert client.delete(f"/api/cards/{card['id']}").status_code == 200
+
+    assert _move(client, card["id"]).status_code == 404
+
+
+def test_move_subcard_returns_404(client):
+    parent = _create_card(client, titulo="Pai")
+    r = client.post(f"/api/cards/{parent['id']}/subcards", json={"titulo": "Sub"})
+    assert r.status_code == 201
+    subcard = r.json()
+
+    assert _move(client, subcard["id"]).status_code == 404
+
+
+def test_move_to_an_unknown_column_returns_400(client):
+    card = _create_card(client, titulo="Card")
+
+    r = _move(client, card["id"], status="coluna_que_nao_existe")
+
+    # 400, igual aos outros três endpoints de card para a mesma condição — 422
+    # aqui ficou reservado a corpo estruturalmente inválido.
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    # `detail` ESTRUTURADO só neste 4xx: o motivo viaja discriminado para o
+    # frontend poder tratar este 400 (alcançável por corrida — outra aba
+    # excluiu a coluna no meio do arrasto) como "o board mudou", sem
+    # generalizar para qualquer 400 nem casar por prosa. Mesmo precedente de
+    # DELETE /api/board/columns/{slug}.
+    assert detail["reason"] == "coluna_inexistente"
+    # A mensagem lista as colunas válidas, mesmo formato de
+    # `_validate_card_status`, agora produzida dentro da transação do store.
+    assert "a_fazer" in detail["message"]
+
+
+def test_move_to_a_column_label_instead_of_its_slug_returns_400(client):
+    card = _create_card(client, titulo="Card")
+    assert client.patch(
+        "/api/board/columns/em_andamento", json={"label": "Fazendo"}
+    ).status_code == 200
+
+    assert _move(client, card["id"], status="Fazendo").status_code == 400
+
+
+def test_move_with_an_anchor_from_another_column_returns_409(client):
+    elsewhere = _create_card(client, titulo="Noutra coluna", status="feito")
+    card = _create_card(client, titulo="Card")
+
+    r = _move(client, card["id"], status="a_fazer", after_id=elsewhere["id"])
+
+    assert r.status_code == 409
+    # Ainda uma STRING crua, ao contrário do 400 de coluna inexistente: o 409
+    # já É o conflito, o status sozinho basta para o frontend reagir, e não há
+    # subtipo a discriminar. A diferença de forma entre os dois é proposital, e
+    # `api.moveCard` trata as duas.
+    assert isinstance(r.json()["detail"], str)
+
+
+def test_move_with_a_deleted_anchor_returns_409(client):
+    anchor = _create_card(client, titulo="Ancora")
+    card = _create_card(client, titulo="Card")
+    assert client.delete(f"/api/cards/{anchor['id']}").status_code == 200
+
+    assert _move(client, card["id"], before_id=anchor["id"]).status_code == 409
+
+
+def test_move_with_inverted_anchors_returns_409(client):
+    first = _create_card(client, titulo="Primeiro")
+    second = _create_card(client, titulo="Segundo")
+    card = _create_card(client, titulo="Card")
+
+    r = _move(client, card["id"], after_id=second["id"], before_id=first["id"])
+
+    assert r.status_code == 409
+
+
+def test_a_refused_move_leaves_the_board_untouched(client):
+    elsewhere = _create_card(client, titulo="Noutra coluna", status="feito")
+    card = _create_card(client, titulo="Card")
+
+    assert _move(
+        client, card["id"], status="a_fazer", after_id=elsewhere["id"]
+    ).status_code == 409
+
+    unchanged = next(c for c in client.get("/api/cards").json() if c["id"] == card["id"])
+    assert unchanged["board_position"] == card["board_position"]
+    assert unchanged["atualizado_em"] == card["atualizado_em"]
+
+
+def test_board_position_is_still_rejected_on_the_normal_patch_path(client):
+    """`board_position` nunca entra em CardUpdateRequest: é escrito só por este
+    endpoint e pela regra automática de update(). Um PATCH que tente mandá-la
+    é ignorado (campo extra), NUNCA aplicado."""
+    card = _create_card(client, titulo="Card")
+
+    r = client.patch(f"/api/cards/{card['id']}", json={"board_position": 42.0})
+
+    assert r.status_code == 200
+    assert r.json()["board_position"] == card["board_position"]
+
+
+def test_moving_a_card_does_not_disturb_the_rest_of_the_column(client):
+    first = _create_card(client, titulo="Primeiro")
+    second = _create_card(client, titulo="Segundo")
+    third = _create_card(client, titulo="Terceiro")
+
+    assert _move(
+        client, third["id"], after_id=first["id"], before_id=second["id"]
+    ).status_code == 200
+
+    board = {c["id"]: c for c in client.get("/api/cards").json()}
+    for untouched in (first, second):
+        assert board[untouched["id"]]["board_position"] == untouched["board_position"]
+        assert board[untouched["id"]]["atualizado_em"] == untouched["atualizado_em"]
+
+
+# -- QA: the invalid-column contract across the four card endpoints ----------
+
+
+def test_an_unknown_column_is_reported_consistently_across_card_endpoints(client):
+    """ONE error condition — a body naming a column that does not exist — and
+    ONE status code across all four card endpoints.
+
+        POST  /api/cards                -> 400
+        POST  /api/cards/{id}/subcards  -> 400
+        PATCH /api/cards/{id}           -> 400
+        POST  /api/cards/{id}/move      -> 400
+
+    /move answered 422 when phase 3 shipped, on the grounds that `status` is a
+    request-BODY field there. It is a body field on the other three too, so
+    that never distinguished it — and 422 is also what FastAPI emits for a body
+    that fails Pydantic validation, so on /move alone a client could not tell
+    "your body is structurally wrong" from "the column you named does not
+    exist". Bruno's call: 400 everywhere for the business rule, 422 left to
+    structure alone (asserted at the end), which restores that distinction
+    here."""
+    parent = client.post(
+        "/api/cards", json={"titulo": "Pai", "projeto_id": "meu-projeto"}
+    ).json()
+
+    assert client.post(
+        "/api/cards",
+        json={"titulo": "X", "projeto_id": "meu-projeto", "status": "nao_existe"},
+    ).status_code == 400
+    assert client.post(
+        f"/api/cards/{parent['id']}/subcards",
+        json={"titulo": "S", "status": "nao_existe"},
+    ).status_code == 400
+    assert client.patch(
+        f"/api/cards/{parent['id']}", json={"status": "nao_existe"}
+    ).status_code == 400
+    assert client.post(
+        f"/api/cards/{parent['id']}/move", json={"status": "nao_existe"}
+    ).status_code == 400
+
+    # And a STRUCTURALLY invalid body is still 422 — a different code for a
+    # different failure, which is the whole point of moving the business rule
+    # off 422. The two are distinguishable again.
+    assert client.post(
+        f"/api/cards/{parent['id']}/move",
+        json={"status": 12345, "after_id": "nao-e-um-inteiro"},
+    ).status_code == 422

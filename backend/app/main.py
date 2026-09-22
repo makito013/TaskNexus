@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
 from app.task_store import TaskStore
 from app.agent_store import GlobalAgentStore
-from app.card_store import CardStore, ColumnDeleteError
+from app.card_store import CardStore, ColumnDeleteError, UnknownColumnError
 from app.settings_store import SettingsStore
 from app.push_store import PushSubscriptionStore, TooManySubscriptionsError
 from app.push_payload import build_push_payload
@@ -54,6 +54,7 @@ from app.models import (
     CardCreateRequest,
     SubcardCreateRequest,
     CardUpdateRequest,
+    CardMoveRequest,
     BoardColumn,
     BoardColumnCreateRequest,
     BoardColumnUpdateRequest,
@@ -2010,6 +2011,91 @@ async def update_card(card_id: int, body: CardUpdateRequest):
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Card not found: {card_id}")
     return Card(**updated)
+
+
+# Motivo discriminável do 400 de POST /api/cards/{id}/move. Mesma convenção de
+# nome dos motivos de ColumnDeleteError (coluna_concluida / ultima_coluna /
+# coluna_com_cards), e existe pela mesma razão: o frontend reage diferente a
+# este 400 do que reagiria a um 400 qualquer, e casar por texto quebraria na
+# primeira mudança de redação.
+MOVE_UNKNOWN_COLUMN_REASON = "coluna_inexistente"
+
+
+@app.post("/api/cards/{card_id}/move", response_model=Card)
+async def move_card(card_id: int, body: CardMoveRequest):
+    """Reposicionamento fino por arrasto (task #43, fase 3): muda a coluna E a
+    posição vertical dentro dela, num único write.
+
+    Endpoint próprio, e não mais um campo no PATCH, por dois motivos que se
+    reforçam: `board_position` não entra em `CardUpdateRequest` (o cliente
+    nunca manda posição — manda VIZINHOS, ver CardMoveRequest), e o PATCH já
+    tem a regra automática de "mudou de coluna -> vai pro fim", que é o
+    comportamento certo para todo caminho que não é um arrasto (inclusive o
+    agente via MCP, cujo contrato NÃO muda nesta fase).
+
+    Os códigos de erro são distintos de propósito, e o frontend reage diferente
+    a cada um:
+    - 404: o card não existe, foi excluído, ou é um subcard (subcard não tem
+      posição no board);
+    - 400: a coluna de destino não existe — MESMO código dos outros três
+      endpoints de card para a mesma condição (ver a nota de consistência
+      abaixo). Único 4xx daqui com `detail` estruturado
+      (`{"reason": "coluna_inexistente", "message": ...}`): este caso é
+      alcançável por CORRIDA (outra aba excluiu a coluna no meio do arrasto),
+      não só por cliente errado, e o frontend precisa reconhecê-lo sem casar
+      por prosa nem tratar todo 400 igual;
+    - 409: as âncoras não descrevem mais o board (vizinho excluído, movido pra
+      outra coluna, ou invertido) — o arrasto foi calculado sobre uma leitura
+      obsoleta e o frontend desfaz o movimento otimista;
+    - 422: só corpo estruturalmente inválido (`status` não-string, `after_id`
+      não-inteiro). É o 422 automático do FastAPI/Pydantic, igual em todo o app.
+
+    Consistência de contrato (decisão do Bruno sobre a ressalva do QA na fase
+    3): este endpoint respondia 422 para "coluna não existe", enquanto POST
+    /api/cards, PATCH /api/cards/{id} e POST /subcards respondem 400 para a
+    mesma condição. Pior que a inconsistência em si: 422 também é o código do
+    corpo malformado, então só NESTE endpoint o cliente não conseguia
+    distinguir "a coluna que você nomeou não existe" de "seu corpo está
+    errado". Agora 400 é regra de negócio e 422 é só estrutura — as duas
+    voltaram a ser distinguíveis aqui, como já eram nos outros três.
+
+    A validação da coluna NÃO acontece mais neste handler: ela mora dentro da
+    transação do `move_card`, o único lugar onde ela não tem janela de corrida
+    (ver CardStore._require_existing_column). Um pre-flight aqui seria
+    redundante com a validação que de fato importa e reintroduziria exatamente
+    a leitura-fora-da-transação que o QA usou para provar o TOCTOU."""
+    try:
+        moved = await card_store.move_card(
+            card_id,
+            status=body.status,
+            after_id=body.after_id,
+            before_id=body.before_id,
+            ultima_atualizacao_por="bruno",
+        )
+    except UnknownColumnError as e:
+        # ANTES do `except ValueError` — UnknownColumnError é subclasse dele, e
+        # na ordem inversa este ramo seria inalcançável e todo "coluna não
+        # existe" voltaria a sair como 409.
+        #
+        # `detail` ESTRUTURADO, não a string crua, seguindo o mesmo precedente
+        # de delete_board_column: o motivo viaja DISCRIMINADO em
+        # `detail.reason`. É o que permite o frontend tratar este 400
+        # específico como "o board mudou debaixo de você" (é uma corrida real —
+        # outra aba excluiu a coluna de destino no meio do arrasto) sem
+        # generalizar para qualquer 400 futuro deste endpoint, e sem casar por
+        # prosa, que quebraria na primeira mudança de redação.
+        raise HTTPException(
+            status_code=400,
+            detail={"reason": MOVE_UNKNOWN_COLUMN_REASON, "message": str(e)},
+        )
+    except ValueError as e:
+        # 409, não 400: o pedido está bem formado E a coluna existe — o que
+        # colide é o estado atual do board (mesmo raciocínio de
+        # create_board_column).
+        raise HTTPException(status_code=409, detail=str(e))
+    if moved is None:
+        raise HTTPException(status_code=404, detail=f"Card not found: {card_id}")
+    return Card(**moved)
 
 
 @app.delete("/api/cards/{card_id}")

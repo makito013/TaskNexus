@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 import pytest_asyncio
-from app.card_store import CardStore, ColumnDeleteError
+from app.card_store import CardStore, ColumnDeleteError, UnknownColumnError
 
 
 @pytest_asyncio.fixture
@@ -2078,3 +2078,566 @@ async def test_migration_preserves_list_top_level_ordering(tmp_path):
         await store.close()
 
     assert after == before
+
+
+# -- move_card: fine-grained repositioning (task #43, phase 3) ---------------
+#
+# `_make_card` / `_positions_by_id` above are reused: same helpers the phase-1
+# board_position tests use, so both phases describe positions the same way.
+
+
+async def _column_order(store, status="a_fazer"):
+    """Ids of one column, in the order the board renders them."""
+    return [
+        c["id"] for c in await store.list_top_level() if c["status"] == status
+    ]
+
+
+async def _move(store, card_id, status="a_fazer", after_id=None, before_id=None):
+    return await store.move_card(
+        card_id,
+        status=status,
+        after_id=after_id,
+        before_id=before_id,
+        ultima_atualizacao_por="bruno",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_card_into_the_middle_lands_between_the_two_anchors(store):
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+    third = await _make_card(store, "Terceiro")
+
+    await _move(store, third, after_id=first, before_id=second)
+
+    assert await _column_order(store) == [first, third, second]
+
+
+@pytest.mark.asyncio
+async def test_move_card_to_the_top_of_its_column(store):
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+
+    await _move(store, second, after_id=None, before_id=first)
+
+    assert await _column_order(store) == [second, first]
+
+
+@pytest.mark.asyncio
+async def test_move_card_to_the_bottom_of_its_column(store):
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+
+    await _move(store, first, after_id=second, before_id=None)
+
+    assert await _column_order(store) == [second, first]
+
+
+@pytest.mark.asyncio
+async def test_move_card_to_an_empty_column_sets_status_and_position_zero(store):
+    card_id = await _make_card(store, "Sozinho")
+
+    moved = await _move(store, card_id, status="em_revisao")
+
+    assert moved["status"] == "em_revisao"
+    assert moved["board_position"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_move_card_between_columns_keeps_the_destination_order(store):
+    top = await _make_card(store, "Topo", status="em_andamento")
+    bottom = await _make_card(store, "Fundo", status="em_andamento")
+    visitor = await _make_card(store, "Visitante")
+
+    await _move(store, visitor, status="em_andamento", after_id=top, before_id=bottom)
+
+    assert await _column_order(store, "em_andamento") == [top, visitor, bottom]
+    # And it really left the column it came from.
+    assert await _column_order(store, "a_fazer") == []
+
+
+@pytest.mark.asyncio
+async def test_move_card_does_not_require_strict_adjacency(store):
+    """The client computes the anchors from what it last rendered. Another card
+    may have appeared between them since — the moved card must still land
+    between the two the user actually aimed at, not be refused."""
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+    mover = await _make_card(store, "Vai se mover")
+
+    # A fourth card sneaks in between `first` and `second` AFTER the drag was
+    # calculated against a list where they were neighbours.
+    intruder = await _make_card(store, "Intruso")
+    await _move(store, intruder, after_id=first, before_id=second)
+
+    await _move(store, mover, after_id=first, before_id=second)
+
+    order = await _column_order(store)
+    # Between the anchors it was given — the intruder shares the gap.
+    assert order.index(first) < order.index(mover) < order.index(second)
+
+
+@pytest.mark.asyncio
+async def test_move_card_stamps_atualizado_em_and_the_author(store):
+    """move_card bypasses update(), which stamps these automatically. It must
+    not become the only write path in the app that leaves no trace."""
+    other = await _make_card(store, "Outro")
+    other_before = (await store.get(other))["atualizado_em"]
+    card_id = await _make_card(store, "Movido")
+    before = await store.get(card_id)
+
+    moved = await store.move_card(
+        card_id,
+        status="em_andamento",
+        after_id=None,
+        before_id=None,
+        ultima_atualizacao_por="agente:claude",
+    )
+
+    assert moved["atualizado_em"] > before["atualizado_em"]
+    assert moved["ultima_atualizacao_por"] == "agente:claude"
+    # The card that did not move kept its own timestamp.
+    assert (await store.get(other))["atualizado_em"] == other_before
+
+
+# -- move_card: refusals -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_move_unknown_card_returns_none(store):
+    assert await _move(store, 9999) is None
+
+
+@pytest.mark.asyncio
+async def test_move_soft_deleted_card_returns_none(store):
+    card_id = await _make_card(store, "Apagado")
+    await store.soft_delete(card_id)
+
+    assert await _move(store, card_id) is None
+
+
+@pytest.mark.asyncio
+async def test_move_subcard_returns_none(store):
+    """A subcard has no board position at all — it is ordered by id inside its
+    parent. Not a conflict a retry would fix, so None (404), not ValueError."""
+    parent = await _make_card(store, "Pai")
+    subcard = await _make_card(store, "Sub", parent_id=parent)
+
+    assert await _move(store, subcard) is None
+
+
+@pytest.mark.asyncio
+async def test_move_with_an_anchor_from_another_column_raises(store):
+    elsewhere = await _make_card(store, "Outra coluna", status="feito")
+    card_id = await _make_card(store, "Movido")
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, status="a_fazer", after_id=elsewhere)
+
+
+@pytest.mark.asyncio
+async def test_move_with_a_soft_deleted_anchor_raises(store):
+    anchor = await _make_card(store, "Ancora")
+    card_id = await _make_card(store, "Movido")
+    await store.soft_delete(anchor)
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, after_id=anchor)
+
+
+@pytest.mark.asyncio
+async def test_move_with_an_unknown_anchor_raises(store):
+    card_id = await _make_card(store, "Movido")
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, before_id=4242)
+
+
+@pytest.mark.asyncio
+async def test_move_with_a_subcard_as_anchor_raises(store):
+    parent = await _make_card(store, "Pai")
+    subcard = await _make_card(store, "Sub", parent_id=parent)
+    card_id = await _make_card(store, "Movido")
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, after_id=subcard)
+
+
+@pytest.mark.asyncio
+async def test_move_with_inverted_anchors_raises(store):
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+    card_id = await _make_card(store, "Movido")
+
+    # Upside down: `second` sits BELOW `first` on the board.
+    with pytest.raises(ValueError):
+        await _move(store, card_id, after_id=second, before_id=first)
+
+
+@pytest.mark.asyncio
+async def test_move_relative_to_itself_raises(store):
+    card_id = await _make_card(store, "Movido")
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, after_id=card_id)
+
+
+@pytest.mark.asyncio
+async def test_a_refused_move_writes_nothing(store):
+    elsewhere = await _make_card(store, "Outra coluna", status="feito")
+    card_id = await _make_card(store, "Movido")
+    before = await store.get(card_id)
+
+    with pytest.raises(ValueError):
+        await _move(store, card_id, status="a_fazer", after_id=elsewhere)
+
+    after = await store.get(card_id)
+    assert after["board_position"] == before["board_position"]
+    assert after["atualizado_em"] == before["atualizado_em"]
+
+
+# -- move_card: rebalancing --------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def _drop_repeatedly_below(store, top, below, movers):
+    """Drop each of `movers` into the same visual slot — immediately under
+    `top` — the way a user repeatedly dragging cards to the second row does.
+
+    The anchors are NOT fixed, and that is the whole point: the card below the
+    slot is whatever landed there last, so each drop halves the remaining gap.
+    Handing the same two anchors over and over would instead compute the same
+    midpoint every time and never tighten anything."""
+    for mover in movers:
+        await _move(store, mover, status="a_fazer", after_id=top, before_id=below)
+        below = mover
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_really_fires_when_the_gap_runs_out(store):
+    """Not a theoretical calculation: halve the same gap over and over until
+    the EPSILON trips, and check the column really was renumbered."""
+    top = await _make_card(store, "Topo")
+    bottom = await _make_card(store, "Fundo")
+
+    movers = [await _make_card(store, f"Movel {i}", status="feito") for i in range(20)]
+    await _drop_repeatedly_below(store, top, bottom, movers)
+
+    positions = await _positions_by_id(store)
+    # `top` was created at 0.0 and was never the card being moved, so the ONLY
+    # thing that can have rewritten it is a rebalance. 1.0 is where the
+    # renumbering puts the first card of the column.
+    assert positions[top] == 1.0
+
+    # Order survived the renumbering: each card still sits where it was dropped
+    # (newest first, since every one went immediately below `top`).
+    order = await _column_order(store)
+    assert order == [top, *reversed(movers), bottom]
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_does_not_touch_the_neighbours_timestamps(store):
+    """The rebalance UPDATE is bare `board_position` on purpose: stamping
+    atualizado_em there would mark the whole column as edited by whoever
+    dragged one card through it."""
+    top = await _make_card(store, "Topo")
+    bottom = await _make_card(store, "Fundo")
+    before = {
+        card_id: (await store.get(card_id))["atualizado_em"]
+        for card_id in (top, bottom)
+    }
+
+    positions_before = await _positions_by_id(store)
+
+    movers = [await _make_card(store, f"Movel {i}", status="feito") for i in range(20)]
+    await _drop_repeatedly_below(store, top, bottom, movers)
+
+    # The rebalance really ran — otherwise the assertions below would hold
+    # vacuously, by nothing having happened at all.
+    positions_after = await _positions_by_id(store)
+    assert positions_after[top] != positions_before[top]
+
+    for card_id, stamp in before.items():
+        card = await store.get(card_id)
+        assert card["atualizado_em"] == stamp
+        # And nobody's author was rewritten either.
+        assert card["ultima_atualizacao_por"] == "bruno"
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_recomputes_the_moved_card_over_the_new_values(store):
+    """Happy path of a move that triggers a rebalance: the card lands between
+    its anchors, asserted by ids rather than by a numeric position.
+
+    ⚠️ This does NOT pin the re-read of the anchors, despite what its name
+    suggests — the QA showed it still PASSES with the re-read deleted, because
+    in this fixture the cached midpoint happens to fall between the anchors'
+    new values too, so cached and re-read agree by luck. Kept because it
+    documents the intended behaviour and covers the path; the test that
+    actually fails when the re-read is removed is
+    `test_rebalancing_reread_is_what_keeps_the_card_between_its_anchors`
+    below, whose fixture makes the two answers disagree visibly."""
+    top = await _make_card(store, "Topo")
+    bottom = await _make_card(store, "Fundo")
+    # Squeeze the gap under EPSILON by hand, so exactly ONE move triggers it.
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.0, top)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.000001, bottom)
+    )
+    await store._conn.commit()
+
+    mover = await _make_card(store, "Movel", status="feito")
+    await _move(store, mover, status="a_fazer", after_id=top, before_id=bottom)
+
+    assert await _column_order(store) == [top, mover, bottom]
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_reread_is_what_keeps_the_card_between_its_anchors(store):
+    """QA mutation-driven test for the phase's most critical decision.
+
+    The two tests the Dev wrote as the pin for "re-read the anchors after the
+    rebalance" both PASS with the re-read deleted: in their fixtures the cached
+    midpoint happens to still fall between the anchors' NEW values, so cached
+    and re-read agree by luck. The mutation was caught only indirectly, several
+    iterations later, as an "inverted anchors" ValueError from the repeated-drop
+    helper — a downstream symptom that points at the wrong cause.
+
+    This fixture makes the two answers disagree VISIBLY. Every position is
+    below 1.0, so the rebalance (which always renumbers to 1.0, 2.0, 3.0…)
+    moves every anchor UP past the cached midpoint:
+
+        before rebalance   A=0.1  B=0.2  C=0.3  D=0.30000001
+        after  rebalance   A=1.0  B=2.0  C=3.0  D=4.0
+
+    Dropping between C and D:
+      - re-read  -> midpoint(3.0, 4.0)          = 3.5  -> [A, B, C, mover, D]
+      - cached   -> midpoint(0.3, 0.30000001)  ~= 0.3  -> [mover, A, B, C, D]
+
+    So without the re-read the card does not merely land imprecisely, it jumps
+    to the TOP of a column the user dropped it at the BOTTOM of. Asserted by
+    ids, never by a numeric position."""
+    a = await _make_card(store, "A")
+    b = await _make_card(store, "B")
+    c = await _make_card(store, "C")
+    d = await _make_card(store, "D")
+    for card_id, position in ((a, 0.1), (b, 0.2), (c, 0.3), (d, 0.30000001)):
+        await store._conn.execute(
+            "UPDATE cards SET board_position = ? WHERE id = ?", (position, card_id)
+        )
+    await store._conn.commit()
+
+    mover = await _make_card(store, "Movel", status="feito")
+    await _move(store, mover, status="a_fazer", after_id=c, before_id=d)
+
+    assert await _column_order(store) == [a, b, c, mover, d]
+
+
+@pytest.mark.asyncio
+async def test_move_card_refuses_a_column_that_does_not_exist(store):
+    """Was a QA characterisation of a missing validation — `move_card` used to
+    trust the endpoint's pre-flight check entirely and would write a card into
+    a column that was never created. The validation now lives in the store,
+    inside the transaction, so this is the assertion of the fixed behaviour.
+
+    UnknownColumnError, not a plain ValueError: the endpoint answers 400 for
+    this and 409 for a stale anchor, and it tells them apart by TYPE."""
+    card = await _make_card(store, "Card")
+    before = await store.get(card)
+
+    with pytest.raises(UnknownColumnError) as excinfo:
+        await _move(store, card, status="coluna_que_nunca_existiu")
+
+    # The valid slugs are enumerated — for whoever receives this, that list is
+    # the discovery mechanism.
+    assert "a_fazer" in str(excinfo.value)
+
+    # Nothing was written: no orphaned card, no position change.
+    after = await store.get(card)
+    assert after["status"] == before["status"]
+    assert after["board_position"] == before["board_position"]
+    assert after["atualizado_em"] == before["atualizado_em"]
+
+
+@pytest.mark.asyncio
+async def test_move_card_into_a_column_deleted_mid_drag_is_refused(store):
+    """The TOCTOU the QA proved, now closed — and the test that proves it is
+    closed, driving the very same interleaving.
+
+    The window: the endpoint used to validate the destination column BEFORE
+    calling `move_card`, which takes `_tx_lock` only when it starts. Another
+    tab deleting that column in between runs to completion, because
+    `delete_column` refuses only columns that still HOLD cards — and the column
+    being dragged INTO is empty precisely because the card has not been dropped
+    yet. The move then wrote a card into a column that no longer existed,
+    leaving it saved but rendered by nothing: invisible on every board, so the
+    user could not even drag it back out.
+
+    The interleaving is injected AT THE LOCK, which is exactly where the window
+    was, so this is deterministic rather than a timing race.
+
+    Same class as the two races closed in phase 1 (`delete_column`'s `is_done`
+    guard, `set_done_column`'s existence check) and closed the same way: the
+    guard reads inside the transaction that depends on it."""
+    await store.create_column("Homologação")
+    card = await _make_card(store, "Card que ia sumir")
+    before = await store.get(card)
+
+    hooked = _LockWithHook(store._tx_lock)
+    store._tx_lock = hooked
+    # Fires in the window the endpoint's pre-flight check used to leave open,
+    # before move_card's own validation and transaction.
+    hooked.arm(lambda: store.delete_column("homologacao"))
+
+    try:
+        with pytest.raises(UnknownColumnError):
+            await _move(store, card, status="homologacao")
+    finally:
+        store._tx_lock = hooked._inner
+
+    # The column really did go away inside the window — otherwise this test
+    # would pass for the wrong reason.
+    assert "homologacao" not in [c["slug"] for c in await store.list_columns()]
+
+    # And the card stayed exactly where it was, still rendered by its own
+    # column rather than orphaned into the deleted one.
+    after = await store.get(card)
+    assert after["status"] == before["status"]
+    assert after["board_position"] == before["board_position"]
+    assert after["atualizado_em"] == before["atualizado_em"]
+    rendered = set()
+    for column in await store.list_columns():
+        rendered.update(await _column_order(store, status=column["slug"]))
+    assert card in rendered
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_a_move_WITHIN_the_column_includes_the_moved_card(store):
+    """The realistic way the EPSILON gets hit: Bruno reordering one column over
+    and over, never crossing columns. The card being moved is then INSIDE the
+    set `_rebalance_column` renumbers, so its own position is rewritten by the
+    rebalance and then rewritten again by the midpoint.
+
+    ⚠️ Covers that ordering; does NOT pin the anchor re-read either, for the
+    same reason as the test above — the QA measured both as passing with the
+    re-read removed. The pin is
+    `test_rebalancing_reread_is_what_keeps_the_card_between_its_anchors`."""
+    first = await _make_card(store, "Primeiro")
+    second = await _make_card(store, "Segundo")
+    third = await _make_card(store, "Terceiro")
+    # A gap under EPSILON between the two anchors, with the mover already in
+    # the same column.
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.0, first)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.000001, second)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (2.0, third)
+    )
+    await store._conn.commit()
+
+    await _move(store, third, status="a_fazer", after_id=first, before_id=second)
+
+    assert await _column_order(store) == [first, third, second]
+    # The rebalance really fired — otherwise this passes for the wrong reason.
+    assert (await store.get(first))["board_position"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_is_scoped_to_one_column(store):
+    other_column = await _make_card(store, "Outra coluna", status="em_revisao")
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (99.0, other_column)
+    )
+    top = await _make_card(store, "Topo")
+    bottom = await _make_card(store, "Fundo")
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.0, top)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.000001, bottom)
+    )
+    await store._conn.commit()
+
+    mover = await _make_card(store, "Movel", status="feito")
+    await _move(store, mover, status="a_fazer", after_id=top, before_id=bottom)
+
+    positions = await _positions_by_id(store)
+    assert positions[other_column] == 99.0
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_covers_every_project_in_the_column(store):
+    """Positions are GLOBAL per column (see _NEXT_POSITION_SQL). Renumbering
+    only one project's cards would interleave them with the untouched values of
+    the others."""
+    mine = await store.create(
+        titulo="Do projeto A", projeto_id="proj-a", origem="bruno",
+        ultima_atualizacao_por="bruno",
+    )
+    theirs = await store.create(
+        titulo="Do projeto B", projeto_id="proj-b", origem="bruno",
+        ultima_atualizacao_por="bruno",
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.0, mine)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.000001, theirs)
+    )
+    await store._conn.commit()
+
+    mover = await _make_card(store, "Movel", status="feito")
+    await _move(store, mover, status="a_fazer", after_id=mine, before_id=theirs)
+
+    positions = await _positions_by_id(store)
+    # The other project's card was renumbered too, so it kept its slot.
+    assert positions[theirs] != 1.000001
+    assert await _column_order(store) == [mine, mover, theirs]
+
+
+@pytest.mark.asyncio
+async def test_rebalancing_ignores_soft_deleted_cards(store):
+    top = await _make_card(store, "Topo")
+    ghost = await _make_card(store, "Fantasma")
+    bottom = await _make_card(store, "Fundo")
+    await store.soft_delete(ghost)
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.0, top)
+    )
+    await store._conn.execute(
+        "UPDATE cards SET board_position = ? WHERE id = ?", (1.000001, bottom)
+    )
+    await store._conn.commit()
+    ghost_position_before = (await store.get(ghost))["board_position"]
+
+    mover = await _make_card(store, "Movel", status="feito")
+    await _move(store, mover, status="a_fazer", after_id=top, before_id=bottom)
+
+    assert (await store.get(ghost))["board_position"] == ghost_position_before
+
+
+@pytest.mark.asyncio
+async def test_move_does_not_double_write_through_the_update_path(store):
+    """The other named risk: routing move_card through update() would apply the
+    automatic `max + 1` of a status change and THEN the midpoint. The card
+    would be visibly at the end of the destination for an instant, and the
+    final position would come from the wrong rule. Pinned by dropping a card at
+    the TOP of a populated destination — `max + 1` and the midpoint disagree
+    there, so only the right one passes."""
+    first = await _make_card(store, "Primeiro", status="em_andamento")
+    second = await _make_card(store, "Segundo", status="em_andamento")
+    mover = await _make_card(store, "Movel")
+
+    moved = await _move(
+        store, mover, status="em_andamento", after_id=None, before_id=first
+    )
+
+    assert await _column_order(store, "em_andamento") == [mover, first, second]
+    # Below the first card, not above the last one.
+    assert moved["board_position"] < (await store.get(first))["board_position"]

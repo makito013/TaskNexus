@@ -53,8 +53,12 @@ vi.mock('@dnd-kit/core', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
-    DndContext: ({ children, onDragStart, onDragEnd, onDragCancel }) => {
+    DndContext: ({ children, onDragStart, onDragOver, onDragEnd, onDragCancel }) => {
       dragHandlers.onDragStart = onDragStart;
+      // Phase 3 added `onDragOver` (the card drop indicator is recomputed from
+      // it). Captured here too, or a test could only ever see the END of a
+      // card drag and never the feedback drawn during one.
+      dragHandlers.onDragOver = onDragOver;
       dragHandlers.onDragEnd = onDragEnd;
       dragHandlers.onDragCancel = onDragCancel;
       return children;
@@ -69,6 +73,25 @@ function drop(activeSlug, overSlug) {
   return dragHandlers.onDragEnd({
     active: { id: activeSlug },
     over: overSlug == null ? null : { id: overSlug },
+  });
+}
+
+// Phase 3's card drag, as SYNTHETIC events — a parallel helper rather than a
+// change to `drop` above, which a dozen column tests depend on the signature
+// of. `overId` is a RAW sortable id (`card:2`, `dropzone:feito`) or null for a
+// release outside every droppable, so a test can say exactly what dnd-kit
+// would have reported.
+function dropCard(activeCardId, overId) {
+  return dragHandlers.onDragEnd({
+    active: { id: `card:${activeCardId}` },
+    over: overId == null ? null : { id: overId },
+  });
+}
+
+function dragCardOver(activeCardId, overId) {
+  return dragHandlers.onDragOver({
+    active: { id: `card:${activeCardId}` },
+    over: overId == null ? null : { id: overId },
   });
 }
 
@@ -1646,5 +1669,423 @@ describe('BoardV2 - dragging a column to reorder', () => {
     expect(reorderColumns).toHaveBeenCalledWith([
       'em_andamento', 'feito', 'a_fazer',
     ]);
+  });
+});
+
+
+// -- phase 3: dragging a CARD -----------------------------------------------
+//
+// The ordering itself is covered directly in utils/boardCardOrder.test.js, and
+// the optimistic-apply/rollback pair in hooks/useCards.test.js. What is left
+// for HERE is the wiring: does a drop resolve the right destination column and
+// the right pair of neighbour ids, and hand them to the right action?
+//
+// The events are synthetic for the same reason the column ones are: a real
+// dnd-kit gesture cannot be driven in jsdom. The REAL provider tree is mounted
+// and asserted in BoardV2.dnd.test.jsx instead.
+
+describe('BoardV2 — arrastar card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+    fakeCard({ id: 3, titulo: 'Tres', status: 'a_fazer' }),
+    fakeCard({ id: 9, titulo: 'Feito ja', status: 'feito' }),
+  ];
+
+  function mockCards(cards = CARDS, overrides = {}) {
+    const actions = {
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+      ...overrides,
+    };
+    mockUseCards.mockReturnValue(actions);
+    return actions;
+  }
+
+  it('dropping a card onto a lower one lands it AFTER that card', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // [1,2,3] with 1 dropped onto 3 becomes [2,3,1] — the same arrayMove the
+    // sortable preview animated under the finger.
+    await act(async () => { await dropCard(1, 'card:3'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'a_fazer', after_id: 3, before_id: null,
+    });
+  });
+
+  it('dropping a card onto a higher one lands it BEFORE that card', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(3, 'card:2'); });
+
+    expect(moveCard).toHaveBeenCalledWith(3, {
+      status: 'a_fazer', after_id: 1, before_id: 2,
+    });
+  });
+
+  it('dropping a card into ANOTHER column takes that column status', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:9'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'feito', after_id: null, before_id: 9,
+    });
+  });
+
+  it('dropping on a column body sends the card to the END of that column', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'dropzone:feito'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'feito', after_id: 9, before_id: null,
+    });
+  });
+
+  it('dropping into an EMPTY column reports no neighbours at all', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // `em_revisao` holds nothing, so there is no card to be relative to.
+    await act(async () => { await dropCard(1, 'dropzone:em_revisao'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'em_revisao', after_id: null, before_id: null,
+    });
+  });
+
+  it('released outside every droppable, nothing is requested', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, null); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('dropped back onto itself, nothing is requested', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(2, 'card:2'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('dropping the last card on its own column body is a no-op, not a request', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Card 3 is already last in `a_fazer`. The identity check has to catch
+    // this, exactly like the column drag's `next === current`.
+    await act(async () => { await dropCard(3, 'dropzone:a_fazer'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('never resolves a bare COLUMN slug as a card drop target', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // The collision detection filters columns out of a card drag, so this is
+    // the second line of defence: a column's own rect says nothing about WHERE
+    // in it the card should land, so the only honest answer is to cancel.
+    await act(async () => { await dropCard(1, 'feito'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('cancels against a column that vanished mid-drag', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'dropzone:coluna_que_nao_existe'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('suspends the poll while a card drag is in progress, and resumes after', async () => {
+    const { setCardDragActive } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    expect(setCardDragActive).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { await dropCard(1, 'card:3'); });
+    expect(setCardDragActive).toHaveBeenLastCalledWith(false);
+  });
+
+  it('resumes the poll when a card drag is CANCELLED', async () => {
+    const { setCardDragActive, moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    act(() => { dragHandlers.onDragCancel({ active: { id: 'card:1' } }); });
+
+    expect(setCardDragActive).toHaveBeenLastCalledWith(false);
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the card-drag poll guard for a COLUMN drag', async () => {
+    // Reordering columns never rewrites `cards`, so a poll landing mid-drag
+    // cannot contradict the gesture — suspending it would be dead machinery.
+    const { setCardDragActive } = mockCards();
+    mockColumns();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(setCardDragActive).not.toHaveBeenCalled();
+  });
+
+  it('still reorders COLUMNS with cards on the board — the dispatcher branches', async () => {
+    // Regression guard for the id-namespace dispatcher: a board holding cards
+    // must not break the column drag, and vice versa.
+    const { reorderColumns } = mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', 'em_andamento'); });
+
+    expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'a_fazer', 'em_revisao', 'feito',
+    ]);
+  });
+
+  it('uses the board as it is NOW, not a stale card list', async () => {
+    const { moveCard } = mockCards([
+      fakeCard({ id: 5, titulo: 'Cinco', status: 'a_fazer' }),
+      fakeCard({ id: 6, titulo: 'Seis', status: 'a_fazer' }),
+    ]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(6, 'card:5'); });
+
+    expect(moveCard).toHaveBeenCalledWith(6, {
+      status: 'a_fazer', after_id: null, before_id: 5,
+    });
+  });
+});
+
+describe('BoardV2 — indicador de posição do card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+    fakeCard({ id: 3, titulo: 'Tres', status: 'a_fazer' }),
+  ];
+
+  function mockCards(cards = CARDS) {
+    mockUseCards.mockReturnValue({
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+  }
+
+  it('draws no indicator until a card is dragged over something', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('draws exactly ONE indicator, at the slot the drop would actually use', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Card 3 dragged over card 2 will land BEFORE 2, so the line goes above
+    // card 2 — and there must be only one line on the whole board.
+    act(() => { dragCardOver(3, 'card:2'); });
+
+    const indicators = screen.getAllByTestId('board-v2-drop-indicator');
+    expect(indicators.length).toBe(1);
+    const column = screen.getByTestId('board-v2-col-body-a_fazer');
+    const children = [...column.children];
+    expect(children.indexOf(indicators[0]))
+      .toBe(children.indexOf(screen.getByTestId('board-v2-card-2')) - 1);
+  });
+
+  it('draws the indicator BELOW the target when the card travels downwards', () => {
+    // The case a naive "line above whatever is hovered" implementation gets
+    // wrong every single time: dropping 1 onto 2 lands 1 AFTER 2, so the line
+    // belongs above card 3, not above card 2.
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:2'); });
+
+    const indicator = screen.getByTestId('board-v2-drop-indicator');
+    const children = [...screen.getByTestId('board-v2-col-body-a_fazer').children];
+    expect(children.indexOf(indicator))
+      .toBe(children.indexOf(screen.getByTestId('board-v2-card-3')) - 1);
+  });
+
+  it('draws the indicator at the END when the card is dragged past the last one', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+
+    const body = screen.getByTestId('board-v2-col-body-a_fazer');
+    expect(body.lastElementChild).toBe(screen.getByTestId('board-v2-drop-indicator'));
+  });
+
+  it('drops the indicator when the card leaves every droppable', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+    expect(screen.getByTestId('board-v2-drop-indicator')).toBeTruthy();
+
+    act(() => { dragCardOver(1, null); });
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('draws no indicator for a no-op hover', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Hovering itself changes nothing, so there is no slot to promise.
+    act(() => { dragCardOver(2, 'card:2'); });
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('clears the indicator once the card is dropped', async () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+    await act(async () => { await dropCard(1, 'card:3'); });
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+});
+
+describe('BoardV2 — erro 409 ao mover card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+  ];
+
+  function mockCardsWithFailingMove(error) {
+    const moveCard = vi.fn().mockRejectedValue(error);
+    mockUseCards.mockReturnValue({
+      cards: CARDS,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard,
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+    return moveCard;
+  }
+
+  it('shows a NON-blocking banner on a 409, never an alert()', async () => {
+    const conflict = new Error('O card de baixo (2) não está mais na coluna.');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    const banner = screen.getByTestId('board-v2-move-error');
+    // The backend's own explanation survives — it is the only account of why
+    // the card snapped back.
+    expect(banner.textContent).toContain('não está mais na coluna');
+    // Plus the instruction the user can act on.
+    expect(banner.textContent).toContain('tente de novo');
+    // A drag that lost a race is the most ordinary failure on this screen;
+    // stopping the whole tab to report it would be wildly out of proportion.
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('announces the banner without stealing focus', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
+  it('lets the user dismiss the banner', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+    fireEvent.click(screen.getByLabelText('Fechar aviso'));
+
+    expect(screen.queryByTestId('board-v2-move-error')).toBeNull();
+  });
+
+  it('reports a NON-conflict failure without the retry wording', async () => {
+    mockCardsWithFailingMove(new Error('Falha ao mover card'));
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    const banner = screen.getByTestId('board-v2-move-error');
+    expect(banner.textContent).toContain('Falha ao mover card');
+    // The "look and try again" advice is specific to a lost race.
+    expect(banner.textContent).not.toContain('confira o board');
+  });
+
+  it('clears a previous banner when the next drop succeeds', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    const { rerender } = render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+    expect(screen.getByTestId('board-v2-move-error')).toBeTruthy();
+
+    mockUseCards.mockReturnValue({
+      cards: CARDS,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+    rerender(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    await act(async () => { await dropCard(2, 'card:1'); });
+
+    expect(screen.queryByTestId('board-v2-move-error')).toBeNull();
   });
 });

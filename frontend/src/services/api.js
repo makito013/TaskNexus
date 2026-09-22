@@ -202,6 +202,59 @@ export const api = {
     return r.json()
   },
 
+  // Drag-to-reposition (task #43, fase 3). SEPARADO de updateCard de
+  // propósito: o PATCH tem a regra automática "mudou de coluna -> vai pro fim
+  // dela", que é o comportamento certo para todo caminho que não é um arrasto
+  // (inclusive o agente via MCP). Só este endpoint escreve posição fina.
+  //
+  // O corpo leva VIZINHOS (`after_id`/`before_id`), nunca um número de
+  // posição: um id obsoleto é detectável pelo backend e vira 409, um float
+  // obsoleto seria gravado e corromperia a ordem em silêncio.
+  //
+  // O erro sobe com a mensagem do backend porque é a única explicação que o
+  // usuário vai ver de por que o card voltou pro lugar de origem. `conflict`
+  // viaja como propriedade própria: quem chama distingue "o board mudou
+  // debaixo de você" (recuperável, basta arrastar de novo) de uma falha de
+  // rede, e casar por texto quebraria na primeira mudança de redação.
+  //
+  // DOIS status contam como conflito, não só o 409:
+  //
+  // - 409: âncora obsoleta (vizinho excluído, movido de coluna, ou invertido).
+  // - 400 com `reason: 'coluna_inexistente'`: a coluna de DESTINO não existe.
+  //   Parece erro de cliente e não é — desde que a validação passou a ser
+  //   transacional, este é o código que uma CORRIDA real produz: outra aba
+  //   excluiu a coluna de destino entre o começo e o fim do arrasto. Do ponto
+  //   de vista do usuário é a mesma história do 409 ("o board mudou, olhe e
+  //   tente de novo") e merece o mesmo banner amigável.
+  //
+  // Discriminado por `detail.reason`, NUNCA por `r.status === 400` sozinho:
+  // um 400 futuro deste endpoint com outra causa não deve herdar o texto
+  // "o board mudou". Mesmo mecanismo de `deleteBoardColumn` abaixo, e mesma
+  // razão — o motivo é dado, não prosa.
+  async moveCard(cardId, { status, after_id = null, before_id = null }) {
+    const r = await fetch(`${BASE}/cards/${cardId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, after_id, before_id }),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      // `detail` vem como STRING na maioria dos 4xx (404/409, e o default do
+      // FastAPI) e como OBJETO no 400 de coluna inexistente. As duas formas
+      // são tratadas aqui para nenhuma das duas cair no texto genérico.
+      const detail = body.detail
+      const structured = detail !== null && typeof detail === 'object'
+      const message = structured ? detail.message : (typeof detail === 'string' ? detail : null)
+      const reason = structured ? (detail.reason || null) : null
+      const error = new Error(message || 'Falha ao mover card')
+      error.reason = reason
+      error.conflict = r.status === 409
+        || (r.status === 400 && reason === 'coluna_inexistente')
+      throw error
+    }
+    return r.json()
+  },
+
   async deleteCard(cardId) {
     const r = await fetch(`${BASE}/cards/${cardId}`, { method: 'DELETE' })
     if (!r.ok) throw new Error('Falha ao excluir card')
