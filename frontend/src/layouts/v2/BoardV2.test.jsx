@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { BoardV2 } from './BoardV2.jsx';
+import { CARD_TIPO_LABELS } from '../../utils/cardMeta.js';
 
 const mockUseCards = vi.fn();
 vi.mock('../../hooks/useCards.js', () => ({
@@ -1503,7 +1504,9 @@ describe('BoardV2 - dragging a column to reorder', () => {
     for (const slug of ['a_fazer', 'em_andamento', 'em_revisao', 'feito']) {
       const header = screen.getByTestId(`board-v2-col-header-${slug}`);
       expect(header.style.cursor).toBe('grab');
-      expect(header.style.touchAction).toBe('none');
+      // 'manipulation', not 'none': a swipe must scroll, only a still hold may
+      // grab. See SortableBoardColumn.jsx.
+      expect(header.style.touchAction).toBe('manipulation');
       // The old 28px grip is gone.
       expect(screen.queryByTestId(`board-v2-grip-${slug}`)).toBeNull();
     }
@@ -1511,8 +1514,8 @@ describe('BoardV2 - dragging a column to reorder', () => {
 
   // The header carries the drag listeners, so this is the regression that
   // matters most: the controls INSIDE it must still take a plain click. The
-  // sensors make that true without special handling — PointerSensor needs 6px
-  // of travel, TouchSensor a 280ms hold, and a click crosses neither.
+  // sensors make that true without special handling — MouseSensor needs 6px
+  // of travel, TouchSensor a stationary hold, and a click crosses neither.
   // NOTE: "a click inside the drag surface still reaches the button" is NOT
   // testable in this file. The DndContext here is a passthrough mock, so
   // `useSortable` falls back to dnd-kit's default internal context, whose
@@ -1818,11 +1821,55 @@ describe('BoardV2 — arrastar card (fase 3)', () => {
     expect(moveCard).not.toHaveBeenCalled();
   });
 
+  it('lifts the dragged card, showing the face it came from', () => {
+    // The overlay is what the finger is visually holding. It carries the lift
+    // class, and it mirrors the card's own face so the lift lands on the shape
+    // the user is looking at — a title-only box over a taller card read as a
+    // tooltip appearing, not as that card coming off the board.
+    mockCards([fakeCard({
+      id: 1, titulo: 'Um', status: 'a_fazer', tipo: 'bug', descricao: 'Detalhe do card',
+    })]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    const overlay = screen.getByTestId('board-v2-card-drag-overlay');
+    expect(overlay.className).toContain('v2-drag-lift');
+    expect(overlay.textContent).toContain('Um');
+    expect(overlay.textContent).toContain('Detalhe do card');
+    // The chip renders CARD_TIPO_LABELS, which is uppercase ("BUG").
+    expect(overlay.textContent).toContain(CARD_TIPO_LABELS.bug);
+  });
+
+  it('carries no interactive control into the card overlay', () => {
+    // dnd-kit sets no `pointer-events: none` on its overlay, so a live control
+    // in here would sit under the finger mid-drag. The id badge (a copy
+    // button) and the footer's status select are deliberately left out.
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    const overlay = screen.getByTestId('board-v2-card-drag-overlay');
+    expect(overlay.querySelector('button')).toBeNull();
+    expect(overlay.querySelector('select')).toBeNull();
+  });
+
+  it('lifts a dragged COLUMN the same way', () => {
+    mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(screen.getByTestId('board-v2-drag-overlay').className).toContain('v2-drag-lift');
+  });
+
   it('confirms the pickup with a haptic tick the instant the drag arms', async () => {
-    // The fix for the tablet complaint: on touch, dnd-kit arms the drag 280ms
-    // after the finger lands with NO movement, and every visual signal of that
-    // is drawn under the finger that caused it. `onDragStart` is the exact
-    // moment of activation, so this is where the tick belongs.
+    // On touch, the TouchSensor arms the drag once the hold elapses with NO
+    // movement, and every visual signal of that is drawn under the finger that
+    // caused it. `onDragStart` is the exact moment of activation, so this is
+    // where the tick belongs.
     const vibrate = vi.fn();
     Object.defineProperty(navigator, 'vibrate', {
       value: vibrate, configurable: true, writable: true,

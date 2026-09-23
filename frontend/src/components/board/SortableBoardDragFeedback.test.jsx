@@ -9,10 +9,9 @@
 // NOT-dragging state for a card. Stubbing the hook is what makes the dragging
 // branch reachable at all.
 //
-// What this pins is the fix for a concrete complaint from the tablet test: the
-// drag arms 280ms after the finger lands, WITHOUT any movement, but every
-// signal of that was drawn underneath the finger that caused it. The ring
-// asserted below is the part a fingertip cannot cover.
+// What this pins: on touch the drag arms once the hold elapses, WITHOUT any
+// movement, and every signal of that is drawn underneath the finger that
+// caused it. The ring asserted below is the part a fingertip cannot cover.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -97,8 +96,13 @@ describe('SortableBoardCard — pickup feedback', () => {
     expect(card.style.outline).toBe('');
     expect(card.style.opacity).toBe('');
     // The touch package is unconditional, though — it has to be in place
-    // BEFORE the gesture starts or the browser claims it as a scroll.
-    expect(card.style.touchAction).toBe('none');
+    // BEFORE the gesture starts. And it is 'manipulation', not 'none': during
+    // the hold dnd-kit deliberately leaves the gesture to the browser, so this
+    // property is what lets a SWIPE scroll the column instead of dying, while
+    // a still hold still arms. (It used to be 'none', whose stated goal — "stop
+    // the browser claiming the gesture as a scroll" — was the opposite of what
+    // the board needs.)
+    expect(card.style.touchAction).toBe('manipulation');
   });
 
   it('rings the card the moment the drag arms, matching the column', () => {

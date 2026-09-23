@@ -4,11 +4,16 @@
 //
 // Why this exists: a long-press drag arms after a delay with NO movement
 // required — dnd-kit's TouchSensor runs `setTimeout(handleStart, delay)`, so
-// the drag is live at 280ms whether or not the finger has travelled. The
-// visual feedback that fires at that moment (the source fading to a
-// placeholder, the overlay lifting) is drawn exactly where the finger already
-// is, so on a tablet the user sees none of it and cannot tell the item is
-// ready to move until they drag it somewhere and find out.
+// the drag is live once the hold elapses whether or not the finger has
+// travelled. The visual feedback that fires at that moment (the source fading
+// to a placeholder, the overlay lifting) is drawn exactly where the finger
+// already is, so on a tablet the user sees none of it and cannot tell the item
+// is ready to move until they drag it somewhere and find out.
+//
+// (That timer only governs touch because the board registers MouseSensor, not
+// PointerSensor, alongside the TouchSensor — see `boardDragSensors` in BoardV2.
+// While PointerSensor was there it claimed every touch and armed on movement,
+// so this tick used to fire mid-swipe rather than at the end of a hold.)
 //
 // A vibration is the one channel a fingertip cannot cover. It is the standard
 // "I've got it" confirmation in mobile drag interfaces, and it costs one call.

@@ -16,8 +16,11 @@
 // The whole card is the drag surface, matching the column, where the whole
 // header bar is. The controls inside it — the clickable title and the status
 // `<select>` — keep working without any special handling: the shared sensors
-// only arm after 6px of travel (mouse) or a 280ms hold (touch), and neither a
-// click nor a tap on a select crosses those thresholds.
+// only arm after 6px of travel (MouseSensor) or a stationary hold of
+// `BOARD_DRAG_LONG_PRESS_MS` (TouchSensor), and neither a click nor a tap on a
+// select crosses those thresholds. A swipe that starts on a card SCROLLS the
+// board instead of grabbing it — see the `touchAction` block below and
+// `boardDragSensors` in BoardV2 for why both halves are needed.
 //
 // ⚠️ Same accepted gap as the column: there is no KeyboardSensor in this
 // DndContext, so dragging a card is pointer/touch only. Unlike the column,
@@ -67,14 +70,19 @@ const styles = {
   // Merged INTO the card's own style by BoardV2, not replacing it.
   drag: (dragging) => ({
     cursor: dragging ? 'grabbing' : 'grab',
-    // The defensive pair already validated twice: on TerminalShortcutsFab's
-    // long press and then on the column header in phase 2. `touchAction: none`
-    // stops the browser claiming the gesture as a scroll before the 280ms
-    // sensor delay elapses — and a card sits inside a VERTICALLY scrolling
-    // column body, so here it is load-bearing in both axes. The iOS callout
-    // suppression stops a long press raising the system selection bubble over
-    // the card's text mid-drag.
-    touchAction: 'none',
+    // `manipulation`, NOT `none` — same change and same reasoning as the
+    // column header (full explanation in SortableBoardColumn.jsx), and it
+    // matters MORE here. A card sits inside a VERTICALLY scrolling column body
+    // and cards cover most of that body's area, so with `none` a swipe that
+    // started on any card could neither scroll the column nor (past the 8px
+    // tolerance) grab the card: the column would be effectively unscrollable by
+    // touch. With `manipulation` a swipe pans natively and cancels the pickup,
+    // while a still hold arms the drag and dnd-kit takes over the touchmoves
+    // from there.
+    touchAction: 'manipulation',
+    // Unchanged, and now load-bearing: the hold genuinely lasts
+    // `BOARD_DRAG_LONG_PRESS_MS` with the finger still, which is exactly when
+    // iOS would raise its selection bubble over the card's text.
     WebkitTouchCallout: 'none',
     WebkitUserSelect: 'none',
     userSelect: 'none',
@@ -111,9 +119,9 @@ export function SortableBoardCard({ cardId, titulo, children }) {
       transition,
       ...styles.drag(isDragging),
       // 2px with an offset, matching SortableBoardColumn — see the block
-      // there. The drag arms on the 280ms timer with no movement, and a card
-      // is roughly finger-sized, so the ring around it is most of what is left
-      // visible at the instant it becomes draggable.
+      // there. On touch the drag arms on the hold timer with no movement, and
+      // a card is roughly finger-sized, so the ring around it is most of what
+      // is left visible at the instant it becomes draggable.
       ...(isDragging
         ? {
           opacity: 0.4,

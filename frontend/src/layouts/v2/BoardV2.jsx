@@ -72,8 +72,10 @@
 // Jira (decisão do Bruno depois de testar a fase 2 ao vivo; a primeira versão
 // tinha um grip ⠿ dedicado de 28px, que ele achou pequeno demais para mirar).
 // O botão "⋯" dentro do header continua clicável: os sensores só armam depois
-// de 6px de movimento (mouse) ou 280ms segurando (touch), e um clique não
-// cruza nenhum dos dois limiares. Renomear saiu do clique-no-título por causa
+// de 6px de movimento (mouse, MouseSensor) ou `BOARD_DRAG_LONG_PRESS_MS`
+// segurando parado (toque, TouchSensor), e um clique não cruza nenhum dos dois
+// limiares. São sensores SEPARADOS por tipo de entrada de propósito — ver o
+// bloco em `boardDragSensors` sobre por que PointerSensor não pode estar aqui. Renomear saiu do clique-no-título por causa
 // disso e virou item do menu "⋯" (BoardColumnRenameDialog) — editar inline e
 // arrastar disputariam os mesmos pixels.
 //
@@ -106,7 +108,7 @@
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   closestCenter,
   pointerWithin,
@@ -164,29 +166,66 @@ import {
 // whole body. They were named for the column because for one phase it was the
 // only thing draggable here.
 //
-// 280 is DELIBERATELY DUPLICATED from `LONG_PRESS_MS` in
-// layouts/v2/TerminalShortcutsFab.jsx (~line 50) rather than imported. The two
-// gestures are independent — that one toggles the shortcuts panel, this one
-// picks something up off the board — and they share the number only because
-// the same constraint produced it: comfortably under the ~500ms at which iOS
-// Safari raises its own callout/selection, so the system never fights us for
-// the gesture. Importing would make a future tuning of one silently retune the
-// other.
-const BOARD_DRAG_LONG_PRESS_MS = 280;
-// Finger tremor during those 280ms. Independent of the FAB's own slop for the
-// same reason as above.
-const BOARD_DRAG_TOLERANCE_PX = 8;
-// Mouse only: a few pixels of travel before a press becomes a drag. This is
-// what keeps the controls INSIDE a drag surface clickable — the "⋯" button in
-// a column header, and the card's title button and status select — because a
-// plain click never travels far enough to arm anything.
+// 500, raised from 280 after the second tablet test — but read the correction
+// below before trusting the reason that was given for it.
+//
+// ⚠️ CORRECTION. The raise was justified as "280 is too eager: a finger that
+// rests for a moment before swiping arms a drag". That diagnosis was WRONG.
+// Until the sensor fix in `boardDragSensors` below, this delay was never read
+// on a touchscreen at all: PointerSensor claimed every touch first and armed on
+// 6px of travel, so the TouchSensor carrying this value was never
+// instantiated. The scroll bug was that, not the length of the hold.
+//
+// Which makes 500 the first value this constant has ever been tested at on a
+// real tablet. It is kept because Bruno asked for it, but it was picked to cure
+// a symptom it could not have caused; now that it genuinely applies, a shorter
+// hold may well feel better, and the next tablet test is the first real
+// evidence either way.
+//
+// ⚠️ iOS: this used to be justified as "comfortably under the ~500ms at which
+// iOS Safari raises its own callout/selection". It is not under it — it is AT
+// it, and for the reason above this is also the first time a touch hold has
+// actually run into that timer. What keeps it safe is the defensive package
+// already on both drag surfaces (`WebkitTouchCallout: none`,
+// `WebkitUserSelect: none`, `touchAction: none` in
+// SortableBoardColumn/SortableBoardCard), which suppresses the callout outright
+// rather than racing it. If a selection bubble ever appears at the moment of
+// pickup on an iPad, it is this trade, and the answer is that package.
+//
+// Still DELIBERATELY DUPLICATED from `LONG_PRESS_MS` in
+// layouts/v2/TerminalShortcutsFab.jsx (~line 50) rather than imported, and
+// this round is what proves that was right: the two numbers have now genuinely
+// diverged (the FAB stays at 280), exactly the "tuning one silently retunes
+// the other" that an import would have caused.
+export const BOARD_DRAG_LONG_PRESS_MS = 500;
+// How far the finger may wander during the hold before the pickup is
+// CANCELLED and the touch goes back to being a scroll (dnd-kit calls
+// `handleCancel` the moment this is exceeded — verified in
+// AbstractPointerSensor.handleMove).
+//
+// Deliberately LEFT at 8 while the delay changed, having been reconsidered:
+// this value is what separates finger tremor from an intended swipe, and those
+// two did not move. Lowering it would cancel more eagerly, which sounds
+// helpful for scrolling but is the wrong lever — a real scroll clears 8px
+// almost immediately, while the longer 500ms hold gives tremor MORE time to
+// accumulate, so a tighter tolerance would mostly make deliberate pickups fail
+// for unsteady hands. (The scroll conflict itself was the sensor bug described
+// at `boardDragSensors`, not this value.) Like the delay, this is only now
+// being exercised on a real touchscreen for the first time.
+export const BOARD_DRAG_TOLERANCE_PX = 8;
+// MOUSE only, and now genuinely so: this feeds MouseSensor, which never sees a
+// touch. A few pixels of travel before a press becomes a drag — what keeps the
+// controls INSIDE a drag surface clickable (the "⋯" button in a column header,
+// the card's title button and status select), because a plain click never
+// travels far enough to arm anything. While this fed PointerSensor it also
+// governed every TOUCH, which is the bug `boardDragSensors` documents.
 const BOARD_DRAG_POINTER_DISTANCE_PX = 6;
 
 // dnd-kit ships English screen-reader strings and mounts its live region
 // unconditionally, so it announces during POINTER drags too — not only
 // keyboard ones. Left alone, a pt-BR board would speak English, and the
 // default instructions describe a space-bar/arrow-key drag this build does not
-// implement (the sensor list is Pointer + Touch, with no KeyboardSensor).
+// implement (the sensor list is Mouse + Touch, with no KeyboardSensor).
 //
 // `draggable` is the text dnd-kit puts in its hidden instructions node. That
 // node is only read when something references it, and nothing does any more
@@ -273,12 +312,33 @@ export function buildBoardCollisionDetection(args) {
   return onACard ? [onACard] : under;
 }
 
-// Reorder feedback is a border FLASH, not a position animation: the columns
-// swap instantly in the flex row (animating a 300px-wide box sliding past
-// another reads as lag, not as motion), and the moved column identifies itself
-// by pulsing its border. Keyframes cannot live in an inline style object, so
-// this is injected once as a real stylesheet by the component below.
-const COLUMN_FLASH_CSS = `
+// The board's two keyframe animations. Keyframes cannot live in an inline
+// style object, so they are injected once as a real stylesheet by the
+// component below.
+//
+// 1. `v2-column-flash` — reorder feedback, a border FLASH rather than a
+//    position animation: the columns swap instantly in the flex row
+//    (animating a 300px-wide box sliding past another reads as lag, not as
+//    motion), and the moved column identifies itself by pulsing its border.
+//
+// 2. `v2-drag-lift` — the PICKUP animation, and the answer to the second
+//    tablet complaint: "I can't tell the card is floating on my finger".
+//    Everything tried before (the ring on the source, a static scale on the
+//    overlay) lived at the silhouette's edge; this one moves the whole object
+//    and blooms its shadow, which is what actually reads as coming off the
+//    board. The finger covers a small circle in the middle of the card, so the
+//    displacement shows at all four edges and the shadow spreads 48px past
+//    them — none of it under the contact patch.
+//
+//    Shadow goes from `--v2-shadow` to `--v2-shadow-lg`: both are existing
+//    tokens defined in BOTH theme blocks (theme.css warns that a token in only
+//    one silently vanishes in the other), so this invents no design value and
+//    is correct in dark mode for free.
+//
+//    It runs on MOUNT, which is exactly the instant of activation, because the
+//    DragOverlay only exists while something is being dragged — no state
+//    plumbing needed for the timing.
+const BOARD_DND_CSS = `
 @keyframes v2-column-flash {
   from { border-color: var(--v2-accent); }
   to { border-color: var(--v2-border); }
@@ -286,8 +346,31 @@ const COLUMN_FLASH_CSS = `
 .v2-column-flash {
   animation: v2-column-flash 200ms ease-out;
 }
+@keyframes v2-drag-lift {
+  from {
+    transform: translateY(0) scale(1);
+    box-shadow: var(--v2-shadow);
+  }
+  to {
+    transform: translateY(-6px) scale(1.04);
+    box-shadow: var(--v2-shadow-lg);
+  }
+}
+/* \`both\` so the lifted state STAYS after the 140ms — this is a state change,
+   not a one-off pulse. */
+.v2-drag-lift {
+  animation: v2-drag-lift 140ms ease-out both;
+}
 @media (prefers-reduced-motion: reduce) {
   .v2-column-flash { animation: none; }
+  /* The motion goes, the AFFORDANCE stays: reduced motion means "do not
+     animate", not "do not tell me I picked something up", so the lifted end
+     state is applied directly. */
+  .v2-drag-lift {
+    animation: none;
+    transform: translateY(-6px) scale(1.04);
+    box-shadow: var(--v2-shadow-lg);
+  }
 }
 `;
 
@@ -408,18 +491,16 @@ const styles = {
     background: 'var(--v2-surface)',
     border: `1px solid ${isDone ? 'var(--v2-accent)' : 'var(--v2-border)'}`,
     borderRadius: '12px',
+    // The resting shadow. The `v2-drag-lift` class animates ON TOP of this and
+    // ends here too, so the column still reads as lifted if the stylesheet
+    // ever fails to apply.
     boxShadow: 'var(--v2-shadow-lg)',
-    // Lifts the moment the drag arms, which is BEFORE the finger has moved —
-    // dnd-kit's long press fires on a timer, not on travel. At that instant
-    // the overlay sits exactly on top of the column it came from, under the
-    // finger, so the only parts of it the user can see are its edges: this
-    // pushes them ~6px outwards on each side of a 300px bar, far outside the
-    // contact patch, and the shadow above separates it from the board.
-    //
-    // Safe next to dnd-kit's own transform: the library renders its positioned
-    // wrapper (`PositionedOverlay`) as a SEPARATE element and this style is on
-    // its child, so the two transforms nest instead of overwriting.
-    transform: 'scale(1.04)',
+    // `transform` is NOT set here any more — `v2-drag-lift` owns it, so the
+    // displacement and the scale animate together from a single place instead
+    // of a static value fighting a keyframe. Safe next to dnd-kit's own
+    // transform either way: the library renders its positioned wrapper
+    // (`PositionedOverlay`) as a SEPARATE element and this is its child, so
+    // the two transforms nest rather than overwrite.
     cursor: 'grabbing',
     overflow: 'hidden',
   }),
@@ -519,10 +600,13 @@ const styles = {
     fontSize: '13px',
     fontWeight: 600,
     lineHeight: 1.35,
-    // Same pickup "pop" as the column overlay, same reason — see the block
-    // there. It matters at least as much here: a card is roughly the size of
-    // the finger holding it down.
-    transform: 'scale(1.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    // `transform` belongs to `v2-drag-lift`, as on the column overlay above.
+    // The lift matters most here: a card is roughly the size of the finger
+    // holding it down, so the edges and the shadow are nearly all of it that
+    // remains visible at the moment of pickup.
     cursor: 'grabbing',
   },
   card: {
@@ -909,8 +993,39 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   // ONE sensor list for both kinds of drag — the plan's instruction, and the
   // right call anyway: a card and a column should arm on the same gesture, and
   // two sensor sets in one DndContext is not even expressible.
+  //
+  // ⚠️ MouseSensor, NOT PointerSensor — and this line is the fix for the most
+  // serious bug this feature shipped with. Read before "modernising" it.
+  //
+  // PointerSensor listens to `onPointerDown`, and its activator checks only
+  // `isPrimary && button === 0` — it never looks at `pointerType`. A finger on
+  // a touchscreen fires a primary pointerdown with button 0, so PointerSensor
+  // happily accepts TOUCH, not just the mouse. And dnd-kit lets exactly ONE
+  // sensor own a gesture: the first activator that accepts sets `activeRef`,
+  // and every later sensor for the same gesture hits the guard commented
+  // "Another sensor is already instantiating" and bails
+  // (DndContext.bindActivatorToSensorInstantiator). Browsers fire pointerdown
+  // BEFORE touchstart, so on a tablet PointerSensor won every single time and
+  // the TouchSensor below was never instantiated at all.
+  //
+  // So the touch path never had a delay. It had PointerSensor's 6px distance:
+  // any swipe cleared it instantly and dragged the card along — Bruno's "I
+  // scroll the board and the card comes with it, without holding anything".
+  // The 280 -> 500 bump could not change that; the value it tuned was never
+  // read on touch. It also explains the complaint before that one ("I hold
+  // still and can't tell it's grabbable"): holding still never armed anything,
+  // because distance-only activation needs movement.
+  //
+  // MouseSensor listens to `onMouseDown` only, which a touch does not fire at
+  // the start of a gesture (compatibility mouse events arrive after touchend,
+  // if at all). That leaves touch — finger and Apple Pencil alike, both of
+  // which raise touch events on iPadOS — to the TouchSensor and its hold, and
+  // keeps the mouse on the 6px travel that makes the "⋯" button, the card
+  // title and the status select clickable. The two inputs no longer race.
+  // Asserted in BoardV2.dnd.test.jsx with a touch-typed pointer gesture that
+  // used to arm a drag and must not any more.
   const boardDragSensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: BOARD_DRAG_POINTER_DISTANCE_PX },
     }),
     useSensor(TouchSensor, {
@@ -1044,14 +1159,18 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
   // silently swallow a card drop the moment the namespaces changed.
   const handleDragStart = (event) => {
     // Fires at the exact instant the drag arms, for BOTH kinds — which on
-    // touch is 280ms after the finger lands, with no movement at all
-    // (dnd-kit's delay constraint is a plain `setTimeout`, see haptics.js).
+    // touch is `BOARD_DRAG_LONG_PRESS_MS` after the finger lands, with no
+    // movement at all (dnd-kit's delay constraint is a plain `setTimeout`, see
+    // haptics.js).
     //
-    // This is the fix for the one thing Bruno found confusing on the tablet:
-    // every other signal of "you have picked this up" is drawn exactly where
-    // his finger already was, so he could not tell the column was live until
-    // he dragged it and found out. A tick under the fingertip is the only
-    // channel the fingertip does not block.
+    // Only TRUE since the sensor fix at `boardDragSensors`: before it, touch
+    // was owned by PointerSensor and armed on 6px of travel, never on a timer,
+    // so this tick fired mid-swipe rather than at the end of a hold. That is
+    // also the real reason Bruno "could not tell the column was live" when
+    // holding still — it was not live. Now that the hold genuinely arms the
+    // drag with the finger stationary, this tick is exactly the signal it was
+    // designed to be: every visual cue is drawn under the finger that caused
+    // it, and a tick under the fingertip is the one channel it does not block.
     //
     // Once per drag, here in the shared dispatcher rather than in an effect
     // inside each sortable: `onDragStart` is called once by the library, while
@@ -1160,7 +1279,7 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
           </button>
         </div>
       )}
-      <style>{COLUMN_FLASH_CSS}</style>
+      <style>{BOARD_DND_CSS}</style>
       {/* The scroller waits for the columns. Rendering it during `loading`
           would paint a board with zero columns and a `doneSlug` of null for
           one frame — every card would flash as "not done" and the ghost
@@ -1191,8 +1310,9 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
               {/* The WHOLE header bar is the drag surface (Bruno's call after
                   testing phase 2 live — grab anywhere, like Jira). The "⋯"
                   button inside keeps working: the sensors only arm after 6px
-                  of travel (mouse) or a 280ms hold (touch), so a plain click
-                  never crosses the threshold and its native `click` fires.
+                  of travel (mouse) or a stationary hold (touch), so a plain
+                  click never crosses the threshold and its native `click`
+                  fires.
 
                   `role="group"` is load-bearing, not decoration. ARIA 1.2
                   forbids naming a generic element, so on a roleless <div> the
@@ -1397,12 +1517,39 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
       {createPortal(
         <DragOverlay>
           {draggingCard ? (
-            <div style={styles.dragOverlayCard} data-testid="board-v2-card-drag-overlay">
+            /* Title AND the tipo chip AND the description, not the title
+               alone. At the instant of pickup this overlay sits exactly on top
+               of the card it came from (the drag transform is still zero), so
+               a title-only box over a taller card read as a tooltip appearing
+               rather than as that card lifting — which is a good part of why
+               the pickup was hard to recognise. Matching the silhouette makes
+               the lift land on the same shape the user is looking at.
+
+               No CardIdBadge and no footer: both carry interactive controls (a
+               copy button, the status select), and dnd-kit's overlay sets no
+               `pointer-events: none`, so live controls could sit under the
+               finger mid-drag. Everything here is inert text. */
+            <div
+              style={styles.dragOverlayCard}
+              className="v2-drag-lift"
+              data-testid="board-v2-card-drag-overlay"
+            >
+              {draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo] && (
+                <div style={styles.cardMetaRow}>
+                  <span style={styles.tipoChip(draggingCard.tipo)}>
+                    {CARD_TIPO_LABELS[draggingCard.tipo]}
+                  </span>
+                </div>
+              )}
               {draggingCard.titulo}
+              {draggingCard.descricao && (
+                <div style={styles.cardDesc}>{draggingCard.descricao}</div>
+              )}
             </div>
           ) : draggingColumn ? (
             <div
               style={styles.dragOverlayColumn(draggingColumn.is_done)}
+              className="v2-drag-lift"
               data-testid="board-v2-drag-overlay"
             >
               <div style={styles.columnHeader}>

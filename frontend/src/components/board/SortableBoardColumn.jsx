@@ -18,9 +18,12 @@
 // at, when the whole bar was available.
 //
 // The "⋯" button inside the header keeps working, and that falls out of the
-// sensors rather than needing special handling: PointerSensor only arms after
-// 6px of travel and TouchSensor after a 280ms hold, so a plain click never
-// crosses either threshold and the button's native `click` fires untouched.
+// sensors rather than needing special handling: MouseSensor only arms after
+// 6px of travel and TouchSensor after a stationary hold
+// (`BOARD_DRAG_LONG_PRESS_MS` in BoardV2), so a plain click never crosses
+// either threshold and the button's native `click` fires untouched. (It is
+// MouseSensor, not PointerSensor, for a reason that broke touch entirely —
+// see `boardDragSensors` in BoardV2.)
 // Proven with the REAL providers mounted in BoardV2.dnd.test.jsx — in the
 // passthrough-mocked file the listeners are empty, so a click there would
 // "pass" for the wrong reason.
@@ -67,13 +70,39 @@ const styles = {
   // Merged INTO the header's own style by BoardV2, not replacing it.
   headerDrag: (dragging) => ({
     cursor: dragging ? 'grabbing' : 'grab',
-    // The defensive pair already validated on TerminalShortcutsFab's long
-    // press: `touchAction: none` stops the browser claiming the gesture as a
-    // scroll before the 280ms sensor delay elapses, and the iOS callout
-    // suppression stops a long press raising the system preview/selection
-    // bubble mid-drag. Both matter MORE now that the surface is the whole
-    // header rather than one small grip.
-    touchAction: 'none',
+    // `manipulation`, NOT `none` — changed together with the sensor fix in
+    // BoardV2's `boardDragSensors`, and the two only work as a pair.
+    //
+    // This used to be `none`, "to stop the browser claiming the gesture as a
+    // scroll before the sensor delay elapses". That goal is backwards for what
+    // Bruno asked for: a SWIPE must scroll the board, and only a still HOLD may
+    // grab. dnd-kit already arranges exactly that on its own side — during the
+    // hold its `handleMove` returns BEFORE calling `preventDefault` (verified in
+    // AbstractPointerSensor.handleMove), leaving the gesture to the browser, and
+    // it only starts blocking native scroll once the drag has armed. So during
+    // the hold, whether a swipe scrolls is decided purely by this property:
+    //
+    //   `none`         -> the browser never pans. A swipe here would cancel the
+    //                     pickup (past the 8px tolerance) AND not scroll: a
+    //                     dead gesture. It only ever "worked" because
+    //                     PointerSensor was stealing every touch and turning
+    //                     the swipe into a drag, which was the other bug.
+    //   `manipulation` -> the browser pans on a swipe, which moves the finger
+    //                     past the tolerance and cancels the pickup: scroll
+    //                     wins. A still finger never pans, so the hold
+    //                     completes and arms; from then on dnd-kit
+    //                     preventDefaults every touchmove (TouchSensor.setup
+    //                     installs the non-passive listener iOS needs for that)
+    //                     and the board stops scrolling under the drag.
+    //                     It also still disables double-tap zoom.
+    //
+    // ⚠️ Cannot be verified in jsdom (no native scrolling there). The tablet
+    // test is the evidence. If a hold ever gets stolen as a scroll on a real
+    // device, THIS is the line — but check the sensor list first.
+    touchAction: 'manipulation',
+    // The iOS callout suppression is unchanged and matters more than ever: the
+    // hold now genuinely lasts `BOARD_DRAG_LONG_PRESS_MS` with the finger still,
+    // which is exactly when iOS would raise its preview/selection bubble.
     WebkitTouchCallout: 'none',
     WebkitUserSelect: 'none',
     userSelect: 'none',
@@ -114,14 +143,18 @@ export function SortableBoardColumn({ slug, label, children }) {
   // definite height here that chain breaks and every column collapses to the
   // height of its cards. jsdom cannot see it (no layout engine), so it is
   // reasoned about rather than tested.
-  // The outline is 2px, not the 1px this shipped with, and that is the fix for
-  // a real complaint from the tablet test: the long press arms the drag after
-  // 280ms WITHOUT any movement (dnd-kit runs `setTimeout(handleStart, delay)`),
-  // but every signal that fired at that moment was drawn underneath the finger
-  // that caused it — so Bruno held the column, nothing seemed to happen, and he
-  // only discovered it was live by dragging it. A ring around the whole column
-  // is the part of the feedback a fingertip cannot cover: the column is 300px
-  // wide and full height, so its edges are nowhere near the contact patch.
+  // The outline is 2px, not the 1px this shipped with. The TouchSensor arms
+  // the drag after `BOARD_DRAG_LONG_PRESS_MS` WITHOUT any movement (dnd-kit
+  // runs `setTimeout(handleStart, delay)`), and every signal that fires at that
+  // moment is drawn underneath the finger that caused it. A ring around the
+  // whole column is the part of the feedback a fingertip cannot cover: the
+  // column is 300px wide and full height, so its edges are nowhere near the
+  // contact patch.
+  //
+  // (Added after Bruno "held the column and nothing seemed to happen". The
+  // deeper cause of that report turned out to be that touch was never on the
+  // timer at all — see `boardDragSensors` in BoardV2 — but the ring is still
+  // right now that the hold genuinely arms with the finger still.)
   //
   // `outlineOffset` pushes it clear of the column's own border so the two do
   // not read as one thick line.
