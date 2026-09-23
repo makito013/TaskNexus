@@ -94,3 +94,20 @@ export function formatDataCriacao(criadoEm) {
   const mm = String(parsed.month).padStart(2, '0');
   return `${dd}/${mm}/${parsed.year}`;
 }
+
+// "2026-09-22 14:30" — epoch seconds (number, backend) OR an ISO string
+// (useGlobalTasks.js writes completed_at as toISOString() on the optimistic
+// path). Both must resolve to the same shape. Hand-rolled getters (no
+// toLocaleString) — same rationale as formatDataCriacao: no ICU dependency,
+// deterministic in tests regardless of the machine's locale.
+export function formatDateTime(value) {
+  if (value == null) return '';
+  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}

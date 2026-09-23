@@ -559,3 +559,272 @@ describe('TarefasV2 — tarefa órfã sob um cliente específico', () => {
     expect(screen.queryByText('Tarefa órfã')).toBeNull();
   });
 });
+
+// Task detail modal (view + complete/reopen). This file runs with no
+// `window.matchMedia` stub, so `useMediaQuery` always returns `false` —
+// every test here exercises the desktop branch (CenteredModal). The mobile
+// branch (BottomSheet) has dedicated coverage in TaskDetailModalV2.test.jsx
+// (describe "responsive container").
+describe('TarefasV2 — task detail modal', () => {
+  it('clicking the task title opens the detail modal, showing the task title', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Tarefa aberta')).toBeTruthy();
+  });
+
+  it('clicking anywhere else on the row (outside the circle and the title) also opens the modal', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByTestId('tarefas-v2-row-1'));
+
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  // Guard the original request explicitly asks for: the circle only
+  // completes/reopens, never opens the modal. Mutation proof: removing
+  // `stopPropagation()` from the circle's onClick in TarefasV2.jsx turns
+  // this test red (verified manually, see the Dev report).
+  it('clicking the circle does NOT open the modal', () => {
+    const completeTask = vi.fn();
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask,
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByLabelText('Concluir "Tarefa aberta"'));
+
+    expect(completeTask).toHaveBeenCalledWith('projA::claude', 1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // Real proof (not just "the function was called"): re-mock with the SAME
+  // task now `status: 'done'` and rerender — the modal, still open with the
+  // same `selectedTaskId`, must show the updated state, including the
+  // completion date. `completed_at` here is an ISO STRING on purpose, not an
+  // epoch number: that's the format useGlobalTasks.js actually writes on its
+  // optimistic path (see the plan's "completed_at in two formats" risk) —
+  // this is the regression that would show "Invalid Date" if formatDateTime
+  // only accepted numbers. This test is ALSO the mutation proof for
+  // "selection by id, not by object": if TarefasV2 stored the whole `task`
+  // object instead of the `id`, this test goes red (the modal would show the
+  // stale `pending` snapshot forever).
+  //
+  // Finally, closing with Escape at this point returns focus to the title
+  // button while the ROW HAS MOVED SECTIONS (Em aberto -> Concluídas) — the
+  // exact case the "look up the button by id at close time, not by a saved
+  // ref" design exists for (see handleCloseDetail in TarefasV2.jsx).
+  it('toggling inside the modal reflects in the list without reload, and Escape still returns focus after the row moves sections', () => {
+    const completeTask = vi.fn();
+    const pendingTask = fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' });
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [pendingTask],
+      loading: false,
+      completeTask,
+      reopenTask: vi.fn(),
+    });
+    const { rerender } = render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+    fireEvent.click(screen.getByText('Marcar concluída'));
+    expect(completeTask).toHaveBeenCalledWith('projA::claude', 1);
+
+    const doneTask = {
+      ...pendingTask,
+      status: 'done',
+      completed_at: new Date(2026, 8, 22, 15, 0).toISOString(),
+    };
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [doneTask],
+      loading: false,
+      completeTask,
+      reopenTask: vi.fn(),
+    });
+    rerender(<TarefasV2 />);
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Concluída')).toBeTruthy();
+    expect(within(dialog).getByText('Reabrir')).toBeTruthy();
+    expect(within(dialog).getByText('22/09/2026 15:00')).toBeTruthy();
+
+    // QA addition: the requirement is "reflects in the list AND the modal" —
+    // the assertions above only covered the modal side. The row behind the
+    // (portalized) dialog must also show the new status and have moved into
+    // the "Concluídas" count.
+    expect(within(screen.getByTestId('tarefas-v2-row-1')).getByText('Concluída')).toBeTruthy();
+    expect(screen.getByTestId('tarefas-v2-group-header-done').textContent).toContain('(1)');
+
+    // Portalized via createPortal (CenteredModal) — query with `screen`, not
+    // `within(row)`, or the dialog would never be found.
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement.id).toBe('task-detail-title-1');
+  });
+
+  it('closing by clicking the backdrop closes the modal', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+    const scrim = screen.getByTestId('centered-modal-scrim');
+    fireEvent.mouseDown(scrim);
+    fireEvent.click(scrim);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('closing via the × button closes the modal', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+    fireEvent.click(screen.getByLabelText('Fechar'));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the title control is a real <button type="button">, not a styled div — Enter/Space work by native browser behavior, and this guards the regression the plan explicitly warns about (role="button" on the row swallowing the nested circle control)', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 />);
+
+    const titleBtn = screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' });
+    expect(titleBtn.tagName).toBe('BUTTON');
+    expect(titleBtn.getAttribute('type')).toBe('button');
+  });
+
+  it('reopening from inside the modal reflects on the list and in the modal, mirroring the optimistic completed_at:null that useGlobalTasks.reopenTask actually writes', () => {
+    const reopenTask = vi.fn();
+    const doneTask = fakeTask({
+      id: 1,
+      titulo: 'Tarefa feita',
+      status: 'done',
+      // Explicit created_at so "Criada em" resolves to a real date, not '—'
+      // — otherwise BOTH rail rows show '—' before the reopen (fakeTask
+      // leaves created_at undefined) and getByText('—') below is ambiguous.
+      created_at: new Date(2026, 8, 19, 8, 0).getTime() / 1000,
+      completed_at: new Date(2026, 8, 20, 10, 0).toISOString(),
+    });
+    mockUseGlobalTasks.mockReturnValue({ tasks: [doneTask], loading: false, completeTask: vi.fn(), reopenTask });
+    const { rerender } = render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa feita"' }));
+    fireEvent.click(screen.getByText('Reabrir'));
+    expect(reopenTask).toHaveBeenCalledWith('projA::claude', 1);
+
+    const reopenedTask = { ...doneTask, status: 'pending', completed_at: null };
+    mockUseGlobalTasks.mockReturnValue({ tasks: [reopenedTask], loading: false, completeTask: vi.fn(), reopenTask });
+    rerender(<TarefasV2 />);
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Em aberto')).toBeTruthy();
+    expect(within(dialog).getByText('Marcar concluída')).toBeTruthy();
+    expect(within(dialog).getByText('—')).toBeTruthy(); // "Concluída em" back to empty
+
+    expect(within(screen.getByTestId('tarefas-v2-row-1')).getByText('Em aberto')).toBeTruthy();
+    expect(screen.getByTestId('tarefas-v2-group-header-open').textContent).toContain('(1)');
+  });
+});
+
+// Selection lifetime vs. the underlying `tasks` list — the requirement asks
+// explicitly: if the selected task drops out of the list (filter change or a
+// reload without it), the modal must close or at least not break.
+describe('TarefasV2 — task detail modal: selection lost mid-session', () => {
+  it('closes the modal without crashing when the selected task drops out of the list entirely (e.g. a reload without it)', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' })],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    const { rerender } = render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    mockUseGlobalTasks.mockReturnValue({ tasks: [], loading: false, completeTask: vi.fn(), reopenTask: vi.fn() });
+    expect(() => rerender(<TarefasV2 />)).not.toThrow();
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // Regression guard: `selectedTaskId` must be cleared when the selected task
+  // disappears from `tasks`, not only on an explicit close. Otherwise, if the
+  // SAME id comes back in a later poll (5s cadence, useGlobalTasks.js), the
+  // modal would pop back open on its own with no user action in between.
+  it('does NOT silently reopen when the same task id reappears in a later poll after disappearing', () => {
+    const task = fakeTask({ id: 1, titulo: 'Tarefa aberta', status: 'pending' });
+    mockUseGlobalTasks.mockReturnValue({ tasks: [task], loading: false, completeTask: vi.fn(), reopenTask: vi.fn() });
+    const { rerender } = render(<TarefasV2 />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa aberta"' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    mockUseGlobalTasks.mockReturnValue({ tasks: [], loading: false, completeTask: vi.fn(), reopenTask: vi.fn() });
+    rerender(<TarefasV2 />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    mockUseGlobalTasks.mockReturnValue({ tasks: [task], loading: false, completeTask: vi.fn(), reopenTask: vi.fn() });
+    rerender(<TarefasV2 />);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // Not a bug — documented design behavior: selection is read from the RAW
+  // `tasks` list (useGlobalTasks), not from the client-filtered view built in
+  // this component. A local client-filter change that hides the row behind
+  // the modal does not touch `tasks`, so the modal stays open. This satisfies
+  // "does not break"; it just does not auto-close on a filter change.
+  it('keeps the modal open when a local client-filter change hides the selected task from the visible list', () => {
+    mockUseGlobalTasks.mockReturnValue({
+      tasks: [
+        fakeTask({ id: 1, titulo: 'Tarefa Cliente B', status: 'pending', projeto_id: 'clienteB' }),
+        fakeTask({ id: 2, titulo: 'Tarefa Cliente Z', status: 'pending', projeto_id: 'clienteZ' }),
+      ],
+      loading: false,
+      completeTask: vi.fn(),
+      reopenTask: vi.fn(),
+    });
+    render(<TarefasV2 projects={[...clienteWithSubsProjects, otherCliente]} selectedClienteId={null} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes de "Tarefa Cliente Z"' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'clienteB' } });
+
+    expect(screen.queryByRole('button', { name: 'Ver detalhes de "Tarefa Cliente Z"' })).toBeNull();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+});

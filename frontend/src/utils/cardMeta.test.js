@@ -5,6 +5,7 @@ import {
   CARD_TIPO_COLORS,
   CARD_TIPO_LABELS,
   formatDataCriacao,
+  formatDateTime,
   formatPrazo,
   isPrazoAtrasado,
 } from './cardMeta.js';
@@ -91,5 +92,26 @@ describe('formatDataCriacao', () => {
 
   it('returns an empty string for a missing value', () => {
     expect(formatDataCriacao(null)).toBe('');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('formats an epoch-seconds number (backend format) as dd/mm/yyyy hh:mm', () => {
+    const epochSeconds = new Date(2026, 8, 22, 14, 30).getTime() / 1000;
+    expect(formatDateTime(epochSeconds)).toBe('22/09/2026 14:30');
+  });
+
+  it('formats an ISO string (useGlobalTasks.js optimistic-path format) the same way', () => {
+    const iso = new Date(2026, 8, 22, 14, 30).toISOString();
+    expect(formatDateTime(iso)).toBe(formatDateTime(new Date(iso).getTime() / 1000));
+  });
+
+  it('returns an empty string for null/undefined', () => {
+    expect(formatDateTime(null)).toBe('');
+    expect(formatDateTime(undefined)).toBe('');
+  });
+
+  it('returns an empty string for an unparseable value instead of "Invalid Date"', () => {
+    expect(formatDateTime('not-a-date')).toBe('');
   });
 });
