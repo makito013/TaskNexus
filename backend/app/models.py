@@ -30,6 +30,9 @@ class Agent(BaseModel):
     # --prompt-interactive). Ou seja: um valor novo é cadastrável pela UI e já
     # funciona, sem migração de schema. Valores em uso hoje:
     #   "claude"      -> contrato --session-id/--resume + hook Stop + MCP
+    #   "codex"       -> OpenAI codex CLI: `resume --last` no resume + `-c`
+    #                     overrides para approval/sandbox/trust + notify (fim de
+    #                     turno) + os 2 MCP do Escritório (ver _build_codex_cmd)
     #   "antigravity"/"gemini"/"agy" -> --dangerously-skip-permissions +
     #                     --continue no resume (agy não aceita id externo,
     #                     ver docstring de _build_agent_cmd)
@@ -57,8 +60,8 @@ class Project(BaseModel):
     # subpasta ("podesubir") ou um projeto solto na raiz
     # ("projeto_2"), cliente_id == id (nenhum "/" no meio).
     cliente_id: str = ""
-    # Campo aditivo — reflete se a pasta do projeto tem `.claude/` OU
-    # `.gemini/` (ver agent_discovery.scan_projects). Substitui o proxy
+    # Campo aditivo — reflete se a pasta do projeto tem `.claude/`, `.gemini/`
+    # OU `.codex/` (ver agent_discovery.scan_projects). Substitui o proxy
     # `agentes non-empty` para o frontend distinguir "projeto elegível para
     # chat" de "pasta-pai sem agente configurado" (usado por
     # listSubProjectsForClient no seletor de "Novo chat"). Default False:
@@ -171,7 +174,12 @@ class Card(BaseModel):
     titulo: str
     projeto_id: str
     parent_id: int | None = None
-    status: str  # "a_fazer" | "em_andamento" | "em_revisao" | "feito"
+    # Slug de uma coluna de `board_columns` — essa tabela é a fonte da verdade,
+    # e o conjunto é DINÂMICO (o usuário cria, renomeia e exclui colunas). Não
+    # há lista fixa para enumerar aqui: os quatro slugs históricos
+    # (a_fazer/em_andamento/em_revisao/feito) são apenas a semeadura inicial e
+    # qualquer um deles pode deixar de existir.
+    status: str
     origem: str  # "bruno" | "agente:{agent_id}"
     ultima_atualizacao_por: str
     descricao: str | None = None
@@ -184,6 +192,12 @@ class Card(BaseModel):
     # REQUEST models (CardCreateRequest/CardUpdateRequest).
     tipo: str | None = None
     prazo: str | None = None
+    # Manual ordering inside a board column. READ-ONLY in this contract: it is
+    # never accepted on CardCreateRequest/CardUpdateRequest — the backend
+    # assigns it (end of the destination column) and, from Phase 3 on, the
+    # dedicated /move endpoint rewrites it. NULL on every subcard: subcards are
+    # ordered by id inside their parent, they have no board position.
+    board_position: float | None = None
     subcards: list["Card"] = []
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
@@ -239,6 +253,25 @@ class CardUpdateRequest(BaseModel):
     # through the MCP adapter) is acceptable and pre-existing behavior.
     tipo: Literal["bug", "hotfix", "historia", ""] | None = None
     prazo: str | None = None
+
+
+class CardMoveRequest(BaseModel):
+    """Body de POST /api/cards/{card_id}/move — reposicionamento fino por
+    arrasto (task #43, fase 3).
+
+    `after_id`/`before_id` são os VIZINHOS no ponto de soltura: o card que
+    ficará logo acima e o que ficará logo abaixo. `after_id` nulo = topo da
+    coluna, `before_id` nulo = fim, os dois nulos = coluna vazia.
+
+    Não existe campo de posição numérica: `board_position` é calculado pelo
+    backend e NUNCA aceito do cliente (mesma regra que já vale em
+    CardCreateRequest/CardUpdateRequest — ver o campo em `Card`). Dois clientes
+    mandando posições absolutas calculadas sobre leituras diferentes é
+    exatamente o conflito que as âncoras evitam: um id obsoleto é detectável e
+    vira 409, um float obsoleto é gravável e corrompe a ordem em silêncio."""
+    status: str
+    after_id: int | None = None
+    before_id: int | None = None
 
 
 class HookCardCreateRequest(BaseModel):
@@ -308,6 +341,39 @@ class HookCardListRequest(BaseModel):
     redundante ou uma tentativa de acesso cross-tenant."""
     claude_session_id: str
     projeto_id: str | None = None
+
+
+class BoardColumn(BaseModel):
+    """Uma coluna do board. Escopo GLOBAL (não há coluna por projeto) e
+    `slug` IMUTÁVEL: ele é o valor gravado em `cards.status`, então renomear
+    uma coluna só troca o `label`. Exatamente uma coluna tem `is_done` — é
+    ela que define "concluído" para o resumo de subcards, para o cálculo de
+    prazo atrasado e para "limpar concluídos"."""
+    slug: str
+    label: str
+    position: int
+    is_done: bool
+
+
+class BoardColumnCreateRequest(BaseModel):
+    """Body de POST /api/board/columns. Só o label: o slug é derivado dele no
+    backend (board_columns.slugify_column_label) e a position é sempre o fim
+    da ordem."""
+    label: str
+
+
+class BoardColumnUpdateRequest(BaseModel):
+    """Body de PATCH /api/board/columns/{slug} — renomeio. Não aceita slug,
+    position nem is_done de propósito: cada um tem seu próprio caminho
+    (imutável / POST reorder / POST done)."""
+    label: str
+
+
+class BoardColumnReorderRequest(BaseModel):
+    """Body de POST /api/board/columns/reorder. `slugs` precisa ser uma
+    permutação exata do conjunto atual de colunas — a lista INTEIRA na nova
+    ordem, não um par de vizinhos trocados."""
+    slugs: list[str]
 
 
 class LimparConcluidosResult(BaseModel):

@@ -13,15 +13,115 @@
 // The `selectedProjectId` prop is gone: card creation no longer takes a
 // target from a prop, it comes from the CardFormModal's own payload.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { BoardV2 } from './BoardV2.jsx';
+import { CARD_TIPO_LABELS } from '../../utils/cardMeta.js';
 
 const mockUseCards = vi.fn();
 vi.mock('../../hooks/useCards.js', () => ({
   useCards: (...args) => mockUseCards(...args),
 }));
 
+// `useColumns` is mocked at the HOOK level, the same way `useCards` already is
+// in this file — not at the `api.*` level. These tests assert synchronously
+// right after `render`, and a stubbed fetch would only resolve on a later tick,
+// turning every `getByTestId('board-v2-col-…')` in this file into a `findBy`.
+// The default stub returns the four legacy columns already loaded, so the
+// pre-existing tests keep describing the same board they always did.
+const mockUseColumns = vi.fn();
+vi.mock('../../hooks/useColumns.js', () => ({
+  useColumns: (...args) => mockUseColumns(...args),
+}));
+
+// dnd-kit's DndContext is replaced by a PASSTHROUGH that renders its children
+// unchanged and records the drag callbacks, so a test can invoke `onDragEnd`
+// with a synthetic `{active, over}`.
+//
+// This is a test SEAM, not a reimplementation of the library: no sensor,
+// collision or transform behaviour is faked, and nothing here asserts anything
+// about dnd-kit. It exists because a real drag CANNOT be simulated in jsdom —
+// the sensors need pointer capture and real `getBoundingClientRect` values,
+// and jsdom has neither (every rect is zeros). Driving the gesture would test
+// jsdom's limitations, not our ordering.
+//
+// The ordering itself is covered directly in utils/boardColumnOrder.test.js,
+// and the optimistic-apply/rollback pair in hooks/useColumns.test.js. What is
+// left for THIS file is the wiring: does the drop hand the right slug list to
+// the right action?
+const dragHandlers = {};
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    DndContext: ({ children, onDragStart, onDragOver, onDragEnd, onDragCancel }) => {
+      dragHandlers.onDragStart = onDragStart;
+      // Phase 3 added `onDragOver` (the card drop indicator is recomputed from
+      // it). Captured here too, or a test could only ever see the END of a
+      // card drag and never the feedback drawn during one.
+      dragHandlers.onDragOver = onDragOver;
+      dragHandlers.onDragEnd = onDragEnd;
+      dragHandlers.onDragCancel = onDragCancel;
+      return children;
+    },
+    DragOverlay: ({ children }) => children ?? null,
+  };
+});
+
+// A drop of `activeSlug` onto `overSlug`. `overSlug` null = released outside
+// any column, which is what dnd-kit reports for a drag abandoned off-board.
+function drop(activeSlug, overSlug) {
+  return dragHandlers.onDragEnd({
+    active: { id: activeSlug },
+    over: overSlug == null ? null : { id: overSlug },
+  });
+}
+
+// Phase 3's card drag, as SYNTHETIC events — a parallel helper rather than a
+// change to `drop` above, which a dozen column tests depend on the signature
+// of. `overId` is a RAW sortable id (`card:2`, `dropzone:feito`) or null for a
+// release outside every droppable, so a test can say exactly what dnd-kit
+// would have reported.
+function dropCard(activeCardId, overId) {
+  return dragHandlers.onDragEnd({
+    active: { id: `card:${activeCardId}` },
+    over: overId == null ? null : { id: overId },
+  });
+}
+
+function dragCardOver(activeCardId, overId) {
+  return dragHandlers.onDragOver({
+    active: { id: `card:${activeCardId}` },
+    over: overId == null ? null : { id: overId },
+  });
+}
+
+const LEGACY_COLUMNS = [
+  { slug: 'a_fazer', label: 'A Fazer', position: 1, is_done: false },
+  { slug: 'em_andamento', label: 'Em Andamento', position: 2, is_done: false },
+  { slug: 'em_revisao', label: 'Em Revisão', position: 3, is_done: false },
+  { slug: 'feito', label: 'Feito', position: 4, is_done: true },
+];
+
+function mockColumns(columns = LEGACY_COLUMNS, overrides = {}) {
+  const doneColumn = columns.find((c) => c.is_done);
+  const actions = {
+    columns,
+    loading: false,
+    doneSlug: doneColumn ? doneColumn.slug : null,
+    firstSlug: columns.length ? columns[0].slug : null,
+    createColumn: vi.fn().mockResolvedValue({}),
+    renameColumn: vi.fn().mockResolvedValue({}),
+    reorderColumns: vi.fn().mockResolvedValue(columns),
+    setDoneColumn: vi.fn().mockResolvedValue(columns),
+    deleteColumn: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+  mockUseColumns.mockReturnValue(actions);
+  return actions;
+}
+
+beforeEach(() => { mockColumns(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 const projects = [{ id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [], sub_projetos: [] }];
@@ -217,7 +317,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
   it('with no client selected ("Todos"), fetches cards for all projects — useCards([])', () => {
     mockNoCards();
     render(<BoardV2 projects={projects} selectedClienteId={null} />);
-    expect(mockUseCards).toHaveBeenCalledWith([]);
+    expect(mockUseCards).toHaveBeenCalledWith([], 'feito');
   });
 
   // Órfãos (decisão do Bruno, sessão "card/tarefa órfão"): com QUALQUER
@@ -230,7 +330,7 @@ describe('BoardV2 — agregação de cards por CLIENTE (selectedClienteId, desac
   it('with any client fixed and Tier 2 on "Todos os projetos", fetches ALL cards (useCards([])) instead of a scoped query', () => {
     mockNoCards();
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 
   it('with a client that has subprojects selected, still fetches everything (Tier 2 stays "Todos")', () => {
@@ -366,7 +466,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
     fireEvent.change(clienteSelect, { target: { value: 'clienteB' } });
     fireEvent.change(clienteSelect, { target: { value: '' } });
 
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 
   it('the project select lists only DIRECT children, but filtering by one of them reaches its whole subtree (shallow dropdown, deep result)', () => {
@@ -427,7 +527,7 @@ describe('BoardV2 — cascata de filtro (selects locais de Cliente e Projeto)', 
     rerender(<BoardV2 projects={allProjects} selectedClienteId={null} />);
 
     expect(screen.getByLabelText('Filtrar por cliente').value).toBe('');
-    expect(mockUseCards).toHaveBeenLastCalledWith([]);
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'feito');
   });
 });
 
@@ -849,5 +949,1236 @@ describe('BoardV2 — tags de cliente e projeto no card', () => {
     expect(within(card).queryAllByTestId('card-tag')).toHaveLength(0);
     expect(within(card).queryByText('Projeto A')).toBeNull();
     expect(card.textContent).not.toContain('null');
+  });
+});
+
+
+// Dynamic columns (task #43, phase 1). Everything below is new surface: the
+// board no longer has four fixed statuses, and the column header is where
+// creating, renaming, reordering, marking-done and deleting all happen.
+describe('BoardV2 - dynamic columns', () => {
+  it('renders one column per entry of useColumns, in board order', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.getByTestId('board-v2-col-backlog')).toBeTruthy();
+    expect(screen.getByTestId('board-v2-col-entregue')).toBeTruthy();
+    // The four legacy statuses are not hard-coded anywhere any more.
+    expect(screen.queryByTestId('board-v2-col-a_fazer')).toBeNull();
+  });
+
+  it('renders no column scroller at all while the columns are loading', () => {
+    mockColumns(LEGACY_COLUMNS, { loading: true, columns: [], doneSlug: null, firstSlug: null });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Painting an empty board with doneSlug=null for one frame would flash
+    // every card as "not done" and strand the ghost column on its own.
+    expect(screen.queryByTestId('board-v2-col-a_fazer')).toBeNull();
+    expect(screen.queryByText('+ Nova coluna')).toBeNull();
+  });
+
+  it('populates the card status select from the columns, not from a fixed list', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockUseCards.mockReturnValue({
+      cards: [fakeCard({ id: 1, status: 'backlog' })],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const select = screen.getByLabelText('Mover "Card 1"');
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Backlog', 'Entregue']);
+  });
+
+  it('marks the done column with a "✓" badge and only that one', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    const badges = screen.getAllByLabelText('Coluna concluída');
+    expect(badges).toHaveLength(1);
+    expect(within(screen.getByTestId('board-v2-col-feito')).getByLabelText('Coluna concluída')).toBeTruthy();
+  });
+});
+
+describe('BoardV2 - creating a column through the ghost column', () => {
+  it('turns the ghost into an input and creates the column on Enter', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Em Homologação' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(createColumn).toHaveBeenCalledWith('Em Homologação'));
+  });
+
+  it('creates the column on blur too', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Bloqueado' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(createColumn).toHaveBeenCalledWith('Bloqueado'));
+  });
+
+  it('creates nothing on Escape, and the draft does not survive to the next opening', async () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: 'Descartada' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(createColumn).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    expect(screen.getByLabelText('Nome da nova coluna').value).toBe('');
+  });
+
+  it('creates nothing for a blank name', () => {
+    const { createColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('+ Nova coluna'));
+    const input = screen.getByLabelText('Nome da nova coluna');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+
+    expect(createColumn).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoardV2 - renaming a column through the "⋯" menu', () => {
+  function openRename() {
+    fireEvent.click(screen.getByLabelText('Ações da coluna A Fazer'));
+    fireEvent.click(screen.getByText('Renomear coluna'));
+  }
+
+  // Renaming left the column title when the whole header became the drag
+  // surface: click-to-edit and click-and-drag cannot share the same pixels.
+  it('no longer turns the title into an input when clicked', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByText('A Fazer'));
+
+    expect(screen.queryByLabelText('Novo nome da coluna')).toBeNull();
+    expect(renameColumn).not.toHaveBeenCalled();
+  });
+
+  it('opens a dialog prefilled with the current label', () => {
+    mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+
+    expect(screen.getByRole('dialog', { name: 'Renomear coluna — A Fazer' })).toBeTruthy();
+    expect(screen.getByLabelText('Novo nome da coluna').value).toBe('A Fazer');
+  });
+
+  it('focuses the input with the text selected, ready to be replaced', () => {
+    mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+
+    const input = screen.getByLabelText('Novo nome da coluna');
+    expect(document.activeElement).toBe(input);
+    // Same affordance the inline input had: typing replaces the whole name.
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe('A Fazer'.length);
+  });
+
+  it('renames on "Confirmar"', async () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Backlog' },
+    });
+    fireEvent.click(screen.getByText('Confirmar'));
+
+    await waitFor(() => expect(renameColumn).toHaveBeenCalledWith('a_fazer', 'Backlog'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('renames on Enter', async () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    const input = screen.getByLabelText('Novo nome da coluna');
+    fireEvent.change(input, { target: { value: 'Backlog' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(renameColumn).toHaveBeenCalledWith('a_fazer', 'Backlog'));
+  });
+
+  it('trims surrounding whitespace before sending', async () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: '   Backlog   ' },
+    });
+    fireEvent.click(screen.getByText('Confirmar'));
+
+    await waitFor(() => expect(renameColumn).toHaveBeenCalledWith('a_fazer', 'Backlog'));
+  });
+
+  it('does not rename on "Cancelar"', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Backlog' },
+    });
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    expect(renameColumn).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('does not rename on Escape', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Backlog' },
+    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(renameColumn).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('does not call the API when the name is unchanged', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.click(screen.getByText('Confirmar'));
+
+    expect(renameColumn).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('blocks confirming a blank name without a round-trip', () => {
+    const { renameColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: '   ' },
+    });
+
+    expect(screen.getByText('Confirmar').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Confirmar'));
+    expect(renameColumn).not.toHaveBeenCalled();
+  });
+
+  // The old inline input reverted silently on a duplicate name, so the user
+  // retyped the same thing with no idea why it kept snapping back.
+  it('shows the backend rejection INSIDE the dialog and keeps it open', async () => {
+    const reject = vi.fn().mockRejectedValue(
+      new Error("Já existe uma coluna chamada 'Feito'")
+    );
+    mockColumns(LEGACY_COLUMNS, { renameColumn: reject });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Feito' },
+    });
+    fireEvent.click(screen.getByText('Confirmar'));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Já existe/));
+    // Still open, still holding what was typed — nothing to retype.
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByLabelText('Novo nome da coluna').value).toBe('Feito');
+  });
+
+  // QA: the inline error is owned by BoardV2 and only cleared on the next
+  // confirm, on close, and on open — never on typing. So after a rejection the
+  // message keeps accusing a name the user has already edited away.
+  // Characterisation: it is arguably the right call (keeping the reason visible
+  // while you fix it beats a message that vanishes as you start typing), but it
+  // is a choice nobody wrote down, so this pins it.
+  it('keeps a rejection message visible while the user edits the name', async () => {
+    const reject = vi.fn().mockRejectedValue(
+      new Error("Já existe uma coluna chamada 'Feito'")
+    );
+    mockColumns(LEGACY_COLUMNS, { renameColumn: reject });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openRename();
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Feito' },
+    });
+    fireEvent.click(screen.getByText('Confirmar'));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+
+    // The user fixes the name — the stale accusation stays on screen.
+    fireEvent.change(screen.getByLabelText('Novo nome da coluna'), {
+      target: { value: 'Concluído' },
+    });
+
+    expect(screen.getByRole('alert').textContent).toMatch(/Já existe/);
+    expect(screen.getByLabelText('Novo nome da coluna').value).toBe('Concluído');
+  });
+
+  it('opens on the column whose menu was used, not a stale one', () => {
+    mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByLabelText('Ações da coluna Em Revisão'));
+    fireEvent.click(screen.getByText('Renomear coluna'));
+
+    expect(screen.getByLabelText('Novo nome da coluna').value).toBe('Em Revisão');
+  });
+});
+
+
+describe('BoardV2 - the column "⋯" menu', () => {
+  function openMenu(columnLabel) {
+    fireEvent.click(screen.getByLabelText(`Ações da coluna ${columnLabel}`));
+  }
+
+  it('marks a column as done from the menu', async () => {
+    const { setDoneColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    fireEvent.click(screen.getByText('Marcar como concluída'));
+
+    await waitFor(() => expect(setDoneColumn).toHaveBeenCalledWith('a_fazer'));
+  });
+
+  it('shows an informational line instead of the action on the done column itself', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Feito');
+    // Done is a radio, not a toggle: there is nothing to un-check here.
+    expect(screen.getByText('✓ Esta é a coluna concluída')).toBeTruthy();
+    expect(screen.queryByText('Marcar como concluída')).toBeNull();
+  });
+
+  it('closes on Escape', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    expect(screen.getByTestId('board-column-menu')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('board-column-menu')).toBeNull();
+  });
+
+  it('closes on a click outside', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('board-column-menu')).toBeNull();
+  });
+
+  it('is born disabled, with a tooltip, when there is only one column left', () => {
+    mockColumns([{ slug: 'unica', label: 'Única', position: 1, is_done: true }]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Única');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(true);
+    expect(item.title).toBe('O board precisa ter pelo menos uma coluna.');
+  });
+
+  // The component already knows `is_done` — sending the user through a
+  // guaranteed 409 taught them nothing the menu could not say up front.
+  it('is born disabled on the DONE column, without a round-trip to the 409', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Feito');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(true);
+    expect(item.title).toMatch(/concluída não pode ser excluída/);
+  });
+
+  it('stays enabled on an ordinary column', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('A Fazer');
+    const item = screen.getByText('Excluir coluna');
+    expect(item.disabled).toBe(false);
+    expect(item.title).toBeFalsy();
+  });
+
+  it('prefers the last-column message when a single column is also the done one', () => {
+    mockColumns([{ slug: 'unica', label: 'Única', position: 1, is_done: true }]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    openMenu('Única');
+    expect(screen.getByText('Excluir coluna').title)
+      .toBe('O board precisa ter pelo menos uma coluna.');
+  });
+});
+
+describe('BoardV2 - deleting a column', () => {
+  function requestDelete(columnLabel) {
+    fireEvent.click(screen.getByLabelText(`Ações da coluna ${columnLabel}`));
+    fireEvent.click(screen.getByText('Excluir coluna'));
+  }
+
+  it('confirms and deletes an empty column', async () => {
+    const { deleteColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    expect(screen.getByRole('dialog', { name: 'Excluir coluna — A Fazer' })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+    await waitFor(() => expect(deleteColumn).toHaveBeenCalledWith('a_fazer'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('downgrades to the card-count dialog when the backend refuses, with no destructive button left', async () => {
+    const refusal = Object.assign(new Error('A coluna ainda tem 3 card(s).'), {
+      reason: 'coluna_com_cards', cards: 3,
+    });
+    mockColumns(LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(screen.getByText(/3 card\(s\)/)).toBeTruthy());
+    // Only "Cancelar" survives — offering a button that always fails is worse
+    // than offering none.
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Cancelar')).toBeTruthy();
+    expect(within(dialog).queryByText('Excluir coluna')).toBeNull();
+  });
+
+  it('downgrades to the informational dialog, with "Entendi", for the done column', async () => {
+    const refusal = Object.assign(new Error('A coluna concluída não pode ser excluída.'), {
+      reason: 'coluna_concluida', cards: 0,
+    });
+    mockColumns(LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) });
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('Em Andamento');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(screen.getByText('Entendi')).toBeTruthy());
+    expect(within(screen.getByRole('dialog')).queryByText('Cancelar')).toBeNull();
+  });
+
+  it('closes without deleting when cancelled', () => {
+    const { deleteColumn } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getByText('Cancelar'));
+
+    expect(deleteColumn).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // Fail-safe: a refusal code this build does not know must NOT degrade to the
+  // destructive variant. It used to — the old test was "destructive unless the
+  // reason is one of two known refusals", so a newer backend, a typo or a proxy
+  // rewriting the body would re-offer a deletion the server had just refused.
+  it('falls back to a SAFE variant for a reason it does not recognise', async () => {
+    const refusal = Object.assign(new Error('Recusado por um motivo novo'), {
+      reason: 'motivo_que_este_build_nao_conhece', cards: 0,
+    });
+    const { deleteColumn } = mockColumns(
+      LEGACY_COLUMNS, { deleteColumn: vi.fn().mockRejectedValue(refusal) }
+    );
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    requestDelete('A Fazer');
+    fireEvent.click(screen.getAllByText('Excluir coluna').slice(-1)[0]);
+
+    await waitFor(() => expect(
+      screen.getByText(/Não foi possível excluir a coluna/)
+    ).toBeTruthy());
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByText('Excluir coluna')).toBeNull();
+    expect(within(dialog).getByText('Cancelar')).toBeTruthy();
+
+    // And no second attempt is reachable from the dialog.
+    expect(deleteColumn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BoardV2 - doneSlug threading', () => {
+  it('marks a card as late against the DONE COLUMN, not the literal "feito"', () => {
+    mockColumns([
+      { slug: 'feito', label: 'Feito', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockUseCards.mockReturnValue({
+      cards: [
+        fakeCard({ id: 1, prazo: '2020-01-01', status: 'feito', titulo: 'Em "Feito", mas nao concluido' }),
+        fakeCard({ id: 2, prazo: '2020-01-01', status: 'entregue', titulo: 'Concluido de verdade' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // 'feito' lost the done mark, so a past deadline there IS late now.
+    expect(within(screen.getByTestId('board-v2-card-1')).getByText('1 jan 2020').style.color)
+      .toBe('var(--v2-danger)');
+    expect(within(screen.getByTestId('board-v2-card-2')).getByText('1 jan 2020').style.color)
+      .toBe('var(--v2-text-faint)');
+  });
+
+  it('hands the resolved doneSlug down to useCards', () => {
+    mockColumns([
+      { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+      { slug: 'entregue', label: 'Entregue', position: 2, is_done: true },
+    ]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(mockUseCards).toHaveBeenLastCalledWith([], 'entregue');
+  });
+});
+
+
+// Drag to reorder (task #43, phase 2). The arrows tested above are unchanged
+// and still work — drag is an addition, not a replacement.
+describe('BoardV2 - dragging a column to reorder', () => {
+  // The whole header bar is the drag surface — no dedicated grip to aim at.
+  it('makes every column header a drag surface', () => {
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    for (const slug of ['a_fazer', 'em_andamento', 'em_revisao', 'feito']) {
+      const header = screen.getByTestId(`board-v2-col-header-${slug}`);
+      expect(header.style.cursor).toBe('grab');
+      // 'manipulation', not 'none': a swipe must scroll, only a still hold may
+      // grab. See SortableBoardColumn.jsx.
+      expect(header.style.touchAction).toBe('manipulation');
+      // The old 28px grip is gone.
+      expect(screen.queryByTestId(`board-v2-grip-${slug}`)).toBeNull();
+    }
+  });
+
+  // The header carries the drag listeners, so this is the regression that
+  // matters most: the controls INSIDE it must still take a plain click. The
+  // sensors make that true without special handling — MouseSensor needs 6px
+  // of travel, TouchSensor a stationary hold, and a click crosses neither.
+  // NOTE: "a click inside the drag surface still reaches the button" is NOT
+  // testable in this file. The DndContext here is a passthrough mock, so
+  // `useSortable` falls back to dnd-kit's default internal context, whose
+  // `activators` list is EMPTY — the header ends up with no listeners at all
+  // and a click trivially "works" because nothing is competing for it. That
+  // assertion lives in BoardV2.dnd.test.jsx, with the real providers mounted
+  // and a real pointerDown/pointerUp/click sequence.
+  it('keeps the "⋯" menu openable from inside the drag surface', () => {
+    mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByLabelText('Ações da coluna A Fazer'));
+
+    expect(screen.getByTestId('board-column-menu')).toBeTruthy();
+  });
+
+  it('sends the COMPLETE slug list, in the new order, on drop', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('feito', 'a_fazer'); });
+
+    // The endpoint takes the whole board, not a moved pair.
+    expect(reorderColumns).toHaveBeenCalledWith([
+      'feito', 'a_fazer', 'em_andamento', 'em_revisao',
+    ]);
+  });
+
+  it('moves a column rightwards, shifting the ones in between', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', 'em_revisao'); });
+
+    expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'em_revisao', 'a_fazer', 'feito',
+    ]);
+  });
+
+  it('does nothing when a column is dropped on itself', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', 'a_fazer'); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when a column is released outside any column', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', null); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('does nothing on a single-column board', async () => {
+    const { reorderColumns } = mockColumns(
+      [{ slug: 'unica', label: 'Única', position: 1, is_done: true }]
+    );
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('unica', 'unica'); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a refused reorder instead of failing silently', async () => {
+    // The hook already rolled the order back; the alert only explains it.
+    // There is no automatic retry in this phase — the rollback IS the recovery.
+    const reject = vi.fn().mockRejectedValue(new Error('Falha ao reordenar colunas'));
+    mockColumns(LEGACY_COLUMNS, { reorderColumns: reject });
+    mockNoCards();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('feito', 'a_fazer'); });
+
+    expect(reject).toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/reordenar/i));
+    alertSpy.mockRestore();
+  });
+
+  it('a cancelled drag never reaches the API', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+    act(() => { dragHandlers.onDragCancel(); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  // QA: `over` can carry an id that is not a column of this board. Two ways in
+  // normal use — another tab deleted the column while the finger was down, and
+  // the ghost "+ Nova coluna" affordance sitting at the end of the same
+  // scroller. Neither may produce a request.
+  it('ignores a drop onto a column another tab deleted mid-drag', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', 'coluna_que_sumiu'); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('ignores a drag whose ACTIVE column another tab deleted mid-drag', async () => {
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('coluna_que_sumiu', 'a_fazer'); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('never treats the "+ Nova coluna" ghost as a drop target', async () => {
+    // The ghost is a plain <button> in the same flex scroller, deliberately
+    // left out of SortableContext's `items`, so dnd-kit cannot report it as
+    // `over` in the first place. This pins the second line of defence: even if
+    // it somehow arrived, an id that is not in the slug list is a no-op rather
+    // than a column flung to an index of -1.
+    const { reorderColumns } = mockColumns();
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', '__ghost_new_column__'); });
+
+    expect(reorderColumns).not.toHaveBeenCalled();
+  });
+
+  it('drops against the CURRENT board, not a stale slug list', async () => {
+    // A board the user already reordered once: the drop has to be computed
+    // against what is on screen now.
+    const { reorderColumns } = mockColumns([
+      { slug: 'feito', label: 'Feito', position: 1, is_done: true },
+      { slug: 'a_fazer', label: 'A Fazer', position: 2, is_done: false },
+      { slug: 'em_andamento', label: 'Em Andamento', position: 3, is_done: false },
+    ]);
+    mockNoCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('em_andamento', 'feito'); });
+
+    expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'feito', 'a_fazer',
+    ]);
+  });
+});
+
+
+// -- phase 3: dragging a CARD -----------------------------------------------
+//
+// The ordering itself is covered directly in utils/boardCardOrder.test.js, and
+// the optimistic-apply/rollback pair in hooks/useCards.test.js. What is left
+// for HERE is the wiring: does a drop resolve the right destination column and
+// the right pair of neighbour ids, and hand them to the right action?
+//
+// The events are synthetic for the same reason the column ones are: a real
+// dnd-kit gesture cannot be driven in jsdom. The REAL provider tree is mounted
+// and asserted in BoardV2.dnd.test.jsx instead.
+
+describe('BoardV2 — arrastar card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+    fakeCard({ id: 3, titulo: 'Tres', status: 'a_fazer' }),
+    fakeCard({ id: 9, titulo: 'Feito ja', status: 'feito' }),
+  ];
+
+  function mockCards(cards = CARDS, overrides = {}) {
+    const actions = {
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+      ...overrides,
+    };
+    mockUseCards.mockReturnValue(actions);
+    return actions;
+  }
+
+  it('dropping a card onto a lower one lands it AFTER that card', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // [1,2,3] with 1 dropped onto 3 becomes [2,3,1] — the same arrayMove the
+    // sortable preview animated under the finger.
+    await act(async () => { await dropCard(1, 'card:3'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'a_fazer', after_id: 3, before_id: null,
+    });
+  });
+
+  it('dropping a card onto a higher one lands it BEFORE that card', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(3, 'card:2'); });
+
+    expect(moveCard).toHaveBeenCalledWith(3, {
+      status: 'a_fazer', after_id: 1, before_id: 2,
+    });
+  });
+
+  it('dropping a card into ANOTHER column takes that column status', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:9'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'feito', after_id: null, before_id: 9,
+    });
+  });
+
+  it('dropping on a column body sends the card to the END of that column', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'dropzone:feito'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'feito', after_id: 9, before_id: null,
+    });
+  });
+
+  it('dropping into an EMPTY column reports no neighbours at all', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // `em_revisao` holds nothing, so there is no card to be relative to.
+    await act(async () => { await dropCard(1, 'dropzone:em_revisao'); });
+
+    expect(moveCard).toHaveBeenCalledWith(1, {
+      status: 'em_revisao', after_id: null, before_id: null,
+    });
+  });
+
+  it('released outside every droppable, nothing is requested', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, null); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('dropped back onto itself, nothing is requested', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(2, 'card:2'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('dropping the last card on its own column body is a no-op, not a request', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Card 3 is already last in `a_fazer`. The identity check has to catch
+    // this, exactly like the column drag's `next === current`.
+    await act(async () => { await dropCard(3, 'dropzone:a_fazer'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('never resolves a bare COLUMN slug as a card drop target', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // The collision detection filters columns out of a card drag, so this is
+    // the second line of defence: a column's own rect says nothing about WHERE
+    // in it the card should land, so the only honest answer is to cancel.
+    await act(async () => { await dropCard(1, 'feito'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('cancels against a column that vanished mid-drag', async () => {
+    const { moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'dropzone:coluna_que_nao_existe'); });
+
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('lifts the dragged card, showing the face it came from', () => {
+    // The overlay is what the finger is visually holding. It carries the lift
+    // class, and it mirrors the card's own face so the lift lands on the shape
+    // the user is looking at — a title-only box over a taller card read as a
+    // tooltip appearing, not as that card coming off the board.
+    mockCards([fakeCard({
+      id: 1, titulo: 'Um', status: 'a_fazer', tipo: 'bug', descricao: 'Detalhe do card',
+    })]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    const overlay = screen.getByTestId('board-v2-card-drag-overlay');
+    expect(overlay.className).toContain('v2-drag-lift');
+    expect(overlay.textContent).toContain('Um');
+    expect(overlay.textContent).toContain('Detalhe do card');
+    // The chip renders CARD_TIPO_LABELS, which is uppercase ("BUG").
+    expect(overlay.textContent).toContain(CARD_TIPO_LABELS.bug);
+  });
+
+  it('carries no interactive control into the card overlay', () => {
+    // dnd-kit sets no `pointer-events: none` on its overlay, so a live control
+    // in here would sit under the finger mid-drag. The id badge (a copy
+    // button) and the footer's status select are deliberately left out.
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    const overlay = screen.getByTestId('board-v2-card-drag-overlay');
+    expect(overlay.querySelector('button')).toBeNull();
+    expect(overlay.querySelector('select')).toBeNull();
+  });
+
+  it('lifts a dragged COLUMN the same way', () => {
+    mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(screen.getByTestId('board-v2-drag-overlay').className).toContain('v2-drag-lift');
+  });
+
+  it('confirms the pickup with a haptic tick the instant the drag arms', async () => {
+    // On touch, the TouchSensor arms the drag once the hold elapses with NO
+    // movement, and every visual signal of that is drawn under the finger that
+    // caused it. `onDragStart` is the exact moment of activation, so this is
+    // where the tick belongs.
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', {
+      value: vibrate, configurable: true, writable: true,
+    });
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    delete navigator.vibrate;
+  });
+
+  it('confirms a COLUMN pickup the same way — same gesture, same expectation', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', {
+      value: vibrate, configurable: true, writable: true,
+    });
+    mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    delete navigator.vibrate;
+  });
+
+  it('starts a drag normally on a platform with no vibration API', async () => {
+    // All of iOS and desktop Safari. A missing haptic must not stop the drag
+    // it was only meant to decorate.
+    delete navigator.vibrate;
+    const { setCardDragActive } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(() => {
+      act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    }).not.toThrow();
+    expect(setCardDragActive).toHaveBeenLastCalledWith(true);
+  });
+
+  it('suspends the poll while a card drag is in progress, and resumes after', async () => {
+    const { setCardDragActive } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    expect(setCardDragActive).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { await dropCard(1, 'card:3'); });
+    expect(setCardDragActive).toHaveBeenLastCalledWith(false);
+  });
+
+  it('resumes the poll when a card drag is CANCELLED', async () => {
+    const { setCardDragActive, moveCard } = mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'card:1' } }); });
+    act(() => { dragHandlers.onDragCancel({ active: { id: 'card:1' } }); });
+
+    expect(setCardDragActive).toHaveBeenLastCalledWith(false);
+    expect(moveCard).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the card-drag poll guard for a COLUMN drag', async () => {
+    // Reordering columns never rewrites `cards`, so a poll landing mid-drag
+    // cannot contradict the gesture — suspending it would be dead machinery.
+    const { setCardDragActive } = mockCards();
+    mockColumns();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragHandlers.onDragStart({ active: { id: 'a_fazer' } }); });
+
+    expect(setCardDragActive).not.toHaveBeenCalled();
+  });
+
+  it('still reorders COLUMNS with cards on the board — the dispatcher branches', async () => {
+    // Regression guard for the id-namespace dispatcher: a board holding cards
+    // must not break the column drag, and vice versa.
+    const { reorderColumns } = mockColumns();
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await drop('a_fazer', 'em_andamento'); });
+
+    expect(reorderColumns).toHaveBeenCalledWith([
+      'em_andamento', 'a_fazer', 'em_revisao', 'feito',
+    ]);
+  });
+
+  it('uses the board as it is NOW, not a stale card list', async () => {
+    const { moveCard } = mockCards([
+      fakeCard({ id: 5, titulo: 'Cinco', status: 'a_fazer' }),
+      fakeCard({ id: 6, titulo: 'Seis', status: 'a_fazer' }),
+    ]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(6, 'card:5'); });
+
+    expect(moveCard).toHaveBeenCalledWith(6, {
+      status: 'a_fazer', after_id: null, before_id: 5,
+    });
+  });
+});
+
+describe('BoardV2 — indicador de posição do card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+    fakeCard({ id: 3, titulo: 'Tres', status: 'a_fazer' }),
+  ];
+
+  function mockCards(cards = CARDS) {
+    mockUseCards.mockReturnValue({
+      cards,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+  }
+
+  it('draws no indicator until a card is dragged over something', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('draws exactly ONE indicator, at the slot the drop would actually use', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Card 3 dragged over card 2 will land BEFORE 2, so the line goes above
+    // card 2 — and there must be only one line on the whole board.
+    act(() => { dragCardOver(3, 'card:2'); });
+
+    const indicators = screen.getAllByTestId('board-v2-drop-indicator');
+    expect(indicators.length).toBe(1);
+    const column = screen.getByTestId('board-v2-col-body-a_fazer');
+    const children = [...column.children];
+    expect(children.indexOf(indicators[0]))
+      .toBe(children.indexOf(screen.getByTestId('board-v2-card-2')) - 1);
+  });
+
+  it('draws the indicator BELOW the target when the card travels downwards', () => {
+    // The case a naive "line above whatever is hovered" implementation gets
+    // wrong every single time: dropping 1 onto 2 lands 1 AFTER 2, so the line
+    // belongs above card 3, not above card 2.
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:2'); });
+
+    const indicator = screen.getByTestId('board-v2-drop-indicator');
+    const children = [...screen.getByTestId('board-v2-col-body-a_fazer').children];
+    expect(children.indexOf(indicator))
+      .toBe(children.indexOf(screen.getByTestId('board-v2-card-3')) - 1);
+  });
+
+  it('draws the indicator at the END when the card is dragged past the last one', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+
+    const body = screen.getByTestId('board-v2-col-body-a_fazer');
+    expect(body.lastElementChild).toBe(screen.getByTestId('board-v2-drop-indicator'));
+  });
+
+  it('drops the indicator when the card leaves every droppable', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+    expect(screen.getByTestId('board-v2-drop-indicator')).toBeTruthy();
+
+    act(() => { dragCardOver(1, null); });
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('draws no indicator for a no-op hover', () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    // Hovering itself changes nothing, so there is no slot to promise.
+    act(() => { dragCardOver(2, 'card:2'); });
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+
+  it('clears the indicator once the card is dropped', async () => {
+    mockCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    act(() => { dragCardOver(1, 'card:3'); });
+    await act(async () => { await dropCard(1, 'card:3'); });
+
+    expect(screen.queryByTestId('board-v2-drop-indicator')).toBeNull();
+  });
+});
+
+describe('BoardV2 — erro 409 ao mover card (fase 3)', () => {
+  const CARDS = [
+    fakeCard({ id: 1, titulo: 'Um', status: 'a_fazer' }),
+    fakeCard({ id: 2, titulo: 'Dois', status: 'a_fazer' }),
+  ];
+
+  function mockCardsWithFailingMove(error) {
+    const moveCard = vi.fn().mockRejectedValue(error);
+    mockUseCards.mockReturnValue({
+      cards: CARDS,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard,
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+    return moveCard;
+  }
+
+  it('shows a NON-blocking banner on a 409, never an alert()', async () => {
+    const conflict = new Error('O card de baixo (2) não está mais na coluna.');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    const banner = screen.getByTestId('board-v2-move-error');
+    // The backend's own explanation survives — it is the only account of why
+    // the card snapped back.
+    expect(banner.textContent).toContain('não está mais na coluna');
+    // Plus the instruction the user can act on.
+    expect(banner.textContent).toContain('tente de novo');
+    // A drag that lost a race is the most ordinary failure on this screen;
+    // stopping the whole tab to report it would be wildly out of proportion.
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('announces the banner without stealing focus', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
+  it('lets the user dismiss the banner', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+    fireEvent.click(screen.getByLabelText('Fechar aviso'));
+
+    expect(screen.queryByTestId('board-v2-move-error')).toBeNull();
+  });
+
+  it('reports a NON-conflict failure without the retry wording', async () => {
+    mockCardsWithFailingMove(new Error('Falha ao mover card'));
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+
+    const banner = screen.getByTestId('board-v2-move-error');
+    expect(banner.textContent).toContain('Falha ao mover card');
+    // The "look and try again" advice is specific to a lost race.
+    expect(banner.textContent).not.toContain('confira o board');
+  });
+
+  it('clears a previous banner when the next drop succeeds', async () => {
+    const conflict = new Error('Conflito');
+    conflict.conflict = true;
+    mockCardsWithFailingMove(conflict);
+    const { rerender } = render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+    expect(screen.getByTestId('board-v2-move-error')).toBeTruthy();
+
+    mockUseCards.mockReturnValue({
+      cards: CARDS,
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+      deleteCard: vi.fn(),
+      uploadCardImage: vi.fn(),
+      deleteCardImage: vi.fn(),
+      previewClearFinished: vi.fn(),
+      clearFinished: vi.fn(),
+    });
+    rerender(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    await act(async () => { await dropCard(2, 'card:1'); });
+
+    expect(screen.queryByTestId('board-v2-move-error')).toBeNull();
   });
 });

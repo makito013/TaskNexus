@@ -220,7 +220,13 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
             assert set(props.keys()) == {
                 "titulo", "status", "descricao", "tipo", "parent_id", "projeto_id",
             }
-            assert props["status"]["enum"] == ["a_fazer", "em_andamento"]
+            # No `enum` on `status` any more (task #43 phase 1): the board's
+            # columns are user-managed at runtime, so a static list in the tool
+            # schema would go stale the moment a column is created or renamed.
+            # Validation moved SERVER-SIDE (main._validate_card_status), whose
+            # error message lists the valid slugs.
+            assert "enum" not in props["status"]
+            assert props["status"]["type"] == "string"
             assert props["parent_id"]["type"] == "integer"
             # projeto_id (Tarefa 6): opcional (fora de `required`), string.
             assert "projeto_id" not in criar["inputSchema"]["required"]
@@ -232,9 +238,8 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
             mover = by_name["mover_card"]
             assert set(mover["inputSchema"]["required"]) == {"card_id", "novo_status"}
             mover_props = mover["inputSchema"]["properties"]
-            assert mover_props["novo_status"]["enum"] == [
-                "a_fazer", "em_andamento", "em_revisao", "feito",
-            ]
+            assert "enum" not in mover_props["novo_status"]
+            assert mover_props["novo_status"]["type"] == "string"
 
             # -- Fase 3 --------------------------------------------------
             editar = by_name["editar_card"]
@@ -244,9 +249,8 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
                 "card_id", "titulo", "descricao", "status", "tipo",
             }
             assert editar_props["card_id"]["type"] == "integer"
-            assert editar_props["status"]["enum"] == [
-                "a_fazer", "em_andamento", "em_revisao", "feito",
-            ]
+            assert "enum" not in editar_props["status"]
+            assert editar_props["status"]["type"] == "string"
             assert editar_props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
             # An empty `tipo` clears the field — this has to be stated in the description.
             assert "limpa o campo" in editar["description"]

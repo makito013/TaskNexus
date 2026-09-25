@@ -2,8 +2,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   relativeProjectPath,
+  relativePathBelow,
   compareProjectPaths,
   listSubProjectsForClient,
+  listPrimaryProjectsForClient,
+  listSubProjectsForPrimary,
   truncatePathMeta,
 } from './projects.js';
 
@@ -119,6 +122,206 @@ describe('listSubProjectsForClient', () => {
   it('returns an empty array when there are no matching projects', () => {
     expect(listSubProjectsForClient('podesubir', [])).toEqual([]);
     expect(listSubProjectsForClient('podesubir', undefined)).toEqual([]);
+  });
+});
+
+describe('relativePathBelow', () => {
+  it('returns the clean name for a direct child of the ancestor', () => {
+    expect(relativePathBelow('podesubir/principal/apps', 'podesubir/principal')).toBe('apps');
+  });
+
+  it('joins deeper descendants with " / "', () => {
+    expect(relativePathBelow('podesubir/principal/apps/podesubir-guardapp-rn', 'podesubir/principal'))
+      .toBe('apps / podesubir-guardapp-rn');
+  });
+
+  it('works with a 1-segment ancestor, like relativeProjectPath', () => {
+    expect(relativePathBelow('podesubir/principal', 'podesubir')).toBe('principal');
+    expect(relativePathBelow('podesubir/gateway/db', 'podesubir')).toBe('gateway / db');
+  });
+
+  it('returns an empty string when the id IS the ancestor', () => {
+    expect(relativePathBelow('podesubir/principal', 'podesubir/principal')).toBe('');
+  });
+
+  it('falls back to the whole id when the id is not a descendant', () => {
+    expect(relativePathBelow('outro/sub', 'podesubir')).toBe('outro/sub');
+  });
+
+  it('does not treat a prefix-colliding sibling as a descendant', () => {
+    // 'podesubir/principal2' shares the STRING prefix 'podesubir/principal'
+    // but is a sibling, not a child — the `+ '/'` in the prefix test is what
+    // catches it. Without it the label would come back as the nonsense '2'.
+    expect(relativePathBelow('podesubir/principal2', 'podesubir/principal'))
+      .toBe('podesubir/principal2');
+  });
+});
+
+describe('listPrimaryProjectsForClient', () => {
+  it('keeps only DIRECT children of the client (not deeper descendants, not the client itself)', () => {
+    const projects = [
+      { id: 'podesubir', elegivel: true },
+      { id: 'podesubir/principal', elegivel: true },
+      { id: 'podesubir/principal/apps', elegivel: true },
+      { id: 'podesubir/gateway', elegivel: false },
+    ];
+    const result = listPrimaryProjectsForClient('podesubir', projects);
+    expect(result.map((p) => p.id)).toEqual(['podesubir/gateway', 'podesubir/principal']);
+  });
+
+  it('does NOT filter by eligibility — grouping folders are a navigation step', () => {
+    const projects = [
+      { id: 'podesubir/gateway', elegivel: false },
+      { id: 'podesubir/gateway/db', elegivel: true },
+    ];
+    const result = listPrimaryProjectsForClient('podesubir', projects);
+    expect(result).toEqual([
+      {
+        id: 'podesubir/gateway',
+        label: 'gateway',
+        eligible: false,
+        hasEligibleDescendants: true,
+        depth: 1,
+      },
+    ]);
+  });
+
+  it('flags a grouping folder with no eligible descendant (dead end, state E)', () => {
+    const projects = [
+      { id: 'podesubir/vazio', elegivel: false },
+      { id: 'podesubir/vazio/meio', elegivel: false },
+    ];
+    const [primary] = listPrimaryProjectsForClient('podesubir', projects);
+    expect(primary.eligible).toBe(false);
+    expect(primary.hasEligibleDescendants).toBe(false);
+  });
+
+  it('does not match a client-id-prefixed sibling without the slash', () => {
+    const projects = [
+      { id: 'podesubir/sub', elegivel: true },
+      { id: 'podesubir2/sub', elegivel: true },
+      { id: 'podesubir2', elegivel: true },
+    ];
+    expect(listPrimaryProjectsForClient('podesubir', projects).map((p) => p.id))
+      .toEqual(['podesubir/sub']);
+  });
+
+  it('sorts siblings in tree order', () => {
+    const projects = [
+      { id: 'podesubir/principal', elegivel: true },
+      { id: 'podesubir/gateway', elegivel: true },
+      { id: 'podesubir/portal_light', elegivel: true },
+    ];
+    expect(listPrimaryProjectsForClient('podesubir', projects).map((p) => p.label))
+      .toEqual(['gateway', 'portal_light', 'principal']);
+  });
+
+  it('returns an empty array for a client with no children / for missing input', () => {
+    expect(listPrimaryProjectsForClient('podesubir', [])).toEqual([]);
+    expect(listPrimaryProjectsForClient('podesubir', undefined)).toEqual([]);
+  });
+});
+
+describe('listSubProjectsForPrimary', () => {
+  it('keeps eligible descendants at ANY depth, flattening the path into the label', () => {
+    const projects = [
+      { id: 'podesubir/principal', elegivel: false },
+      { id: 'podesubir/principal/apps', elegivel: false },
+      { id: 'podesubir/principal/apps/podesubir-guardapp-rn', elegivel: true },
+      { id: 'podesubir/principal/ymcy_backend', elegivel: true },
+    ];
+    const result = listSubProjectsForPrimary('podesubir/principal', projects);
+    expect(result).toEqual([
+      { id: 'podesubir/principal/apps/podesubir-guardapp-rn', label: 'apps / podesubir-guardapp-rn', depth: 2 },
+      { id: 'podesubir/principal/ymcy_backend', label: 'ymcy_backend', depth: 1 },
+    ]);
+  });
+
+  it('excludes the primary itself even when it is eligible', () => {
+    const projects = [
+      { id: 'podesubir/principal', elegivel: true },
+      { id: 'podesubir/principal/sub', elegivel: true },
+    ];
+    expect(listSubProjectsForPrimary('podesubir/principal', projects).map((p) => p.id))
+      .toEqual(['podesubir/principal/sub']);
+  });
+
+  it('does not treat a prefix-colliding sibling as a descendant', () => {
+    const projects = [
+      { id: 'podesubir/principal2', elegivel: true },
+      { id: 'podesubir/principal2/sub', elegivel: true },
+      { id: 'podesubir/principal/sub', elegivel: true },
+    ];
+    expect(listSubProjectsForPrimary('podesubir/principal', projects).map((p) => p.id))
+      .toEqual(['podesubir/principal/sub']);
+  });
+
+  it('returns an empty array when there is no eligible descendant / for missing input', () => {
+    const projects = [{ id: 'podesubir/principal/meio', elegivel: false }];
+    expect(listSubProjectsForPrimary('podesubir/principal', projects)).toEqual([]);
+    expect(listSubProjectsForPrimary('podesubir/principal', undefined)).toEqual([]);
+  });
+});
+
+// The product-level guarantee the PO wrote down when the flat select was
+// replaced by the 2-level cascade: EVERY eligible project that used to be
+// reachable as a single <option> must still be reachable through some
+// (primary, subproject) pair. A fixed 2-level cascade over an arbitrarily
+// deep tree is exactly where that can silently stop being true.
+describe('cascade reach invariant — every eligible descendant stays reachable', () => {
+  // 5 levels deep, grouping folders and eligible projects interleaved,
+  // including an eligible project nested under a non-eligible folder that is
+  // itself nested under another non-eligible folder.
+  const CLIENT_ID = 'podesubir';
+  const TREE = [
+    { id: 'podesubir', elegivel: false },                                  // client root: grouping
+    { id: 'podesubir/principal', elegivel: false },                        // grouping primary
+    { id: 'podesubir/principal/ymcy_backend', elegivel: true },
+    { id: 'podesubir/principal/apps', elegivel: false },
+    { id: 'podesubir/principal/apps/podesubir-guardapp-rn', elegivel: true },
+    { id: 'podesubir/principal/apps/legacy', elegivel: false },
+    { id: 'podesubir/principal/apps/legacy/v1', elegivel: true },
+    { id: 'podesubir/gateway', elegivel: true },                           // eligible primary
+    { id: 'podesubir/gateway/access-gateway-controlid', elegivel: false },
+    { id: 'podesubir/gateway/access-gateway-controlid-db', elegivel: true },
+    { id: 'podesubir/gateway/access-gateway-controlid/sub', elegivel: true },
+    { id: 'podesubir/portal_light', elegivel: true },                      // eligible leaf primary
+    { id: 'outro-cliente/coisa', elegivel: true },                         // another client
+  ];
+
+  it('every eligible descendant of the client is selectable via some (primary, subproject) pair', () => {
+    const primaries = listPrimaryProjectsForClient(CLIENT_ID, TREE);
+    const reachable = new Set();
+    primaries.forEach((primary) => {
+      // Option 1 of level 2 targets the primary itself, but only when the
+      // primary is eligible ("Todo o {primário}") — a grouping folder is
+      // never a valid submit target.
+      if (primary.eligible) reachable.add(primary.id);
+      listSubProjectsForPrimary(primary.id, TREE).forEach((sub) => reachable.add(sub.id));
+    });
+
+    const expectedEligible = TREE
+      .filter((p) => p.id.startsWith(CLIENT_ID + '/') && p.elegivel === true)
+      .map((p) => p.id);
+
+    expect(expectedEligible.length).toBeGreaterThan(0);
+    expectedEligible.forEach((id) => {
+      expect(reachable.has(id)).toBe(true);
+    });
+  });
+
+  it('never offers a project from another client, nor a non-eligible one as a submit target', () => {
+    const primaries = listPrimaryProjectsForClient(CLIENT_ID, TREE);
+    const targets = [];
+    primaries.forEach((primary) => {
+      if (primary.eligible) targets.push(primary.id);
+      listSubProjectsForPrimary(primary.id, TREE).forEach((sub) => targets.push(sub.id));
+    });
+    const byId = Object.fromEntries(TREE.map((p) => [p.id, p]));
+    targets.forEach((id) => {
+      expect(id.startsWith(CLIENT_ID + '/')).toBe(true);
+      expect(byId[id].elegivel).toBe(true);
+    });
   });
 });
 

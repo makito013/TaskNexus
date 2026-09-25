@@ -11,7 +11,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.push_service import GONE_STATUS_CODES, PUSH_TIMEOUT_SECONDS, send_push_to_all
+from app.push_service import (
+    GONE_STATUS_CODES,
+    PUSH_TIMEOUT_SECONDS,
+    PUSH_TTL_SECONDS,
+    _wns_headers,
+    send_push_to_all,
+)
 from app.vapid_keys import VapidKeys, generate_vapid_keypair
 
 
@@ -37,9 +43,14 @@ class FakeWebPushException(Exception):
         self.response = response
 
 
-def _response(status_code):
+def _response(status_code, headers=None):
     response = MagicMock()
     response.status_code = status_code
+    # Explicit, real dict — never left as an auto-generated MagicMock
+    # attribute: send_push_to_all's failure branch now does
+    # `dict(response.headers)` to log them, and `dict(MagicMock())` is not
+    # something the mock library makes work by accident.
+    response.headers = headers if headers is not None else {}
     return response
 
 
@@ -192,6 +203,134 @@ async def test_a_missing_pywebpush_dependency_degrades_instead_of_raising(monkey
     assert store.deleted == []
 
 
+# ─── WNS TTL / X-WNS-Cache-Policy fix ──────────────────────────────────────
+# WNS (Edge on Windows) 400s every delivery with an empty body unless the
+# request carries both a positive TTL and a matching X-WNS-Cache-Policy
+# header — see PUSH_TTL_SECONDS's docstring in push_service.py for the full
+# story. These tests guard the fix at three levels: the header decision
+# function in isolation, its wiring into _send_one, and the failure-log path
+# that would have surfaced the real WNS error message directly instead of
+# needing an external GitHub issue to decode a bare "400, empty body".
+
+
+def _subscription_with_endpoint(endpoint):
+    return {"endpoint": endpoint, "p256dh": "pub-x", "auth": "auth-x"}
+
+
+@pytest.mark.asyncio
+async def test_send_one_passes_wns_cache_policy_header_for_windows_endpoint(fake_webpush):
+    subscription = _subscription_with_endpoint(
+        "https://wns2-bl2p.notify.windows.com/w/?token=fake"
+    )
+    await send_push_to_all(PAYLOAD, store=FakeStore([subscription]), vapid_keys=VAPID)
+    kwargs = fake_webpush.call_args.kwargs
+    assert kwargs["headers"] == {"x-wns-cache-policy": "cache"}
+    assert kwargs["ttl"] == PUSH_TTL_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_send_one_omits_wns_header_for_non_windows_endpoint(fake_webpush):
+    subscription = _subscription_with_endpoint("https://fcm.googleapis.com/fcm/send/abc")
+    await send_push_to_all(PAYLOAD, store=FakeStore([subscription]), vapid_keys=VAPID)
+    kwargs = fake_webpush.call_args.kwargs
+    # webpush() treats headers=None the same as omitting the kwarg entirely
+    # (`if headers is None: headers = dict()`), so passing it explicitly for
+    # non-WNS endpoints is safe — it never leaks a WNS-only header to FCM.
+    assert kwargs["headers"] is None
+    assert kwargs["ttl"] == PUSH_TTL_SECONDS
+
+
+@pytest.mark.parametrize(
+    "endpoint,expected",
+    [
+        # Positive: exact host, and the real regional subdomain browsers
+        # actually subscribe through (wns2-bl2p is a genuine WNS region).
+        ("https://notify.windows.com/x", {"x-wns-cache-policy": "cache"}),
+        ("https://wns2-bl2p.notify.windows.com/x", {"x-wns-cache-policy": "cache"}),
+        ("https://NOTIFY.WINDOWS.COM/x", {"x-wns-cache-policy": "cache"}),
+        # An explicit port must not defeat the match: urlsplit().hostname
+        # strips it before the comparison runs.
+        ("https://notify.windows.com:443/x", {"x-wns-cache-policy": "cache"}),
+        # Negative: host-smuggling shapes a plain substring check
+        # (`"notify.windows.com" in endpoint`) would wrongly accept — the
+        # same class of bug models._is_known_push_host guards against.
+        ("https://evilnotify.windows.com.attacker.test/x", None),
+        ("https://notify.windows.com.evil.test/x", None),
+        ("https://fcm.googleapis.com/x", None),
+        # Malformed/edge inputs must fail closed (None), never raise.
+        ("", None),
+        ("notify.windows.com/x", None),  # no scheme: urlsplit has no hostname
+        ("https://notify.windows.com./x", None),  # trailing-dot FQDN, real
+        # browser subscriptions never carry one, so under-matching here is
+        # safe — the risk direction that matters is over-matching.
+    ],
+)
+def test_wns_headers_matches_subdomain_not_substring(endpoint, expected):
+    assert _wns_headers(endpoint, PUSH_TTL_SECONDS) == expected
+
+
+def test_wns_headers_uses_no_cache_when_ttl_is_not_positive():
+    # Dead in practice today (every real call site passes PUSH_TTL_SECONDS,
+    # which is > 0) but the function's contract — "headers appropriate for
+    # this ttl" — must hold for ttl=0 even though nothing currently exercises
+    # it live. Without this test a typo in the ternary (e.g. flipping the
+    # branches) would ship silently.
+    endpoint = "https://notify.windows.com/x"
+    assert _wns_headers(endpoint, 0) == {"x-wns-cache-policy": "no-cache"}
+    assert _wns_headers(endpoint, -1) == {"x-wns-cache-policy": "no-cache"}
+
+
+@pytest.mark.asyncio
+async def test_send_push_to_all_sends_wns_header_only_to_the_wns_subscription(fake_webpush):
+    # A single broadcast mixing a WNS and a non-WNS device: _wns_headers
+    # builds a fresh dict per call, so there is no structural way for one
+    # subscription's header to leak into the next — but that is exactly the
+    # kind of invariant that should be pinned by a test, not left as an
+    # inference from reading the code.
+    wns_subscription = _subscription_with_endpoint(
+        "https://wns2-bl2p.notify.windows.com/w/?token=fake"
+    )
+    fcm_subscription = _subscription_with_endpoint(
+        "https://fcm.googleapis.com/fcm/send/abc"
+    )
+    store = FakeStore([wns_subscription, fcm_subscription])
+    summary = await send_push_to_all(PAYLOAD, store=store, vapid_keys=VAPID)
+    assert summary == {"sent": 2, "failed": 0, "pruned": 0}
+    calls = fake_webpush.call_args_list
+    assert calls[0].kwargs["headers"] == {"x-wns-cache-policy": "cache"}
+    assert calls[1].kwargs["headers"] is None
+
+
+@pytest.mark.asyncio
+async def test_send_push_to_all_logs_response_headers_on_failure(fake_webpush, capsys):
+    fake_webpush.side_effect = FakeWebPushException(
+        "boom",
+        response=_response(
+            400,
+            headers={
+                "x-wns-error-description": "Ttl value conflicts with X-WNS-Cache-Policy."
+            },
+        ),
+    )
+    store = FakeStore([_subscription("a")])
+    await send_push_to_all(PAYLOAD, store=store, vapid_keys=VAPID)
+    captured = capsys.readouterr()
+    assert "x-wns-error-description" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_send_push_to_all_logs_empty_headers_when_response_is_none(fake_webpush, capsys):
+    # Local failure (bad key material, encryption error) never reaches the
+    # network, so the exception carries response=None. Logging headers must
+    # degrade to an empty dict here, not raise inside the except block.
+    fake_webpush.side_effect = FakeWebPushException("local failure", response=None)
+    store = FakeStore([_subscription("a")])
+    summary = await send_push_to_all(PAYLOAD, store=store, vapid_keys=VAPID)
+    assert summary["failed"] == 1
+    captured = capsys.readouterr()
+    assert "headers={}" in captured.out
+
+
 # ─── The one test that uses the REAL pywebpush ────────────────────────────
 # Every test above mocks `webpush`, which is what let a genuine production
 # bug hide: the persisted PEM was being passed straight to
@@ -252,6 +391,35 @@ def test_the_persisted_pem_really_signs_a_push_with_the_actual_library(isolated_
     # A signed VAPID authorization header is the proof the keypair was
     # accepted and used.
     assert "authorization: vapid t=" in result
+
+
+def test_the_persisted_pem_signs_a_wns_push_with_correct_headers(isolated_cwd):
+    """Exercises the actual fix end to end: the real pywebpush library,
+    given our ttl kwarg and the header _wns_headers() computes for a WNS
+    endpoint, must produce a request carrying both — this is exactly the
+    request shape WNS rejected before the fix (see PUSH_TTL_SECONDS)."""
+    import json as _json
+    from pywebpush import webpush
+    from app.push_service import PUSH_TTL_SECONDS, _build_signer, _wns_headers
+
+    p256dh, auth = _browser_like_keys()
+    endpoint = "https://wns2-bl2p.notify.windows.com/w/?token=fake"
+    result = webpush(
+        subscription_info={
+            "endpoint": endpoint,
+            "keys": {"p256dh": p256dh, "auth": auth},
+        },
+        data=_json.dumps(PAYLOAD),
+        vapid_private_key=_build_signer(VAPID.private_pem),
+        vapid_claims={"sub": VAPID.subject},
+        ttl=PUSH_TTL_SECONDS,
+        headers=_wns_headers(endpoint, PUSH_TTL_SECONDS),
+        curl=True,
+    )
+    # WebPusher.as_curl lowercases every header name and renders
+    # `-H "key: value"` — this is the literal request WNS was 400ing on.
+    assert "ttl: 900" in result
+    assert "x-wns-cache-policy: cache" in result
 
 
 def test_passing_the_raw_pem_string_is_rejected_by_pywebpush(isolated_cwd):

@@ -1055,3 +1055,155 @@ def test_hook_cards_update_ignores_prazo_silently(client):
     })
     assert r.json()["success"] is True
     assert _get_card(client, card_id)["prazo"] is None
+
+
+
+# -- server-side status validation (task #43, phase 1) -----------------------
+#
+# The MCP tool schemas used to carry a fixed `enum` of the four statuses, which
+# is what stopped an agent from writing a status nobody renders. Columns are
+# user-managed now, so the enum is gone and these three hooks are the only
+# thing standing between an agent's typo and a card that exists in the database
+# and appears nowhere on the board.
+
+
+def test_hook_cards_create_rejects_an_unknown_status_listing_the_valid_ones(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100001-0000-0000-0000-000000000001"),
+    )
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Card em coluna inexistente",
+        "status": "coluna_que_nao_existe",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is False
+    # The error text is the agent's ONLY discovery mechanism now that the enum
+    # is gone — every valid slug has to be in it.
+    for slug in ("a_fazer", "em_andamento", "em_revisao", "feito"):
+        assert slug in body["error"]
+
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+def test_hook_cards_create_rejects_creating_straight_into_the_done_column(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100002-0000-0000-0000-000000000002"),
+    )
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Nasce pronto",
+        "status": "feito",
+    })
+    assert r.json()["success"] is False
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+def test_hook_cards_create_follows_the_done_column_when_it_moves(client):
+    """The rule tracks the is_done COLUMN, not the literal 'feito' slug: after
+    the user marks another column as done, creating in 'feito' becomes legal
+    and creating in the new done column becomes the refusal."""
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100003-0000-0000-0000-000000000003"),
+    )
+    assert client.post("/api/board/columns/em_revisao/done").status_code == 200
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Agora pode",
+        "status": "feito",
+    })
+    assert r.json()["success"] is True
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Agora nao pode",
+        "status": "em_revisao",
+    })
+    assert r.json()["success"] is False
+
+
+def test_hook_cards_create_accepts_a_column_the_user_just_created(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100004-0000-0000-0000-000000000004"),
+    )
+    assert client.post(
+        "/api/board/columns", json={"label": "Em Homologação"}
+    ).status_code == 201
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid,
+        "titulo": "Card na coluna nova",
+        "status": "em_homologacao",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, r.json()["card_id"])["status"] == "em_homologacao"
+
+
+def test_hook_cards_move_rejects_an_unknown_status_and_leaves_the_card_put(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100005-0000-0000-0000-000000000005"),
+    )
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "status": "a_fazer",
+    }).json()
+
+    r = client.post("/api/hooks/cards/move", json={
+        "claude_session_id": claude_sid,
+        "card_id": created["card_id"],
+        "novo_status": "coluna_que_nao_existe",
+    })
+    assert r.json()["success"] is False
+    for slug in ("a_fazer", "em_andamento", "em_revisao", "feito"):
+        assert slug in r.json()["error"]
+
+    assert _get_card(client, created["card_id"])["status"] == "a_fazer"
+
+
+def test_hook_cards_move_to_a_valid_column_still_works(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100006-0000-0000-0000-000000000006"),
+    )
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "status": "a_fazer",
+    }).json()
+
+    r = client.post("/api/hooks/cards/move", json={
+        "claude_session_id": claude_sid,
+        "card_id": created["card_id"],
+        "novo_status": "feito",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, created["card_id"])["status"] == "feito"
+
+
+def test_hook_cards_update_rejects_an_unknown_status_and_changes_nothing(client):
+    claude_sid = _register_session(
+        client, "meu-projeto::agente-teste",
+        fixed_uuid=uuid_mod.UUID("c0100007-0000-0000-0000-000000000007"),
+    )
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "status": "a_fazer",
+    }).json()
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid,
+        "card_id": created["card_id"],
+        "titulo": "Titulo novo",
+        "status": "coluna_que_nao_existe",
+    })
+    assert r.json()["success"] is False
+
+    card = _get_card(client, created["card_id"])
+    assert card["status"] == "a_fazer"
+    # The whole update is refused, not just the status half of it.
+    assert card["titulo"] == "Card"

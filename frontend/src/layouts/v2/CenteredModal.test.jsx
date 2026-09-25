@@ -172,3 +172,45 @@ describe('CenteredModal — initial focus', () => {
     expect(document.activeElement).toBe(panel);
   });
 });
+
+// Regression: initial focus is an ON-OPEN event. The focus effect deliberately
+// depends on `[open]` alone, so swapping the ref OBJECT mid-session must not
+// re-fire it. Before this, NewChatSheet handed over one of two distinct ref
+// objects (`preChoice ? clienteSelectRef : projetoSelectRef`) and the identity
+// change re-ran the effect, yanking focus away from whatever the user was
+// interacting with. The fixture below holds TWO different focusable elements
+// and switches WHICH ref object is passed — pointing a new ref object at the
+// same element would make the assertion pass for the wrong reason.
+describe('CenteredModal — initial focus does not re-fire when initialFocusRef identity changes', () => {
+  function TwoTargetFixture({ target }) {
+    const firstRef = useRef(null);
+    const secondRef = useRef(null);
+    return (
+      <CenteredModal
+        open
+        onClose={vi.fn()}
+        ariaLabel="Test modal"
+        initialFocusRef={target === 'first' ? firstRef : secondRef}
+      >
+        <select ref={firstRef} aria-label="Primeiro">
+          <option value="">a</option>
+        </select>
+        <select ref={secondRef} aria-label="Segundo">
+          <option value="">b</option>
+        </select>
+      </CenteredModal>
+    );
+  }
+
+  it('keeps document.activeElement on the element focused at open time', () => {
+    const { rerender } = render(<TwoTargetFixture target="first" />);
+    const first = screen.getByLabelText('Primeiro');
+    expect(document.activeElement).toBe(first);
+
+    // A whole different ref object, pointing at a DIFFERENT element.
+    rerender(<TwoTargetFixture target="second" />);
+
+    expect(document.activeElement).toBe(first);
+    expect(document.activeElement).not.toBe(screen.getByLabelText('Segundo'));
+  });
+});

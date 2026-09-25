@@ -51,10 +51,11 @@
 // desfaria a escolha de UX documentada acima (lista da v2 é mais achatada
 // que a v1 de propósito).
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGlobalTasks } from '../../hooks/useGlobalTasks.js';
 import { buildClienteTaskGroups, resolveClienteNome } from '../../utils/taskGroups.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { TaskDetailModalV2 } from './TaskDetailModalV2.jsx';
 import { resolveCardTags, useClienteProjetoFilter } from './useClienteProjetoFilter.js';
 
 const styles = {
@@ -115,15 +116,29 @@ const styles = {
     cursor: 'pointer',
     flexShrink: 0,
   }),
-  title: (done) => ({
+  // Real <button> title (opens the task detail) instead of the original
+  // <span> — same reset recipe as styles.cardTitle in BoardV2.jsx
+  // (line ~542), reused here: a role="button" on the whole row would make
+  // the circle <button> disappear from the accessibility tree (WAI-ARIA
+  // childrenPresentational of role="button"), so the TITLE becomes the
+  // button, not the row.
+  titleBtn: (done) => ({
+    display: 'block',
     flex: 1,
     minWidth: 0,
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    margin: 0,
+    textAlign: 'left',
+    font: 'inherit',
     fontSize: '14px',
     color: done ? 'var(--v2-text-faint)' : 'var(--v2-text)',
     textDecoration: done ? 'line-through' : 'none',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    cursor: 'pointer',
   }),
   // Container das tags cliente/projeto — o cap de largura fica AQUI e não em
   // cada tag, senão duas tags disputariam o mesmo `maxWidth` e ambas seriam
@@ -161,18 +176,34 @@ const styles = {
   },
 };
 
-function TaskRow({ task, onToggle, projects, hideClienteTag }) {
+function TaskRow({ task, onToggle, onOpenDetail, projects, hideClienteTag }) {
   const done = task.status === 'done';
   const { clienteNome, projetoNome } = resolveCardTags(task.projeto_id, projects);
   return (
-    <div style={styles.row} data-testid={`tarefas-v2-row-${task.id}`}>
+    <div
+      style={styles.row}
+      data-testid={`tarefas-v2-row-${task.id}`}
+      // Mouse convenience for "click anywhere on the row" (outside the
+      // circle): no role/tabIndex/onKeyDown of its own — the row stays a
+      // plain container, this click is just a shortcut on top of what the
+      // title <button> already offers accessibly.
+      onClick={() => onOpenDetail(task)}
+    >
       <button
         type="button"
         style={styles.circle(done)}
         aria-label={done ? `Reabrir "${task.titulo}"` : `Concluir "${task.titulo}"`}
-        onClick={() => onToggle(task)}
+        onClick={(e) => { e.stopPropagation(); onToggle(task); }}
       />
-      <span style={styles.title(done)}>{task.titulo}</span>
+      <button
+        id={`task-detail-title-${task.id}`}
+        type="button"
+        style={styles.titleBtn(done)}
+        aria-label={`Ver detalhes de "${task.titulo}"`}
+        onClick={() => onOpenDetail(task)}
+      >
+        {task.titulo}
+      </button>
       <span style={styles.tags}>
         {!hideClienteTag && clienteNome && (
           <span style={styles.tag} title={clienteNome}>{clienteNome}</span>
@@ -188,7 +219,7 @@ function TaskRow({ task, onToggle, projects, hideClienteTag }) {
 // feito para o array flat, agora reaproveitado tanto no modo "cliente
 // específico" (sem header, 1 grupo só) quanto uma vez por cliente no modo
 // "Todos" (com header acima, ver TarefasV2).
-function OpenDoneSections({ open, done, onToggle, projects, hideClienteTag }) {
+function OpenDoneSections({ open, done, onToggle, onOpenDetail, projects, hideClienteTag }) {
   return (
     <>
       <div style={styles.group}>
@@ -199,7 +230,7 @@ function OpenDoneSections({ open, done, onToggle, projects, hideClienteTag }) {
           <div style={styles.empty}>Nenhuma tarefa em aberto.</div>
         ) : (
           open.map((t) => (
-            <TaskRow key={t.id} task={t} onToggle={onToggle} projects={projects} hideClienteTag={hideClienteTag} />
+            <TaskRow key={t.id} task={t} onToggle={onToggle} onOpenDetail={onOpenDetail} projects={projects} hideClienteTag={hideClienteTag} />
           ))
         )}
       </div>
@@ -210,7 +241,7 @@ function OpenDoneSections({ open, done, onToggle, projects, hideClienteTag }) {
             Concluídas <span style={styles.groupCount}>({done.length})</span>
           </div>
           {done.map((t) => (
-            <TaskRow key={t.id} task={t} onToggle={onToggle} projects={projects} hideClienteTag={hideClienteTag} />
+            <TaskRow key={t.id} task={t} onToggle={onToggle} onOpenDetail={onOpenDetail} projects={projects} hideClienteTag={hideClienteTag} />
           ))}
         </div>
       )}
@@ -240,6 +271,45 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
   const handleToggle = (task) => {
     if (task.status === 'done') reopenTask(task.session_key, task.id);
     else completeTask(task.session_key, task.id);
+  };
+
+  // Selection by ID, not by the whole task object: `selectedTask` is
+  // recomputed on every render from the SAME live `tasks` (5s poll +
+  // useGlobalTasks' optimistic update), so a toggle done FROM INSIDE the
+  // modal reflects on screen without duplicating state the hook already
+  // keeps. If the id drops out of the list, `selectedTask` becomes `null`
+  // and the modal closes itself, instead of showing stale data.
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const selectedTask = selectedTaskId != null
+    ? tasks.find((t) => t.id === selectedTaskId) ?? null
+    : null;
+
+  // QA gap (report bug #2): closing the modal only clears `selectedTaskId`
+  // through an explicit user action (Esc/backdrop/x/toggle-close). Without
+  // this effect, a task that drops out of `tasks` (reload, or the poll
+  // catching it mid-deletion) leaves `selectedTaskId` pointing at a dead id —
+  // the modal closes itself (`selectedTask` resolves to `null`), but if the
+  // SAME id reappears in a LATER poll, `selectedTask` is non-null again and
+  // the modal pops back open with no user action in between. Clearing the id
+  // here, not just skipping the render, is what makes that reappearance a
+  // no-op instead of a silent reopen.
+  useEffect(() => {
+    if (selectedTaskId != null && !selectedTask) {
+      setSelectedTaskId(null);
+    }
+  }, [selectedTaskId, selectedTask]);
+
+  const handleOpenDetail = (task) => setSelectedTaskId(task.id);
+
+  // Focus return: looks up the title button by id AT close time, not via a
+  // ref saved on open — between opening and closing the modal, a toggle can
+  // move the row to a different section (Em aberto -> Concluídas) and unmount
+  // the old node, which would leave a saved ref pointing at a dead element.
+  const handleCloseDetail = () => {
+    const closingId = selectedTaskId;
+    setSelectedTaskId(null);
+    if (closingId == null) return;
+    document.getElementById(`task-detail-title-${closingId}`)?.focus();
   };
 
   // Etapa 1: só agrupa por cliente (dados brutos, sem nome/split/ordenação —
@@ -307,6 +377,21 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
     />
   );
 
+  // Mounted ONCE, reused across both render branches below (specific client /
+  // "Todos") — the component has two full `return`s, so a modal mounted
+  // inside only one of them would only work in one of the two filter modes.
+  // `key={selectedTask.id}` resets the internal state (Markdown/Visualização
+  // tab) when the selected task changes without unmounting on the same id.
+  const detailModal = selectedTask && (
+    <TaskDetailModalV2
+      key={selectedTask.id}
+      task={selectedTask}
+      projects={projects}
+      onToggle={handleToggle}
+      onClose={handleCloseDetail}
+    />
+  );
+
   if (loading) {
     return <div style={styles.page}><div style={styles.empty}>Carregando...</div></div>;
   }
@@ -336,6 +421,7 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
               open={group.open}
               done={group.done}
               onToggle={handleToggle}
+              onOpenDetail={handleOpenDetail}
               projects={projects}
               hideClienteTag={false}
             />
@@ -349,6 +435,7 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
             </div>
           )}
         </div>
+        {detailModal}
       </div>
     );
   }
@@ -378,12 +465,14 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
               open={group.open}
               done={group.done}
               onToggle={handleToggle}
+              onOpenDetail={handleOpenDetail}
               projects={projects}
               hideClienteTag
             />
           </div>
         ))}
       </div>
+      {detailModal}
     </div>
   );
 }

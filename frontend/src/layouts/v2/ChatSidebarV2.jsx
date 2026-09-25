@@ -124,6 +124,7 @@ export function ChatSidebarV2({
   onRenameChat,
   onCloseChat,
   onStartNewChat,
+  onRetryProjects,
   collapsed = false,
   onToggleCollapsed,
   onNewChatOpenChange,
@@ -264,6 +265,7 @@ export function ChatSidebarV2({
           projects={projects}
           presentation="modal"
           onSubmit={onStartNewChat}
+          onRetryProjects={onRetryProjects}
         />
       ) : null}
     </div>

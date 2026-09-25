@@ -56,10 +56,15 @@ const noop = () => {};
 
 // Mesma fixture de components/Sidebar.test.jsx — dois agentes Claude no
 // mesmo projeto, para garantir paridade de comportamento (rótulos, badges).
+// `elegivel: true` on every client entry is load-bearing since the cascade
+// round: `canSubmit` in NewChatSheet now requires
+// `projectsById[targetProjectId].elegivel === true`, so a fixture without it
+// can never submit at its own root.
 const projectWithClaudeWork = {
   id: 'meu-projeto',
   nome: 'Meu Projeto',
   path: '/tmp/meu-projeto',
+  elegivel: true,
   agentes: [
     { id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true },
     { id: 'claude-work', nome: 'Claude (Work)', papel: 'Assistente', ia: 'claude', cmd: ['claude-work'], default: false },
@@ -71,6 +76,7 @@ const secondProject = {
   id: 'outro-projeto',
   nome: 'Outro Projeto',
   path: '/tmp/outro-projeto',
+  elegivel: true,
   agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }],
   sub_projetos: [],
 };
@@ -201,11 +207,12 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     nome: 'Cliente 1',
     path: '/tmp/cliente_projeto_1',
     agentes: [],
+    elegivel: true,
   };
-  // Bloco 5 (Tarefa 12): o select de Projeto agora lê de `projects` (flat,
-  // via listSubProjectsForClient), não mais de `cliente.sub_projetos` — a
-  // fixture precisa de uma 2ª entrada representando o sub-projeto em si,
-  // com `elegivel: true`.
+  // Bloco 5 (Tarefa 12): o select de nível 1 lê de `projects` (flat, via
+  // listPrimaryProjectsForClient), não de `cliente.sub_projetos` — a fixture
+  // precisa de uma 2ª entrada representando o sub-projeto em si, com
+  // `elegivel: true`.
   const subProjetoDoCliente = {
     id: 'cliente_projeto_1/subprojeto_1',
     nome: 'subprojeto_1',
@@ -234,7 +241,7 @@ describe('ChatSidebarV2 — "+ Novo chat" abre o NewChatSheet e integra com onSt
     const onStartNewChat = vi.fn();
     render(<ChatSidebarV2 {...propsComCliente} onStartNewChat={onStartNewChat} />);
     fireEvent.click(screen.getByText('+ Novo chat'));
-    fireEvent.change(screen.getByLabelText('Projeto'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto principal'), { target: { value: 'cliente_projeto_1/subprojeto_1' } });
     fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude-work' } });
     fireEvent.click(screen.getByText('Criar chat'));
     expect(onStartNewChat).toHaveBeenCalledWith('cliente_projeto_1/subprojeto_1', 'claude-work');
@@ -321,6 +328,7 @@ describe('ChatSidebarV2 — CenteredModal wiring (foco/fechamento)', () => {
     nome: 'Outro Projeto',
     path: '/tmp/outro-projeto',
     agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }],
+    elegivel: true,
   };
   const propsComCliente = {
     ...chatSidebarBaseProps,

@@ -124,6 +124,41 @@ def test_scan_projects_sets_elegivel_false_for_placeholder_parent_project(tmp_pa
     assert pessoal_proj.elegivel is False
 
 
+def test_scan_projects_eligible_via_codex_dir(tmp_path):
+    """A project with only a .codex/ folder is eligible, same as .claude/ or
+    .gemini/ — it shows up in the scan and is marked elegivel=True."""
+    (tmp_path / "projeto-codex" / ".codex").mkdir(parents=True)
+
+    projects = scan_projects(str(tmp_path))
+    proj = next((p for p in projects if p.id == "projeto-codex"), None)
+    assert proj is not None
+    assert proj.elegivel is True
+
+
+def test_scan_projects_codex_dir_gets_global_agents_attached(tmp_path):
+    """A .codex/-only project gets the global agent registry attached as its
+    `agentes`, exactly like a .claude/ project."""
+    (tmp_path / "projeto-codex" / ".codex").mkdir(parents=True)
+    global_agents = [
+        Agent(id="codex", nome="Codex", papel="Assistente", ia="codex", cmd=["codex"])
+    ]
+
+    projects = scan_projects(str(tmp_path), global_agents=global_agents)
+    proj = next(p for p in projects if p.id == "projeto-codex")
+    assert {a.id for a in proj.agentes} == {"codex"}
+
+
+def test_scan_projects_still_eligible_via_claude_or_gemini(tmp_path):
+    """Regression: adding .codex/ to the eligibility test must not drop the
+    existing .claude/ and .gemini/ paths."""
+    (tmp_path / "proj-claude" / ".claude").mkdir(parents=True)
+    (tmp_path / "proj-gemini" / ".gemini").mkdir(parents=True)
+    (tmp_path / "proj-nada").mkdir()
+
+    ids = {p.id for p in scan_projects(str(tmp_path)) if p.elegivel}
+    assert ids == {"proj-claude", "proj-gemini"}
+
+
 def test_autodetect_gemini_folder(fake_projects):
     """A project with .gemini/ is eligible, same as .claude/."""
     projects = scan_projects(str(fake_projects))

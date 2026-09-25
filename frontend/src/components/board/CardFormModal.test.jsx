@@ -51,12 +51,24 @@ function makeCard(overrides = {}) {
   };
 }
 
+// The board's columns are a PROP now (task #43): the modal no longer holds a
+// fixed list of four statuses. These are the four legacy columns, so the
+// pre-existing expectations below still describe the same form.
+const COLUMNS = [
+  { slug: 'a_fazer', label: 'A Fazer', position: 1, is_done: false },
+  { slug: 'em_andamento', label: 'Em Andamento', position: 2, is_done: false },
+  { slug: 'em_revisao', label: 'Em Revisão', position: 3, is_done: false },
+  { slug: 'feito', label: 'Feito', position: 4, is_done: true },
+];
+
 function renderCreate(props = {}) {
   return render(
     <CardFormModal
       open
       mode="create"
       projetos={PROJETOS}
+      columns={COLUMNS}
+      doneSlug="feito"
       onSubmit={vi.fn()}
       onClose={vi.fn()}
       {...props}
@@ -71,6 +83,8 @@ function renderEdit(props = {}) {
       mode="edit"
       card={makeCard()}
       projetos={PROJETOS}
+      columns={COLUMNS}
+      doneSlug="feito"
       onSubmit={vi.fn()}
       onDelete={vi.fn()}
       onClose={vi.fn()}
@@ -135,11 +149,81 @@ describe('CardFormModal — mode="create"', () => {
     expect(screen.getByText(/não tem subprojetos/)).not.toBeNull();
   });
 
-  it('offers all 4 status chips', () => {
+  // The fixed chip row became a native <select> fed by the board's columns.
+  it('offers one status option per board column, in board order', () => {
     renderCreate();
-    for (const label of ['A Fazer', 'Em Andamento', 'Em Revisão', 'Feito']) {
-      expect(screen.getByText(label)).not.toBeNull();
-    }
+    const select = screen.getByLabelText('Status');
+    expect([...select.options].map((o) => o.value)).toEqual([
+      'a_fazer', 'em_andamento', 'em_revisao', 'feito',
+    ]);
+  });
+
+  it('marks the done column with a plain-text suffix, not a glyph', () => {
+    renderCreate();
+    const select = screen.getByLabelText('Status');
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      'A Fazer', 'Em Andamento', 'Em Revisão', 'Feito (concluída)',
+    ]);
+  });
+
+  it('follows a renamed/reordered board instead of a hard-coded list', () => {
+    renderCreate({
+      columns: [
+        { slug: 'feito', label: 'Entregue', position: 1, is_done: false },
+        { slug: 'bloqueado', label: 'Bloqueado', position: 2, is_done: true },
+      ],
+      doneSlug: 'bloqueado',
+    });
+    const select = screen.getByLabelText('Status');
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      'Entregue', 'Bloqueado (concluída)',
+    ]);
+  });
+
+  it('defaults to the FIRST column when no defaultStatus is given', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({
+      onSubmit,
+      columns: [
+        { slug: 'backlog', label: 'Backlog', position: 1, is_done: false },
+        { slug: 'feito', label: 'Feito', position: 2, is_done: true },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].status).toBe('backlog');
+  });
+
+  // QA: the board can never legitimately have zero columns (the last one
+  // cannot be deleted), but the modal CAN be handed an empty list — useColumns
+  // keeps `columns: []` when the initial fetch fails, by design. These two pin
+  // what happens then, because "impossible" only covers the happy path.
+  it('survives an empty column list instead of crashing the whole modal', () => {
+    renderCreate({ columns: [], doneSlug: null });
+    const select = screen.getByLabelText('Status');
+    expect([...select.options]).toHaveLength(0);
+    // The form is still usable — the failure is confined to one control.
+    expect(screen.getByLabelText('Título')).not.toBeNull();
+  });
+
+  it('falls back to the hard-coded "a_fazer" when there are no columns to pick from', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit, columns: [], doneSlug: null });
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    // Documented risk, not desired behaviour: on a board where the 'a_fazer'
+    // COLUMN was deleted (a rename keeps the slug, so only deletion does it),
+    // this payload is refused by the backend with a 400 the user
+    // reads as "Coluna 'a_fazer' não existe" — confusing, since they never
+    // chose it. It fails safe (nothing is written) rather than silently
+    // creating an unrenderable card, which is why it is a 🔵 and not a bug.
+    expect(onSubmit.mock.calls[0][0].status).toBe('a_fazer');
   });
 
   it('does not render the Imagens section nor "Criado em" (no card yet)', () => {
@@ -338,11 +422,11 @@ describe('CardFormModal — dirty tracking (edit only)', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('touching the status chip marks status dirty', async () => {
+  it('touching the status select marks status dirty', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     renderEdit({ onSubmit });
 
-    fireEvent.click(screen.getByText('Feito'));
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'feito' } });
     fireEvent.click(screen.getByText('Salvar'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());

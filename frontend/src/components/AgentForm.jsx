@@ -190,6 +190,7 @@ export function AgentForm({ agent, onCancel, onSaved, onSubmit }) {
           <option value="claude">claude</option>
           <option value="gemini">gemini</option>
           <option value="cursor">cursor</option>
+          <option value="codex">codex</option>
           <option value="terminal">terminal</option>
         </select>
       </div>

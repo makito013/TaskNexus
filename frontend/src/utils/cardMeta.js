@@ -62,8 +62,20 @@ export function formatPrazo(prazo, today = new Date()) {
 
 // A card is late when its due date is strictly before today AND it is not
 // done. A done card with a past due date is not late — it was delivered.
-export function isPrazoAtrasado(prazo, status, today = new Date()) {
-  if (!prazo || status === 'feito') return false;
+//
+// `doneSlug` sits BEFORE `today` in the signature on purpose. "Done" is no
+// longer the literal 'feito' — it is whichever column carries is_done, which
+// the user can move (task #43). Putting the new parameter last would let an
+// un-migrated call site keep compiling and silently mark delivered cards as
+// late; putting it third breaks such a call visibly (a Date lands where a
+// slug is expected) the first time anyone looks at the screen.
+//
+// `doneSlug` null/undefined (columns not loaded yet) means "nothing is known
+// to be done", so a card with a past due date reads as late for the one frame
+// before the columns arrive — the honest answer with no data, and the caller
+// re-renders as soon as they do.
+export function isPrazoAtrasado(prazo, status, doneSlug, today = new Date()) {
+  if (!prazo || (doneSlug != null && status === doneSlug)) return false;
   const parsed = parseIsoDate(prazo);
   if (!parsed) return false;
   const due = new Date(parsed.year, parsed.month - 1, parsed.day);
@@ -81,4 +93,21 @@ export function formatDataCriacao(criadoEm) {
   const dd = String(parsed.day).padStart(2, '0');
   const mm = String(parsed.month).padStart(2, '0');
   return `${dd}/${mm}/${parsed.year}`;
+}
+
+// "2026-09-22 14:30" — epoch seconds (number, backend) OR an ISO string
+// (useGlobalTasks.js writes completed_at as toISOString() on the optimistic
+// path). Both must resolve to the same shape. Hand-rolled getters (no
+// toLocaleString) — same rationale as formatDataCriacao: no ICU dependency,
+// deterministic in tests regardless of the machine's locale.
+export function formatDateTime(value) {
+  if (value == null) return '';
+  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }

@@ -374,6 +374,11 @@ export function AppV2({ initialAppearance }) {
                 onRenameChat={renameSession}
                 onCloseChat={handleCloseChat}
                 onStartNewChat={startNewInstance}
+                // Refetch behind the "Carregar os projetos de novo" button of
+                // the Novo chat modal (state A of the project cascade): the
+                // only way out when /api/projetos came back empty, since
+                // useProjects fetches once on mount.
+                onRetryProjects={refreshProjects}
                 collapsed={chatSidebarCollapsed}
                 onToggleCollapsed={toggleChatSidebar}
                 onNewChatOpenChange={setNewChatOpen}
@@ -463,6 +468,7 @@ export function AppV2({ initialAppearance }) {
           onRenameChat={renameSession}
           onCloseChat={handleCloseChat}
           onStartNewChat={handleMobileStartNewChat}
+          onRetryProjects={refreshProjects}
         />
       )}
     </div>

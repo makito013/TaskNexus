@@ -70,9 +70,9 @@ def scan_projects(root: str, global_agents: list[Agent] | None = None) -> list[P
     agent list to every eligible one.
 
     A project is eligible (and thus gets `global_agents` attached as its
-    `agentes`) when it has a .claude/ or .gemini/ subdirectory — no more
-    per-project agent configuration via .escritorio/agents.yaml, and no more
-    auto-detected synthetic Claude/Gemini agents. The list of agents a user
+    `agentes`) when it has a .claude/, .gemini/ or .codex/ subdirectory — no
+    more per-project agent configuration via .escritorio/agents.yaml, and no
+    more auto-detected synthetic Claude/Gemini agents. The list of agents a user
     can start a chat with is managed exclusively via the Global Agent
     Registry (GlobalAgentStore, "criar agentes" tab) and applied uniformly to
     every eligible project.
@@ -113,8 +113,9 @@ def scan_projects(root: str, global_agents: list[Agent] | None = None) -> list[P
 
         claude_path = current / ".claude"
         gemini_path = current / ".gemini"
+        codex_path = current / ".codex"
 
-        elegivel = claude_path.is_dir() or gemini_path.is_dir()
+        elegivel = claude_path.is_dir() or gemini_path.is_dir() or codex_path.is_dir()
         proj.elegivel = elegivel
         if elegivel:
             proj.agentes = list(global_agents)

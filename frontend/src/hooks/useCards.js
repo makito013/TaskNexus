@@ -76,16 +76,23 @@
 //   createCard/createSubcard porque ali o card é novo (não tem
 //   imagens/subcards prévios pra perder).
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../services/api.js';
+import { applyCardMove } from '../utils/boardCardOrder.js';
 
 const CARDS_POLL_INTERVAL_MS = 5000;
 
-function recomputeResumo(subcards) {
+// `doneSlug === null` means the column list has not loaded yet (useColumns).
+// The summary is then left EXACTLY as the backend sent it, instead of being
+// recomputed against a "done" nobody knows yet — recomputing would flash a
+// wrong "0 de 3" over a correct server-side count for one frame. No extra
+// loading gate is needed for this: the null itself is the gate.
+function recomputeResumo(subcards, doneSlug, previousResumo = null) {
   if (!subcards || !subcards.length) return null;
+  if (doneSlug == null) return previousResumo;
   return {
     total: subcards.length,
-    feitos: subcards.filter((s) => s.status === 'feito').length,
+    feitos: subcards.filter((s) => s.status === doneSlug).length,
   };
 }
 
@@ -93,7 +100,7 @@ function recomputeResumo(subcards) {
 // topo e depois dentro de `subcards` de cada card de topo. Ao atualizar um
 // subcard, recalcula `subcards_resumo` do pai a partir da lista já
 // atualizada (não confia em contagem antiga).
-function updateCardInTree(cards, cardId, updater) {
+function updateCardInTree(cards, cardId, updater, doneSlug) {
   let touched = false;
   const next = cards.map((card) => {
     if (card.id === cardId) {
@@ -111,7 +118,11 @@ function updateCardInTree(cards, cardId, updater) {
       });
       if (subTouched) {
         touched = true;
-        return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+        return {
+          ...card,
+          subcards: nextSubcards,
+          subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+        };
       }
     }
     return card;
@@ -122,7 +133,7 @@ function updateCardInTree(cards, cardId, updater) {
 // Remove o card com `cardId` do estado local, seja ele de topo (remove o
 // próprio + subcards aninhados junto, de graça) ou um subcard (remove da
 // lista `subcards` do pai e recalcula `subcards_resumo`).
-function removeCardFromTree(cards, cardId) {
+function removeCardFromTree(cards, cardId, doneSlug) {
   const withoutTop = cards.filter((c) => c.id !== cardId);
   if (withoutTop.length !== cards.length) return withoutTop;
 
@@ -130,11 +141,18 @@ function removeCardFromTree(cards, cardId) {
     if (!card.subcards || !card.subcards.length) return card;
     const nextSubcards = card.subcards.filter((s) => s.id !== cardId);
     if (nextSubcards.length === card.subcards.length) return card;
-    return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+    return {
+      ...card,
+      subcards: nextSubcards,
+      subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+    };
   });
 }
 
-export function useCards(selectedProjectIds) {
+// `doneSlug` comes from useColumns (the caller owns both hooks) rather than
+// being fetched here: the two would otherwise race on mount and the board
+// would hold two answers to "which column means done".
+export function useCards(selectedProjectIds, doneSlug = null) {
   const [cards, setCards] = useState([]);
 
   // Chave estável derivada de `selectedProjectIds` (ordenada + joinada) em
@@ -156,9 +174,61 @@ export function useCards(selectedProjectIds) {
     [projectIdsKey]
   );
 
+  // Latest committed `cards`, for the rollback snapshot of an optimistic move.
+  // A ref rather than the `cards` closure: `cards` as a dependency of
+  // `moveCard` would rebuild that callback on every 5s poll, and capturing the
+  // array from inside a `setCards` updater is worse — React may defer the
+  // updater past the `await` that follows, leaving the snapshot null exactly
+  // when a failure needs it.
+  const cardsRef = useRef(cards);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
+
+  // -- poll coordination (task #43, phase 3) -------------------------------
+  //
+  // Two independent reasons to ignore a poll result, both counted/flagged in
+  // REFS rather than state: a re-render is not wanted (nothing visual depends
+  // on them) and, more importantly, the value has to be readable from inside
+  // an async function that started before the drag did.
+  //
+  // There is nothing to reuse from useColumns here — that hook does no poll at
+  // all ("NO poll, unlike useCards", see its header), so this mechanism is new
+  // rather than generalised out of an existing one.
+  // THREE guards, and each one catches a case the others do not. Found the
+  // hard way: the counter alone looked sufficient and was not.
+  //
+  //   movesInFlightRef — a poll that STARTS and RESOLVES while a move is out.
+  //   moveEpochRef     — a poll that started BEFORE the move and resolves
+  //                      AFTER it already finished. The counter is back to 0
+  //                      by then, so only a generation stamp catches this one,
+  //                      and it is the likeliest of the three in real use: the
+  //                      poll runs every 5s and a move takes milliseconds.
+  //   cardDragActiveRef — a poll that starts and resolves entirely DURING a
+  //                      drag, before any move exists to count or stamp.
+  const movesInFlightRef = useRef(0);
+  const moveEpochRef = useRef(0);
+  const cardDragActiveRef = useRef(false);
+
+  // Called by the board on drag start/end of a CARD. Column drags do NOT need
+  // this: reordering columns never touches `cards`, so a poll landing mid-drag
+  // cannot contradict anything the finger is doing.
+  const setCardDragActive = useCallback((active) => {
+    cardDragActiveRef.current = !!active;
+  }, []);
+
   const fetchCards = useCallback(async () => {
+    // Stamped BEFORE the request goes out, compared AFTER it comes back.
+    const epochAtRequest = moveEpochRef.current;
     try {
       const list = await api.fetchCards(selectedProjectIds);
+      // All three checks live HERE, after the await and immediately before the
+      // write — never at the top of the tick. A tick-time check cannot see a
+      // move that had not happened yet when the request left, which is the
+      // whole problem: this response describes a board from before the drop,
+      // and writing it would clobber the optimistic array AND the server's own
+      // answer that has already been merged into it. Dropping the response is
+      // safe — the next tick is 5s away and re-reads everything from scratch.
+      if (moveEpochRef.current !== epochAtRequest) return;
+      if (movesInFlightRef.current > 0 || cardDragActiveRef.current) return;
       setCards(list);
     } catch (e) {
       // Leitura tolerante — mantém o último estado conhecido, sem alert()
@@ -216,14 +286,18 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => prev.map((card) => {
         if (card.id !== parentId) return card;
         const nextSubcards = [...(card.subcards || []), created];
-        return { ...card, subcards: nextSubcards, subcards_resumo: recomputeResumo(nextSubcards) };
+        return {
+          ...card,
+          subcards: nextSubcards,
+          subcards_resumo: recomputeResumo(nextSubcards, doneSlug, card.subcards_resumo),
+        };
       }));
       return created;
     } catch (e) {
       alert('Falha ao criar subtarefa. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const updateCard = useCallback(async (cardId, payload) => {
     try {
@@ -240,24 +314,88 @@ export function useCards(selectedProjectIds) {
         // imagens/subcards/subcards_resumo propositalmente NÃO vêm de
         // `updated` — ver nota no topo do arquivo sobre a resposta do PATCH
         // sempre vir com esses campos vazios/null.
-      })));
+      }), doneSlug));
       return updated;
     } catch (e) {
       alert('Falha ao atualizar card. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
+
+  // Drag-to-reposition (task #43, phase 3). DISTINCT from updateCard, and the
+  // difference is not cosmetic:
+  //
+  // - `updateCard` waits for the server before touching local state (see the
+  //   header: "otimista" there means "apply the mutation's own answer"). That
+  //   is fine for a form save and wrong for a drag — the card would snap back
+  //   under the finger and then jump to its new slot a round-trip later.
+  //   So this one is optimistic in the STRONG sense, like `reorderColumns` in
+  //   useColumns.js: write locally first, roll back to the captured snapshot
+  //   if the server refuses.
+  //
+  // - It never PATCHes. `POST /cards/{id}/move` is the only path that writes a
+  //   fine-grained `board_position`; the PATCH deliberately re-appends a card
+  //   to the end of the destination column, which is right for every caller
+  //   that has no drop target (the status `<select>`, and the MCP agent whose
+  //   contract does not change in this phase).
+  //
+  // Errors are RE-THROWN, never alert()ed here — the one mutation in this hook
+  // that does not, and on purpose: a 409 means the board moved under the user,
+  // which deserves an explanation that does not block the whole tab. The board
+  // has a banner for it (see BoardV2). Same reasoning as useColumns.js.
+  const moveCard = useCallback(async (cardId, { status, after_id = null, before_id = null }) => {
+    const snapshot = cardsRef.current;
+    setCards((prev) => applyCardMove(prev, cardId, {
+      status, afterId: after_id, beforeId: before_id,
+    }));
+
+    movesInFlightRef.current += 1;
+    // Invalidates every poll already in flight, including the ones that will
+    // only come back after this move has finished.
+    moveEpochRef.current += 1;
+    try {
+      const moved = await api.moveCard(cardId, { status, after_id, before_id });
+      // The server is AUTHORITATIVE on `board_position` and `status`, so its
+      // answer is merged in — but FIELD BY FIELD, never as a replacement. The
+      // /move response comes from CardStore.get(), which does not hydrate
+      // `imagens`/`subcards`/`subcards_resumo` (the same trap documented at
+      // the top of this file for the PATCH response): replacing the object
+      // would blank the card's images and make the edit modal's cascade-delete
+      // warning read "0 subtarefas" until the next poll.
+      //
+      // The card's ARRAY position is left exactly where the optimistic splice
+      // put it: it already agrees with the position the server just confirmed,
+      // and re-sorting here would fight the animation that is still settling.
+      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+        ...card,
+        status: moved.status,
+        board_position: moved.board_position,
+        ultima_atualizacao_por: moved.ultima_atualizacao_por,
+        atualizado_em: moved.atualizado_em,
+      }), doneSlug));
+      return moved;
+    } catch (e) {
+      // Back to the board the user was looking at when they picked the card
+      // up. A snapshot, not a refetch — same call as useColumns.reorderColumns:
+      // swapping the board for a freshly fetched different one right after a
+      // failed drag is a second surprise on top of the first.
+      setCards(snapshot);
+      throw e;
+    } finally {
+      movesInFlightRef.current -= 1;
+    }
+  }, [doneSlug]);
 
   const deleteCard = useCallback(async (cardId) => {
     try {
       const result = await api.deleteCard(cardId);
-      setCards((prev) => removeCardFromTree(prev, cardId));
+      setCards((prev) => removeCardFromTree(prev, cardId, doneSlug));
       return result;
     } catch (e) {
       alert('Falha ao excluir card. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const uploadCardImage = useCallback(async (cardId, file) => {
     try {
@@ -265,13 +403,13 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
         ...card,
         imagens: [...(card.imagens || []), image],
-      })));
+      }), doneSlug));
       return image;
     } catch (e) {
       alert('Falha ao enviar imagem. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   const deleteCardImage = useCallback(async (cardId, imageId) => {
     try {
@@ -279,12 +417,12 @@ export function useCards(selectedProjectIds) {
       setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
         ...card,
         imagens: (card.imagens || []).filter((img) => img.id !== imageId),
-      })));
+      }), doneSlug));
     } catch (e) {
       alert('Falha ao remover imagem. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   // Leitura sob demanda (não é poll de fundo) — ver nota no topo do arquivo
   // sobre por que não tem alert() aqui: o erro propaga pro chamador
@@ -297,21 +435,30 @@ export function useCards(selectedProjectIds) {
     try {
       const result = await api.clearFinished(projetoId);
       // Regra determinística (05-ARQUITETO.md §5.4): remove exatamente os
-      // cards de TOPO do projeto com status 'feito' — subcards somem
-      // junto por estarem aninhados. Ver nota no topo do arquivo.
-      setCards((prev) => prev.filter((card) => !(card.projeto_id === projetoId && card.status === 'feito')));
+      // cards de TOPO do projeto na coluna CONCLUÍDA — subcards somem junto
+      // por estarem aninhados. Ver nota no topo do arquivo. Com `doneSlug`
+      // ainda null (colunas não carregadas), não remove nada localmente: o
+      // poll de 5s traz a lista já sem eles, e apagar pelo palpite errado
+      // sumiria com cards que o backend manteve.
+      if (doneSlug != null) {
+        setCards((prev) => prev.filter(
+          (card) => !(card.projeto_id === projetoId && card.status === doneSlug)
+        ));
+      }
       return result;
     } catch (e) {
       alert('Falha ao limpar concluídos. Tente novamente.');
       throw e;
     }
-  }, []);
+  }, [doneSlug]);
 
   return {
     cards,
     createCard,
     createSubcard,
     updateCard,
+    moveCard,
+    setCardDragActive,
     deleteCard,
     uploadCardImage,
     deleteCardImage,
