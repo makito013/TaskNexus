@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Plano e prompts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a class="on" href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a class="on" href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#51-regras-que-valem-para-todas-as-fases">5.1 Regras que valem para todas as fases</a></li><li><a href="#52-visão-geral-das-fases">5.2 Visão geral das fases</a></li><li><a href="#520-fase-fn-cliente-projeto-na-sidebar-e-espaço-à-direita">5.2.0 Fase FN — Cliente → projeto na sidebar e espaço à direita</a></li><li><a href="#521-fase-fv-o-agente-abre-o-arquivo-na-tela">5.2.1 Fase FV — O agente abre o arquivo na tela</a></li><li><a href="#522-fase-fa-artefatos-por-cliente-e-projeto">5.2.2 Fase FA — Artefatos por cliente e projeto</a></li><li><a href="#53-fase-f0-fundações">5.3 Fase F0 — Fundações</a></li><li><a href="#54-fase-f1-visualizador-de-arquivos">5.4 Fase F1 — Visualizador de arquivos</a></li><li><a href="#55-fase-f2-chat-para-o-claude">5.5 Fase F2 — Chat para o claude</a></li><li><a href="#56-fase-f3-layout-v3">5.6 Fase F3 — Layout v3</a></li><li><a href="#57-fase-f4-codex-e-extras">5.7 Fase F4 — Codex e extras</a></li><li><a href="#58-checklist-final-para-você-bruno">5.8 Checklist final para você (Bruno)</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 5 de 8</p><h1 id="parte-5-plano-de-execução-e-prompts-prontos-para-o-agente">Parte 5 — Plano de execução e prompts prontos para o agente</h1>
+<blockquote>
+<p>Esta parte transforma as Partes 1–4 em <strong>fases entregáveis</strong>, cada uma com
+tarefas, arquivos, critério de pronto e um <strong>prompt para copiar e colar</strong>
+num agente Claude (Claude Code na web ou local). Execute <strong>uma fase por PR</strong>.</p>
+</blockquote>
+<figure><img src="img/09-roadmap.svg" alt="Roteiro" loading="lazy"><figcaption>Roteiro</figcaption></figure>
+<h2 id="51-regras-que-valem-para-todas-as-fases">5.1 Regras que valem para todas as fases</h2>
+<p>Cole estas regras junto com qualquer prompt (elas já estão incluídas nos
+prompts abaixo, resumidas):</p>
+<ol>
+<li><strong>Leia antes de codar:</strong> <code>README.md</code>, <code>docs/melhorias-tablet/00-visao-geral-e-diagnostico.md</code>
+   e a parte da fase. Siga as convenções do código existente: comentários
+   explicando o <em>porquê</em> (o projeto usa comentários longos em português),
+   sem TypeScript, sem biblioteca de UI, estilos com os tokens <code>--v2-*</code>.</li>
+<li><strong>Não quebre o que existe:</strong> o modo Terminal, o Board, as Tarefas, o push e
+   os deploys (<code>deploy.sh</code>, <code>deploy.ps1</code>, Windows e macOS/Linux) continuam
+   funcionando. O backend precisa rodar em <strong>Python 3.9</strong> (sem <code>match</code>, sem
+   <code>X | Y</code> fora de <code>from __future__ import annotations</code>).</li>
+<li><strong>Testes são parte da entrega:</strong> <code>cd backend &amp;&amp; .venv/bin/pytest</code> e
+   <code>cd frontend &amp;&amp; npm test</code> passando; testes novos para todo código novo.</li>
+<li><strong>Segurança primeiro:</strong> nenhum <code>shell=True</code>; todo caminho vindo do cliente
+   passa pela checagem de contenção; nada de segredo em log.</li>
+<li><strong>Commits pequenos e descritivos</strong>; um PR por fase, com descrição
+   listando o que foi feito, como testar no iPad e o que ficou para depois.</li>
+<li><strong>Quando o documento e o código discordarem</strong>, o código real vence: ajuste a
+   implementação e <strong>atualize o documento</strong> no mesmo PR, explicando a diferença.</li>
+<li><strong>Formatos de CLI</strong> (stream-json do claude, app-server do codex): grave
+   saídas reais em fixtures antes de escrever parsers; não confie na memória.</li>
+</ol>
+<h2 id="52-visão-geral-das-fases">5.2 Visão geral das fases</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Fase</th>
+<th>Entrega</th>
+<th>Partes</th>
+<th>Pode rodar em paralelo com</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FN</strong> Navegação cliente → projeto</td>
+<td>Lista de clientes da sidebar vira lista de projetos (com voltar); filtro global por projeto; barra de selects mantida (parte da sidebar); colunas recolhem sozinhas quando o visualizador abre em tela larga</td>
+<td>8</td>
+<td>— (pequena, só frontend; vem primeiro)</td>
+</tr>
+<tr>
+<td><strong>FV</strong> Agente abre arquivo</td>
+<td>Tool MCP <code>abrir_no_visualizador</code>, visualizador em dropdown com abas e tela cheia, links clicáveis no terminal</td>
+<td>6 (e 1.0)</td>
+<td>— (vem primeiro)</td>
+</tr>
+<tr>
+<td><strong>FA</strong> Artefatos</td>
+<td>Aba Artefatos por cliente e projeto no layout atual, tool <code>publicar_artefato</code>, painel lateral de visualização</td>
+<td>7</td>
+<td>— (depois da FV)</td>
+</tr>
+<tr>
+<td><strong>F0</strong> Fundações</td>
+<td>Auth (4.1), routers (4.3), restante dos quick wins do terminal (4.2)</td>
+<td>4</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>F1</strong> Arquivos</td>
+<td>API <code>/api/fs</code>, tela e painel de arquivos, download/compartilhar, links de arquivo</td>
+<td>1</td>
+<td>F2</td>
+</tr>
+<tr>
+<td><strong>F2</strong> Chat claude</td>
+<td><code>/ws/chat</code>, adapter stream-json, aprovações via MCP, ChatView, histórico, troca de modo</td>
+<td>2</td>
+<td>F1</td>
+</tr>
+<tr>
+<td><strong>F3</strong> Layout v3</td>
+<td>Tokens, primitivos <code>ui/</code>, rotas reais, lista estilo WhatsApp, 3 painéis, ⌘K</td>
+<td>3</td>
+<td>— (usa F1 e F2)</td>
+</tr>
+<tr>
+<td><strong>F4</strong> Codex + extras</td>
+<td>CodexAdapter, 4.4, 4.5, 4.7–4.11, 4.13</td>
+<td>2, 4</td>
+<td>itens independentes entre si</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="520-fase-fn-cliente-projeto-na-sidebar-e-espaço-à-direita">5.2.0 Fase FN — Cliente → projeto na sidebar e espaço à direita</h2>
+<p>Planejamento completo na <strong><a href="08-planejamento-navegacao-cliente-projeto.html">Parte 8</a></strong>.
+É pequena e só de frontend. Vai primeiro porque o visualizador da FV passa a
+abrir num painel à direita e precisa do espaço que ela libera. Se preferir
+começar pela FV, tudo funciona: o painel só não recolhe as colunas sozinho
+até a FN entrar.</p>
+<h2 id="521-fase-fv-o-agente-abre-o-arquivo-na-tela">5.2.1 Fase FV — O agente abre o arquivo na tela</h2>
+<p>Planejamento completo, com requisitos, UX, arquitetura, contratos, ordem de
+commits, testes e aceite: <strong><a href="06-planejamento-fase-v.html">Parte 6</a></strong>. O prompt
+de desenvolvimento desta fase é entregue sob pedido, para ser usado numa
+janela de contexto limpa, e aponta para a Parte 6 e para o
+<a href="CONTEXTO-PARA-AGENTE.html"><code>CONTEXTO-PARA-AGENTE.md</code></a>.</p>
+<p>Como o visualizador passa a existir na FV, a F0 fica com autenticação,
+routers e o modo "Selecionar texto"/fonte na rotação; a F1 amplia o
+visualizador para navegador de arquivos (árvore, busca, diff, zip).</p>
+<h2 id="522-fase-fa-artefatos-por-cliente-e-projeto">5.2.2 Fase FA — Artefatos por cliente e projeto</h2>
+<p>Planejamento completo na <strong><a href="07-planejamento-artefatos.html">Parte 7</a></strong>. Roda
+logo depois da FV, em cima do layout atual (só um item de menu, uma tela e um
+painel lateral). O prompt de desenvolvimento também é entregue sob pedido.</p>
+<h2 id="53-fase-f0-fundações">5.3 Fase F0 — Fundações</h2>
+<p><strong>Tarefas</strong></p>
+<ol>
+<li>Extrair routers do <code>main.py</code> (4.3), um domínio por commit, suíte verde a cada passo.</li>
+<li>Autenticação (4.1): segredo, login, cookie, middleware, WebSocket, CORS,
+   tela de login, lista de dispositivos, QR code.</li>
+<li>Terminal: modo "Selecionar texto" e fonte reativa à rotação (4.2). Os links
+   clicáveis já saem na FV.</li>
+</ol>
+<p><strong>Pronto quando:</strong> nenhuma rota <code>/api</code> ou <code>/ws</code> responde sem login (exceto as
+listadas em 4.1); o login no iPad dura 90 dias; links no terminal abrem; dá
+para copiar texto do terminal pela folha "Selecionar texto".</p>
+<p><strong>Prompt F0</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Você vai implementar a Fase F0 do plano em docs/melhorias-tablet/ deste repositório (TaskNexus).
+
+Leia primeiro, nesta ordem:
+- README.md
+- docs/melhorias-tablet/00-visao-geral-e-diagnostico.md
+- docs/melhorias-tablet/04-melhorias-adicionais.md, itens 4.1, 4.2 e 4.3
+- docs/melhorias-tablet/05-plano-de-execucao-e-prompts.md, seções 5.1 e 5.3
+
+Faça, nesta ordem e em commits separados:
+1) Refatoração 4.3: mova as rotas de backend/app/main.py para backend/app/routers/ por domínio, sem mudar
+   comportamento. Rode `cd backend &amp;&amp; .venv/bin/pytest` depois de cada domínio. Mantenha re-exports no main.py se
+   algum teste depender de globais dele.
+2) Autenticação 4.1 completa (segredo gerado no boot, POST /api/auth/login, cookie assinado HttpOnly/SameSite=Lax,
+   middleware com as exceções listadas, validação no handshake dos WebSockets com close 4401, CORS restrito,
+   hooks só de loopback, tela de login no frontend, lista e revogação de dispositivos, QR code na Configuração,
+   token impresso por deploy.sh e deploy.ps1). Escreva os testes listados em 4.1.
+3) Quick wins 4.2 que a Fase FV não cobriu, em frontend/src/components/TerminalPanel.jsx: modo "Selecionar
+   texto" com o buffer como texto real e botões de copiar, e fonte reativa à rotação. (Links clicáveis já
+   foram entregues na FV.)
+
+Restrições: Python 3.9, sem shell=True, sem TypeScript, sem biblioteca de UI, estilos com tokens --v2-*.
+Não quebre deploy.sh nem deploy.ps1. Todos os testes (pytest e `cd frontend &amp;&amp; npm test`) passando.
+Se algo no documento não bater com o código real, siga o código e atualize o documento no mesmo PR.
+Ao final, abra um PR descrevendo o que mudou, como testar no iPad (Safari e PWA) e pendências.
+</code></pre></div>
+<h2 id="54-fase-f1-visualizador-de-arquivos">5.4 Fase F1 — Visualizador de arquivos</h2>
+<p><strong>Tarefas</strong></p>
+<ol>
+<li>Backend: <code>file_access.py</code> (contenção, denylist, detecção de tipo),
+   <code>git_info.py</code>, <code>files_api.py</code> com <code>tree</code>, <code>content</code>, <code>raw</code>, <code>preview-url</code>
+   + rota assinada <code>pv</code>, <code>zip</code>, <code>search</code>, <code>git/status</code>, <code>git/diff</code>.</li>
+<li>Frontend: <code>features/files/</code> completo (árvore, busca ⌘P, viewer com
+   renderers Markdown/HTML/Código/Imagem/PDF/Binário/Diff), Shiki e mermaid
+   sob demanda, baixar e compartilhar, <code>fileLinks.js</code>.</li>
+<li>Integração: nova tela <strong>Arquivos</strong> no v2; link provider do terminal (F0)
+   passa a abrir o viewer; rota <code>/arquivos?...</code> com deep link.</li>
+</ol>
+<p><strong>Pronto quando:</strong> os 8 passos de aceite manual da seção 1.6 passam no iPad.</p>
+<p><strong>Prompt F1</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Você vai implementar a Fase F1 (visualizador de arquivos) do plano em docs/melhorias-tablet/ do TaskNexus.
+A Fase F0 (autenticação e routers) já está no código; confira antes de começar.
+
+Leia primeiro:
+- README.md
+- docs/melhorias-tablet/00-visao-geral-e-diagnostico.md
+- docs/melhorias-tablet/01-visualizador-de-arquivos.md (inteiro, é a especificação)
+- docs/melhorias-tablet/05-plano-de-execucao-e-prompts.md, seções 5.1 e 5.4
+- backend/app/attachments.py (reaproveite _is_within_directory) e frontend/src/utils/markdown.js
+
+Implemente exatamente os endpoints da seção 1.3.2, as regras de segurança da seção 1.4 (contenção de caminho
+com realpath, denylist, iframe sandbox sem allow-same-origin, cabeçalho CSP sandbox, URL de preview assinada no
+caminho para o HTML carregar CSS/imagens relativos) e os componentes da seção 1.5 em frontend/src/features/files/.
+Use Shiki com linguagens carregadas sob demanda e mermaid com import dinâmico. Baixar com &lt;a href ...?download=1&gt;
+e Content-Disposition; Compartilhar com navigator.share({files}) e fallback para download.
+
+Adicione a tela "Arquivos" ao layout v2 (AppV2/SidebarV2/NavTabs/MobileMenuScreen) e faça o link provider de
+caminhos do TerminalPanel abrir o viewer. Suporte o deep link /arquivos?p=&lt;token&gt;&amp;f=&lt;caminho&gt;&amp;l=&lt;linha&gt;.
+
+Escreva todos os testes da seção 1.6 (pytest e vitest). Python 3.9, sem shell=True, subprocess do git com
+asyncio.create_subprocess_exec e timeout. Nada de TypeScript nem biblioteca de UI; tokens --v2-*.
+Se o documento divergir do código, siga o código e atualize o documento no mesmo PR.
+Abra um PR com checklist dos 8 passos de aceite manual para eu testar no iPad.
+</code></pre></div>
+<h2 id="55-fase-f2-chat-para-o-claude">5.5 Fase F2 — Chat para o claude</h2>
+<p>Por ser a maior, divida em <strong>três PRs</strong>:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>PR</th>
+<th>Conteúdo</th>
+<th>Pronto quando</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F2a</td>
+<td>Gravação de fixtures reais, <code>events.py</code>, <code>adapters/claude_stream.py</code>, <code>ChatStore</code>, <code>ChatSessionManager</code> com adapter fake, <code>/ws/chat</code> e REST, lock entre modos</td>
+<td>testes de backend da seção 2.8 passam com adapter fake e com fixtures</td>
+</tr>
+<tr>
+<td>F2b</td>
+<td><code>mcp_permission_adapter.py</code>, <code>PermissionBroker</code>, <code>/api/hooks/permission</code>, integração do <code>--permission-prompt-tool</code>, push de aprovação</td>
+<td>aprovar/negar/sempre funcionam ponta a ponta com o CLI real</td>
+</tr>
+<tr>
+<td>F2c</td>
+<td>Frontend <code>features/chat/</code> completo, integração em <code>ChatV2</code>, troca Chat/Terminal, importação de histórico, prévia na lista</td>
+<td>10 passos de aceite manual da seção 2.8 passam no iPad</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Prompt F2a</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Você vai implementar a Fase F2a (backend do chat estruturado) do plano em docs/melhorias-tablet/ do TaskNexus.
+
+Leia primeiro:
+- README.md e docs/melhorias-tablet/00-visao-geral-e-diagnostico.md
+- docs/melhorias-tablet/02-chat-conversacional.md (inteiro; seções 2.4, 2.5, 2.6 e 2.7 são a especificação)
+- backend/app/main.py (ou os routers, se a F0 já os extraiu): _build_pty_cmd, _build_stop_hook_settings,
+  _build_mcp_config_json, _ensure_pty, pty_endpoint, hook_stop, _dispatch_push_for_session
+- backend/app/conversation_store.py e backend/app/pty_manager.py
+
+Passo 1 (obrigatório antes do parser): rode `claude -p --input-format stream-json --output-format stream-json
+--verbose --include-partial-messages --session-id &lt;uuid novo&gt;` num diretório de teste, mande 3 conversas (texto
+simples; uma que use ferramentas de leitura; uma que gere erro) e grave as saídas em
+backend/tests/fixtures/claude_stream/*.jsonl. Documente no PR a versão do claude usada.
+
+Passo 2: implemente backend/app/chat/ (events.py, store.py, manager.py, router.py, adapters/base.py,
+adapters/claude_stream.py e um adapter fake para testes) conforme 2.5 e 2.7: ChatEvent normalizado com seq,
+tabela chat_events, colunas novas em sessions, WebSocket /ws/chat/{session_key} com hello/last_seq, vários
+assinantes por sessão, fila de mensagens durante um turno, interrupção, ciclo de vida do processo (2.4.4) e o
+lock que impede chat e PTY ao mesmo tempo na mesma session_key. No turn_end, chame mark_needs_attention e o
+dispatch de push existentes sem duplicar push (ledger push_notified).
+
+Não implemente ainda aprovações (F2b) nem frontend (F2c): rode o claude com o modo de permissão que o usuário
+tinha no terminal e deixe um TODO claro apontando para a F2b.
+
+Escreva os testes de backend da seção 2.8. Python 3.9, sem shell=True, reaproveite funções existentes em vez de
+copiar. Se o formato real diferir do documento, siga o real e atualize 02-chat-conversacional.md no mesmo PR.
+</code></pre></div>
+<p><strong>Prompt F2b</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Implemente a Fase F2b (aprovações pelo chat) do plano em docs/melhorias-tablet/ do TaskNexus. A F2a já está no código.
+
+Leia: docs/melhorias-tablet/02-chat-conversacional.md seções 2.2.3, 2.4.2 e 2.5; backend/app/mcp_task_adapter.py
+e backend/app/mcp_card_adapter.py (siga o mesmo padrão: stdio JSON-RPC, stdlib pura, Python 3.9, TLS de loopback).
+
+Crie backend/app/mcp_permission_adapter.py com a tool aprovar_ferramenta, backend/app/chat/permission_broker.py e a
+rota POST /api/hooks/permission (só loopback). Inclua o servidor no --mcp-config do modo chat e passe
+--permission-prompt-tool mcp__&lt;nome_do_servidor&gt;__aprovar_ferramenta. Emita permission_request/permission_resolved
+como ChatEvent, trate allow, deny com mensagem, allow_always (para Bash, por prefixo de comando), timeout de 30 min,
+e resposta vinda de qualquer dispositivo conectado. Envie push "precisa de aprovação" quando nenhum cliente
+estiver conectado à sessão, respeitando o horário de silêncio. Adicione set_permission_mode (default,
+acceptEdits, bypassPermissions, plan).
+
+Confirme o contrato de resposta do --permission-prompt-tool na versão instalada do claude e registre no PR.
+Testes: todos os casos do PermissionBroker listados na seção 2.8, mais um teste de integração do adapter MCP.
+</code></pre></div>
+<p><strong>Prompt F2c</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Implemente a Fase F2c (interface do chat) do plano em docs/melhorias-tablet/ do TaskNexus. F2a e F2b já estão no código.
+
+Leia: docs/melhorias-tablet/02-chat-conversacional.md (seções 2.1 a 2.3, 2.5.2, 2.6 e 2.7 Frontend),
+docs/melhorias-tablet/03-layout-amigavel.md seção 3.2 (tokens) e os mockups em docs/melhorias-tablet/img/03-*.svg
+e 05-*.svg. Leia também frontend/src/layouts/v2/ChatV2.jsx, ChatSidebarV2.jsx, ChatList.jsx,
+frontend/src/components/TerminalContext.jsx e frontend/src/hooks/useVisibleViewportShell.js.
+
+Crie frontend/src/features/chat/ conforme 2.7, com chatReducer puro, useChatSession (hello/last_seq, reconexão com
+backoff, fila local), lista virtualizada, markdown pelo mesmo MarkdownRenderer da Fase F1, CodeBlock com
+Copiar/Abrir/Expandir, cartões de ferramenta agrupados, PermissionCard, Composer (⌘Enter, opção "Enter envia",
+rascunho por conversa, anexos reaproveitando o upload existente, colar imagem, menus / e @), ações por toque longo
+e streaming otimizado (requestAnimationFrame; markdown no máximo a cada 100 ms).
+
+Integre em ChatV2: ChatView quando session.mode === 'chat', TerminalPanel quando 'terminal', controle segmentado
+Chat|Terminal no cabeçalho usando POST /api/chat/{sk}/mode, sem desmontar sessões inativas. Implemente a importação
+de histórico do .jsonl (2.6) se ainda não existir. Mostre last_preview, hora e status na lista de conversas.
+
+Todo texto de mensagem deve ser selecionável (user-select: text). Alvos de toque de 44 px. Temas claro e escuro.
+Testes da seção 2.8 (Frontend). Abra o PR com o checklist dos 10 passos de aceite manual no iPad.
+</code></pre></div>
+<h2 id="56-fase-f3-layout-v3">5.6 Fase F3 — Layout v3</h2>
+<p><strong>Prompt F3</strong></p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Implemente a Fase F3 (layout v3) do plano em docs/melhorias-tablet/ do TaskNexus. As fases F0, F1 e F2 já estão no código.
+
+Leia docs/melhorias-tablet/03-layout-amigavel.md inteiro (é a especificação) e os mockups em
+docs/melhorias-tablet/img/03-*.svg, 05-*.svg e 08-*.svg. Leia frontend/src/layouts/v2/theme.css, AppV2.jsx,
+hooks/useRoute.js, utils/viewport.js e layouts/v2/BottomSheet.jsx.
+
+Faça, em commits separados:
+1) Tokens novos da seção 3.2.2 em theme.css (sem mudar a paleta existente) e primitivos em frontend/src/ui/ (3.6).
+2) Rotas reais da seção 3.4 no roteador caseiro (params, query, replace), mantendo sessões montadas.
+3) Layout por largura da seção 3.3: WIDE_VIEWPORT_QUERY (min-width 1100px), três painéis com painel de contexto
+   recolhível e larguras salvas, trilho de avatares + slide-over no iPad em pé, pilha + abas inferiores no celular.
+4) Lista de conversas estilo WhatsApp (3.5), com contador de não lidas (evoluir needs_attention para contagem).
+5) Paleta ⌘K e atalhos (3.7), estados vazios (3.9) e acessibilidade (3.8).
+
+Critérios de aceite: seção 3.10, incluindo um teste que mede alvos de toque &gt;= 44px e um que garante ausência de
+rolagem horizontal em 390, 820 e 1180 px. Não quebre o layout v1 nem o modo Terminal.
+</code></pre></div>
+<h2 id="57-fase-f4-codex-e-extras">5.7 Fase F4 — Codex e extras</h2>
+<p>Cada item é um PR pequeno. Prompt genérico (troque <code>&lt;ID&gt;</code> pelo item da Parte 4):</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Implemente a melhoria &lt;ID&gt; descrita em docs/melhorias-tablet/04-melhorias-adicionais.md do TaskNexus.
+Leia antes README.md, docs/melhorias-tablet/00-visao-geral-e-diagnostico.md, a seção &lt;ID&gt; e as partes que ela
+cita como dependência. Siga as regras da seção 5.1 de docs/melhorias-tablet/05-plano-de-execucao-e-prompts.md
+(Python 3.9, sem shell=True, sem TypeScript, sem biblioteca de UI, tokens --v2-*, testes obrigatórios, atualizar o
+documento se o código real divergir). Abra um PR com como testar no iPad.
+</code></pre></div>
+<p>Para o <strong>CodexAdapter</strong>:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Implemente o CodexAdapter do modo chat (docs/melhorias-tablet/02-chat-conversacional.md, seção 2.4.5) no TaskNexus.
+Primeiro verifique na versão instalada do codex como funciona o `codex app-server` (métodos para iniciar e retomar
+conversa por id, enviar mensagem, eventos de texto/ferramenta/fim de turno e pedidos de aprovação de comando e de
+patch). Grave saídas reais em backend/tests/fixtures/codex_appserver/. Traduza tudo para o ChatEvent normalizado
+(seção 2.5.1), ligue as aprovações ao PermissionBroker existente, reaproveite os MCP servers do spawn atual
+(_build_codex_config_overrides) e decida, com justificativa no PR, se o codex_notify_adapter continua necessário
+no modo chat. Adicione a importação de histórico de ~/.codex/sessions. Testes com as fixtures.
+</code></pre></div>
+<h2 id="58-checklist-final-para-você-bruno">5.8 Checklist final para você (Bruno)</h2>
+<ul>
+<li><input type="checkbox" disabled> Li as Partes 0–4 e risquei o que não quero.</li>
+<li><input type="checkbox" disabled> Confirmei que o acesso pelo iPad é por <code>https://…ts.net</code> (necessário para push e compartilhar).</li>
+<li><input type="checkbox" disabled> Rodei a FN e testei os passos de aceite da Parte 8 (iPad deitado, em pé, desktop e celular).</li>
+<li><input type="checkbox" disabled> Rodei a FV e testei os 12 passos de aceite da Parte 6 no iPad.</li>
+<li><input type="checkbox" disabled> Rodei a FA e testei os 8 passos de aceite da Parte 7 no iPad.</li>
+<li><input type="checkbox" disabled> Rodei a F0 e guardei o token de acesso num gerenciador de senhas.</li>
+<li><input type="checkbox" disabled> F1 e F2 aprovadas com os checklists de aceite no iPad.</li>
+<li><input type="checkbox" disabled> F3 aprovada nos três tamanhos (celular, iPad em pé, iPad deitado).</li>
+<li><input type="checkbox" disabled> Escolhi os extras da F4 por prioridade.</li>
+</ul><div class="pager"><a href="04-melhorias-adicionais.html"><small>Anterior</small>4 · Melhorias adicionais</a><a class="next" href="06-planejamento-fase-v.html"><small>Próxima</small>6 · Planejamento da Fase V</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

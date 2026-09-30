@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Layout amigável</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a class="on" href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a class="on" href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#31-diagnóstico-de-ux-do-layout-atual">3.1 Diagnóstico de UX do layout atual</a></li><li><a href="#32-sistema-visual-design">3.2 Sistema visual (Design)</a><ul><li><a href="#321-o-que-se-mantém">3.2.1 O que se mantém</a></li><li><a href="#322-o-que-entra-tokens-novos-no-mesmo-arquivo-themecss">3.2.2 O que entra (tokens novos, no mesmo arquivo theme.css)</a></li><li><a href="#323-tipografia-por-contexto">3.2.3 Tipografia por contexto</a></li></ul></li><li><a href="#33-layout-por-tamanho-de-tela">3.3 Layout por tamanho de tela</a></li><li><a href="#34-navegação-com-urls-reais">3.4 Navegação com URLs reais</a></li><li><a href="#35-lista-de-conversas-estilo-whatsapp">3.5 Lista de conversas estilo WhatsApp</a></li><li><a href="#36-componentes-base-para-parar-de-repetir-estilo-inline">3.6 Componentes base (para parar de repetir estilo inline)</a></li><li><a href="#37-paleta-de-comandos-k-e-atalhos">3.7 Paleta de comandos (⌘K) e atalhos</a></li><li><a href="#38-microinterações-e-acessibilidade">3.8 Microinterações e acessibilidade</a></li><li><a href="#39-estados-vazios-e-primeira-execução">3.9 Estados vazios e primeira execução</a></li><li><a href="#310-critérios-de-aceite-do-layout">3.10 Critérios de aceite do layout</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 3 de 8</p><h1 id="parte-3-layout-mais-amigável-touch-primeiro-sem-perder-o-pc">Parte 3 — Layout mais amigável (touch primeiro, sem perder o PC)</h1>
+<blockquote>
+<p><strong>Objetivo:</strong> fazer o TaskNexus parecer um app de mensagens bem feito no
+iPad e no celular, e continuar produtivo no PC com teclado. Esta parte é o
+"layout v3", mas <strong>não</strong> é uma reescrita: é uma evolução do v2, reusando os
+tokens <code>--v2-*</code>, as fontes self-hosted e os hooks de viewport que já existem.</p>
+</blockquote>
+<hr />
+<h2 id="31-diagnóstico-de-ux-do-layout-atual">3.1 Diagnóstico de UX do layout atual</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Problema observado</th>
+<th>Impacto no tablet</th>
+<th>Correção proposta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1</td>
+<td>O chat é um terminal que ocupa toda a coluna</td>
+<td>Todo o resto (ler, copiar, clicar) herda os problemas do terminal</td>
+<td>Chat estruturado (Parte 2)</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>Navegação por 4 abas internas em <code>useState</code>, sem URL</td>
+<td>Não dá para abrir "o arquivo X" ou "a conversa Y" por link, nem voltar com o gesto do iPad</td>
+<td>Rotas reais para telas, conversas e arquivos (3.4)</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>A lista de conversas mostra nome e status, sem prévia</td>
+<td>Não dá para saber o que aconteceu sem abrir cada uma</td>
+<td>Lista estilo WhatsApp com prévia, hora e contadores (3.5)</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>Atalhos de teclado num FAB flutuante arrastável</td>
+<td>Cobre conteúdo e exige aprender posições</td>
+<td>No chat, some (não precisa). No modo Terminal, continua</td>
+</tr>
+<tr>
+<td>P5</td>
+<td>Três larguras tratadas com dois breakpoints (640/820 px)</td>
+<td>iPad deitado (1180–1366 px) desperdiça espaço; não há painel lateral de contexto</td>
+<td>Três layouts: celular, iPad em pé, iPad deitado/PC (3.3)</td>
+</tr>
+<tr>
+<td>P6</td>
+<td>Estilos inline em objetos JS espalhados pelos componentes</td>
+<td>Difícil manter consistência de espaçamento e alvo de toque</td>
+<td>Camada de componentes base + tokens de espaçamento e tipo (3.2, 3.6)</td>
+</tr>
+<tr>
+<td>P7</td>
+<td>Não há busca global</td>
+<td>Achar uma conversa, card ou arquivo exige navegar</td>
+<td>Paleta de comandos ⌘K + busca na lista (3.7)</td>
+</tr>
+<tr>
+<td>P8</td>
+<td>Alvos de toque pequenos em alguns controles (ex.: botão "+ Tarefa" com 24 px)</td>
+<td>Toque errado, frustração</td>
+<td>Mínimo de 44 × 44 px em qualquer controle tocável</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="32-sistema-visual-design">3.2 Sistema visual (Design)</h2>
+<h3 id="321-o-que-se-mantém">3.2.1 O que se mantém</h3>
+<ul>
+<li><strong>Paleta <code>--v2-*</code></strong> (<code>frontend/src/layouts/v2/theme.css</code>), clara e escura:
+  neutros quentes, acento verde-azulado (<code>--v2-accent</code>, matiz 168) e acento
+  secundário índigo (<code>--v2-accent-2</code>, matiz 268). Ela já é boa e tem
+  identidade; não troque.</li>
+<li><strong>Fontes:</strong> Figtree (interface e leitura) e IBM Plex Mono (código), já servidas localmente.</li>
+<li><strong>Troca de tema</strong> via <code>data-theme</code> e troca de layout via <code>data-layout</code>.</li>
+</ul>
+<h3 id="322-o-que-entra-tokens-novos-no-mesmo-arquivo-themecss">3.2.2 O que entra (tokens novos, no mesmo arquivo <code>theme.css</code>)</h3>
+<div class="code"><div class="code-head"><span>css</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">:</span><span class="nd">root</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c">/* Espaçamento em grade de 4 px */</span>
+<span class="w">  </span><span class="nv">--v2-space-1</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-space-2</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-space-3</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--v2-space-4</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-space-5</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-space-6</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-space-8</span><span class="p">:</span><span class="w"> </span><span class="mi">32</span><span class="kt">px</span><span class="p">;</span>
+
+<span class="w">  </span><span class="c">/* Tipografia (escala 1,125) */</span>
+<span class="w">  </span><span class="nv">--v2-text-xs</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-text-sm</span><span class="p">:</span><span class="w"> </span><span class="mi">13</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-text-md</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--v2-text-lg</span><span class="p">:</span><span class="w"> </span><span class="mi">17</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-text-xl</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w">  </span><span class="nv">--v2-text-2xl</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="kt">px</span><span class="p">;</span>
+<span class="w">  </span><span class="nv">--v2-leading-tight</span><span class="p">:</span><span class="w"> </span><span class="mf">1.3</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-leading-body</span><span class="p">:</span><span class="w"> </span><span class="mf">1.55</span><span class="p">;</span>
+
+<span class="w">  </span><span class="c">/* Raios por função, não um raio para tudo */</span>
+<span class="w">  </span><span class="nv">--v2-radius-control</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="kt">px</span><span class="p">;</span><span class="w">   </span><span class="c">/* botões, inputs */</span>
+<span class="w">  </span><span class="nv">--v2-radius-card</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="kt">px</span><span class="p">;</span><span class="w">      </span><span class="c">/* cartões, respostas */</span>
+<span class="w">  </span><span class="nv">--v2-radius-bubble</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span><span class="kt">px</span><span class="p">;</span><span class="w">    </span><span class="c">/* bolhas de mensagem */</span>
+<span class="w">  </span><span class="nv">--v2-radius-sheet</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="kt">px</span><span class="p">;</span><span class="w">     </span><span class="c">/* bottom sheets */</span>
+
+<span class="w">  </span><span class="c">/* Toque */</span>
+<span class="w">  </span><span class="nv">--v2-hit</span><span class="p">:</span><span class="w"> </span><span class="mi">44</span><span class="kt">px</span><span class="p">;</span><span class="w">              </span><span class="c">/* alvo mínimo */</span>
+<span class="w">  </span><span class="nv">--v2-row</span><span class="p">:</span><span class="w"> </span><span class="mi">56</span><span class="kt">px</span><span class="p">;</span><span class="w">              </span><span class="c">/* linha de lista confortável */</span>
+
+<span class="w">  </span><span class="c">/* Movimento */</span>
+<span class="w">  </span><span class="nv">--v2-ease</span><span class="p">:</span><span class="w"> </span><span class="nb">cubic-bezier</span><span class="p">(</span><span class="mf">.2</span><span class="p">,</span><span class="w"> </span><span class="mf">.8</span><span class="p">,</span><span class="w"> </span><span class="mf">.2</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">  </span><span class="nv">--v2-dur-fast</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-dur</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="kt">ms</span><span class="p">;</span>
+
+<span class="w">  </span><span class="c">/* Superfícies novas do chat */</span>
+<span class="w">  </span><span class="nv">--v2-bubble-me</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--v2-accent-soft</span><span class="p">);</span>
+<span class="w">  </span><span class="nv">--v2-code-bg</span><span class="p">:</span><span class="w"> </span><span class="nf">oklch</span><span class="p">(</span><span class="mf">0.24</span><span class="w"> </span><span class="mf">0.012</span><span class="w"> </span><span class="mi">262</span><span class="p">);</span><span class="w">   </span><span class="c">/* escuro nos dois temas */</span>
+<span class="w">  </span><span class="nv">--v2-code-fg</span><span class="p">:</span><span class="w"> </span><span class="nf">oklch</span><span class="p">(</span><span class="mf">0.92</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mi">262</span><span class="p">);</span>
+<span class="w">  </span><span class="nv">--v2-link</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--v2-accent-</span><span class="mi">2</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="p">@</span><span class="k">media</span><span class="w"> </span><span class="o">(</span><span class="nt">prefers-reduced-motion</span><span class="o">:</span><span class="w"> </span><span class="nt">reduce</span><span class="o">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">:</span><span class="nd">root</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nv">--v2-dur-fast</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="nv">--v2-dur</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="kt">ms</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>(O <code>theme.css</code> tem uma "lápide" para <code>--v2-bubble-me</code>, removido quando as
+bolhas mockadas saíram. Com bolhas reais ele volta, derivado do acento.)</p>
+<h3 id="323-tipografia-por-contexto">3.2.3 Tipografia por contexto</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Contexto</th>
+<th>Tamanho</th>
+<th>Peso</th>
+<th>Altura de linha</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Título de tela</td>
+<td><code>--v2-text-xl</code></td>
+<td>700</td>
+<td>tight</td>
+</tr>
+<tr>
+<td>Nome da conversa na lista</td>
+<td><code>--v2-text-md</code></td>
+<td>600</td>
+<td>tight</td>
+</tr>
+<tr>
+<td>Prévia na lista, metadados</td>
+<td><code>--v2-text-sm</code></td>
+<td>400</td>
+<td>tight, <code>--v2-text-dim</code></td>
+</tr>
+<tr>
+<td>Mensagem de chat</td>
+<td><code>--v2-text-md</code> (16 px no iPad)</td>
+<td>400</td>
+<td>body</td>
+</tr>
+<tr>
+<td>Leitura de markdown no viewer</td>
+<td>16 px, coluna ≤ 76 caracteres</td>
+<td>400</td>
+<td>1,6</td>
+</tr>
+<tr>
+<td>Código</td>
+<td>13,5 px Plex Mono</td>
+<td>400</td>
+<td>1,5</td>
+</tr>
+<tr>
+<td>Rótulos em caixa alta</td>
+<td><code>--v2-text-xs</code>, <code>letter-spacing: .06em</code></td>
+<td>600</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>Números que se alinham (custos, contadores, horas) usam
+<code>font-variant-numeric: tabular-nums</code>.</p>
+<hr />
+<h2 id="33-layout-por-tamanho-de-tela">3.3 Layout por tamanho de tela</h2>
+<figure><img src="img/08-navegacao-responsiva.svg" alt="Navegação responsiva" loading="lazy"><figcaption>Navegação responsiva</figcaption></figure>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Largura</th>
+<th>Estrutura</th>
+<th>Detalhes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>≤ 640 px</strong> (celular, já é <code>MOBILE_VIEWPORT_QUERY</code>)</td>
+<td>Pilha de telas + <strong>barra de abas inferior</strong> (Chats · Board · Arquivos · Tarefas · Mais)</td>
+<td>A conversa ocupa a tela toda e esconde a barra de abas; arquivo aberto do chat empurra uma tela nova; gesto de voltar do sistema funciona porque cada tela é uma URL</td>
+</tr>
+<tr>
+<td><strong>641–1099 px</strong> (iPad em pé, Split View)</td>
+<td><strong>Trilho</strong> de 72 px com avatares das conversas + conversa</td>
+<td>Painel de contexto (arquivo, card, tarefas) abre como <strong>slide-over</strong> de 420 px por cima, fecha arrastando para a direita ou tocando fora</td>
+</tr>
+<tr>
+<td><strong>≥ 1100 px</strong> (iPad deitado, PC) — novo <code>WIDE_VIEWPORT_QUERY</code></td>
+<td><strong>Três painéis:</strong> lista (300 px) · conversa (flexível) · contexto (380–520 px, recolhível)</td>
+<td>Divisórias arrastáveis com largura salva em <code>localStorage</code>; ⌘\ recolhe o painel de contexto</td>
+</tr>
+</tbody>
+</table></div>
+<p>Regras gerais:</p>
+<ul>
+<li>O <strong>painel de contexto</strong> é o lugar para tudo que é "ao lado da conversa":
+  arquivo aberto (Parte 1), diff de uma edição, card do board citado,
+  tarefas da sessão (hoje no <code>TasksDrawer</code>). Uma pilha com botão voltar
+  dentro do painel permite ir de um arquivo a outro.</li>
+<li>Usar <code>100dvh</code> e o <code>useVisibleViewportShell</code> existente para que o composer
+  fique sempre acima do teclado virtual.</li>
+<li>Respeitar as <code>safe-area-inset-*</code> (os tokens <code>--v2-safe-*</code> já existem).</li>
+<li>Nenhuma página rola na horizontal. Só tabelas, código e diffs, cada um
+  dentro da própria caixa com <code>overflow-x: auto</code>.</li>
+</ul>
+<hr />
+<h2 id="34-navegação-com-urls-reais">3.4 Navegação com URLs reais</h2>
+<p>Hoje <code>AppV2</code> escolhe a tela com <code>useState</code> (<code>v2Screen</code>) e o <code>useRoute</code> só
+diferencia <code>/</code> e <code>/tarefas</code>. Proposta de rotas (mantendo o roteador caseiro,
+sem adicionar biblioteca):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>URL</th>
+<th>Tela</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/</code></td>
+<td>redireciona para <code>/chats</code></td>
+</tr>
+<tr>
+<td><code>/chats</code></td>
+<td>lista (no celular) ou última conversa aberta (tablet/PC)</td>
+</tr>
+<tr>
+<td><code>/chats/{session_key codificada}</code></td>
+<td>conversa</td>
+</tr>
+<tr>
+<td><code>/chats/{sk}?painel=arquivo&amp;f=docs/plano.md&amp;l=42</code></td>
+<td>conversa + arquivo no painel de contexto</td>
+</tr>
+<tr>
+<td><code>/arquivos/{project_token}</code> e <code>/arquivos/{project_token}/{caminho}</code></td>
+<td>tela de arquivos</td>
+</tr>
+<tr>
+<td><code>/board</code>, <code>/board?card=184</code></td>
+<td>board, com card aberto</td>
+</tr>
+<tr>
+<td><code>/tarefas</code></td>
+<td>tarefas</td>
+</tr>
+<tr>
+<td><code>/config</code></td>
+<td>configuração</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><code>useRoute</code> ganha <code>params</code> e <code>query</code> simples; <code>navigate(to, {replace})</code>.</li>
+<li><strong>Efeito imediato no iPad:</strong> o gesto de voltar e o botão voltar do Safari
+  passam a funcionar; links de push notification e de "citar no chat" viram
+  URLs normais.</li>
+<li>Manter o comportamento atual de <strong>não desmontar</strong> sessões ao trocar de tela
+  (o <code>TerminalProvider</code> fica acima do roteador).</li>
+</ul>
+<hr />
+<h2 id="35-lista-de-conversas-estilo-whatsapp">3.5 Lista de conversas estilo WhatsApp</h2>
+<p>Cada linha (56–68 px):</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>[avatar 40px]  claude · tasknexus                         14:10
+               Rodei os testes, 2 falharam em attach…     (2)
+               ● pensando…  |  ⚠ aguardando aprovação
+</code></pre></div>
+<ul>
+<li><strong>Avatar:</strong> iniciais do agente (CL, CX, AG, &gt;_) com a cor do agente;
+  anel pulsando quando está trabalhando (já existe <code>.v2-chat-avatar--running</code>).</li>
+<li><strong>Prévia:</strong> primeira linha da última mensagem (<code>last_preview</code>, Parte 2),
+  com prefixo "Você: " quando foi sua.</li>
+<li><strong>Contador:</strong> mensagens do agente desde a última vez que você abriu
+  (evolui o <code>needs_attention</code>, que hoje é só booleano).</li>
+<li><strong>Selo amarelo "!"</strong> quando há aprovação pendente; essas conversas sobem
+  para o topo.</li>
+<li><strong>Ordenação:</strong> aprovação pendente → mais recente atividade.</li>
+<li><strong>Gestos:</strong> deslizar para a esquerda → Renomear / Encerrar; toque longo →
+  menu com as mesmas ações (acessível sem gesto).</li>
+<li><strong>Agrupamento opcional</strong> por cliente/projeto (o <code>ClienteProjetoFilterBar</code>
+  existente vira filtro em chips no topo da lista).</li>
+<li><strong>Busca</strong> no topo filtra por nome, projeto e conteúdo das mensagens
+  (busca no <code>chat_events</code> com <code>LIKE</code>, suficiente para uso pessoal; FTS5 depois se precisar).</li>
+</ul>
+<hr />
+<h2 id="36-componentes-base-para-parar-de-repetir-estilo-inline">3.6 Componentes base (para parar de repetir estilo inline)</h2>
+<p>Hoje cada componente declara um objeto <code>styles</code> com valores soltos. Criar uma
+pasta pequena de primitivos, <strong>em CSS com classes</strong> (sem Tailwind, sem lib de UI,
+alinhado à decisão do projeto):</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/ui/
+  ui.css            # classes .ui-btn, .ui-btn--primary, .ui-chip, .ui-segmented, .ui-sheet, .ui-card, .ui-list-row, .ui-skeleton, .ui-toast
+  Button.jsx        # variantes primary | secondary | ghost | danger; tamanhos md (44px) | sm (36px, só no PC)
+  IconButton.jsx    # 44×44 com aria-label obrigatório
+  Segmented.jsx     # Chat|Terminal, Preview|Código|Diff
+  Sheet.jsx         # evolução do BottomSheet.jsx existente: bottom sheet no celular, slide-over no iPad
+  Toast.jsx         # "Copiado", "Link copiado", erros não bloqueantes
+  Skeleton.jsx
+  Icon.jsx          # ícones SVG inline (conjunto pequeno: arquivo, pasta, enviar, parar, anexar, copiar, baixar, compartilhar, terminal, chat, board, tarefas, config)
+</code></pre></div>
+<p>Migração gradual: componentes novos (chat, arquivos) já nascem com os
+primitivos; os antigos migram quando forem tocados.</p>
+<hr />
+<h2 id="37-paleta-de-comandos-k-e-atalhos">3.7 Paleta de comandos (⌘K) e atalhos</h2>
+<p>Para quem usa iPad com Magic Keyboard ou o PC:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Atalho</th>
+<th>Ação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⌘K</td>
+<td>paleta: buscar conversas, arquivos, cards e ações ("Nova conversa com claude em…")</td>
+</tr>
+<tr>
+<td>⌘P</td>
+<td>buscar arquivo no projeto da conversa</td>
+</tr>
+<tr>
+<td>⌘N</td>
+<td>nova conversa</td>
+</tr>
+<tr>
+<td>⌘↑ / ⌘↓</td>
+<td>conversa anterior/próxima na lista</td>
+</tr>
+<tr>
+<td>⌘Enter</td>
+<td>enviar</td>
+</tr>
+<tr>
+<td>Esc</td>
+<td>parar o agente (quando o foco está no composer vazio) ou fechar painel</td>
+</tr>
+<tr>
+<td>⌘\</td>
+<td>mostrar/esconder painel de contexto</td>
+</tr>
+<tr>
+<td>⌘⇧C</td>
+<td>copiar a última resposta do agente</td>
+</tr>
+</tbody>
+</table></div>
+<p>Mostrar a lista com <code>?</code> ou no menu "Mais". No iPad, segurar ⌘ mostra os
+atalhos do sistema; registrar os atalhos com <code>keydown</code> normal é suficiente.</p>
+<hr />
+<h2 id="38-microinterações-e-acessibilidade">3.8 Microinterações e acessibilidade</h2>
+<ul>
+<li><strong>Feedback de toque:</strong> estado <code>:active</code> com escurecimento de 4 % em tudo que
+  é tocável; <code>utils/haptics.js</code> já existe e pode vibrar no celular Android ao
+  aprovar/negar.</li>
+<li><strong>Toasts</strong> curtos para ações sem mudança visível (copiar, baixar iniciado).</li>
+<li><strong>Foco visível</strong> em todos os controles (<code>:focus-visible</code> com anel de 2 px <code>--v2-accent</code>).</li>
+<li><strong>Contraste:</strong> texto <code>--v2-text-dim</code> só para metadados; conferir 4,5:1 nos
+  dois temas.</li>
+<li><strong>Leitores de tela:</strong> mensagens numa <code>role="log"</code> com <code>aria-live="polite"</code>
+  para a resposta final (não para cada delta).</li>
+<li><strong>Movimento reduzido:</strong> sem animação de entrada, sem pulsar.</li>
+<li><strong>Tamanho de texto:</strong> respeitar o tamanho de fonte do sistema (usar <code>rem</code>
+  nos tokens de texto, com base 16 px) e o controle "Aa" do viewer.</li>
+</ul>
+<hr />
+<h2 id="39-estados-vazios-e-primeira-execução">3.9 Estados vazios e primeira execução</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Onde</th>
+<th>Estado vazio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lista de conversas sem nenhuma</td>
+<td>Ilustração simples + "Converse com um agente sobre qualquer projeto em <code>~/projetos</code>" + botão <strong>Nova conversa</strong></td>
+</tr>
+<tr>
+<td>Projeto sem agente configurado</td>
+<td>"Esta pasta não tem <code>.claude/</code>, <code>.codex/</code> ou <code>.gemini/</code>. Crie uma dessas pastas para conversar com um agente aqui."</td>
+</tr>
+<tr>
+<td>Arquivos sem alterações no git</td>
+<td>"Nada alterado desde o último commit."</td>
+</tr>
+<tr>
+<td>Sem conexão com o PC</td>
+<td>Tela cheia calma: "Não consigo falar com o TaskNexus no seu computador. Confira se ele está ligado e se o Tailscale está conectado." + botão <strong>Tentar de novo</strong></td>
+</tr>
+<tr>
+<td>Primeira abertura no tablet</td>
+<td>Uma dica, uma vez: "Instale na tela de início (Compartilhar › Adicionar à Tela de Início) para receber notificações." (o PWA e o push já existem)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="310-critérios-de-aceite-do-layout">3.10 Critérios de aceite do layout</h2>
+<ol>
+<li>Em 390 px (celular), 820 px (iPad em pé) e 1180 px (iPad deitado) nenhuma
+   tela rola na horizontal.</li>
+<li>Todo controle tocável mede pelo menos 44 × 44 px (verificar com um teste
+   que percorre os botões renderizados e mede <code>getBoundingClientRect</code>).</li>
+<li>Gesto de voltar do iPad volta da conversa para a lista (celular) e fecha o
+   painel de contexto (tablet).</li>
+<li>Abrir <code>/chats/&lt;sk&gt;?painel=arquivo&amp;f=README.md</code> direto na barra de endereço
+   mostra a conversa com o README ao lado.</li>
+<li>Tema escuro e claro corretos em todas as telas novas, sem cor fixa fora dos tokens.</li>
+<li>Com teclado virtual aberto, o composer continua visível e a última mensagem também.</li>
+</ol><div class="pager"><a href="02-chat-conversacional.html"><small>Anterior</small>2 · Chat conversacional</a><a class="next" href="04-melhorias-adicionais.html"><small>Próxima</small>4 · Melhorias adicionais</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

@@ -828,3 +828,51 @@ describe('TarefasV2 — task detail modal: selection lost mid-session', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });
+
+// Fase N: Tarefas parte do projeto escolhido na sidebar (mesma barra, mesmo
+// hook do Board) — subárvore em 3 níveis, e "Raiz" só com a pasta do cliente.
+describe('TarefasV2 — partindo do projeto da sidebar (Fase N)', () => {
+  const tasksOf = () => ({
+    tasks: [
+      fakeTask({ id: 1, titulo: 'Tarefa cliente-only', status: 'pending', projeto_id: 'clienteC' }),
+      fakeTask({ id: 2, titulo: 'Tarefa do projeto', status: 'pending', projeto_id: 'clienteC/proj' }),
+      fakeTask({ id: 3, titulo: 'Tarefa do neto', status: 'pending', projeto_id: 'clienteC/proj/neto' }),
+    ],
+    loading: false,
+    completeTask: vi.fn(),
+    reopenTask: vi.fn(),
+  });
+
+  it('projeto na sidebar: select preenchido e só a subárvore dele (neto incluído)', () => {
+    mockUseGlobalTasks.mockReturnValue(tasksOf());
+    render(<TarefasV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj" />);
+    expect(screen.getByLabelText('Filtrar por projeto').value).toBe('clienteC/proj');
+    expect(screen.queryByText('Tarefa cliente-only')).toBeNull();
+    expect(screen.getByText('Tarefa do projeto')).toBeTruthy();
+    expect(screen.getByText('Tarefa do neto')).toBeTruthy();
+  });
+
+  it('Raiz na sidebar: só as tarefas presas direto no cliente', () => {
+    mockUseGlobalTasks.mockReturnValue(tasksOf());
+    render(<TarefasV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC" />);
+    expect(screen.getByLabelText('Filtrar por projeto').value).toBe('clienteC');
+    expect(screen.getByText('Tarefa cliente-only')).toBeTruthy();
+    expect(screen.queryByText('Tarefa do projeto')).toBeNull();
+    expect(screen.queryByText('Tarefa do neto')).toBeNull();
+  });
+
+  it('refinar na barra e depois mudar a sidebar: a barra volta a acompanhar a sidebar', () => {
+    mockUseGlobalTasks.mockReturnValue(tasksOf());
+    const { rerender } = render(
+      <TarefasV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj" />
+    );
+    fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: '' } });
+    expect(screen.getByText('Tarefa cliente-only')).toBeTruthy();
+
+    rerender(<TarefasV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj/neto" />);
+    expect(screen.getByLabelText('Filtrar por projeto').value).toBe('clienteC/proj/neto');
+    expect(screen.queryByText('Tarefa cliente-only')).toBeNull();
+    expect(screen.queryByText('Tarefa do projeto')).toBeNull();
+    expect(screen.getByText('Tarefa do neto')).toBeTruthy();
+  });
+});

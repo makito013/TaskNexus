@@ -817,3 +817,64 @@ describe('NewChatSheet — presentation="modal": which element receives initial 
     expect(document.activeElement).toBe(primary);
   });
 });
+
+// Fase N: `initialProjetoId` = projeto escolhido na sidebar. O formulário abre
+// com a cascata já apontando para ele, a cada abertura.
+describe('NewChatSheet — abre com o projeto da sidebar (Fase N)', () => {
+  const renderSheet = (props) => render(
+    <NewChatSheet cliente={clienteComCascata} projects={PROJECTS} onClose={vi.fn()} onSubmit={vi.fn()} {...props} />
+  );
+
+  it('projeto primário elegível: "Projeto principal" já preenchido, Subprojeto em "Todo o …"', () => {
+    renderSheet({ open: true, initialProjetoId: 'cascata/gateway' });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cascata/gateway');
+    expect(screen.getByLabelText('Subprojeto').value).toBe('');
+  });
+
+  it('subprojeto fundo elegível: primário E subprojeto preenchidos, e o submit cria o chat nele', () => {
+    const onSubmit = vi.fn();
+    renderSheet({ open: true, initialProjetoId: 'cascata/principal/apps/podesubir-guardapp-rn', onSubmit });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cascata/principal');
+    expect(screen.getByLabelText('Subprojeto').value).toBe('cascata/principal/apps/podesubir-guardapp-rn');
+
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onSubmit).toHaveBeenCalledWith('cascata/principal/apps/podesubir-guardapp-rn', 'claude');
+  });
+
+  it('pasta agrupadora funda (não elegível): só o primário vem preenchido', () => {
+    renderSheet({ open: true, initialProjetoId: 'cascata/principal/apps' });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cascata/principal');
+    expect(screen.getByLabelText('Subprojeto').value).toBe('');
+  });
+
+  it('"Raiz" (o próprio cliente) ou nenhum projeto: cascata no padrão "Raiz de {cliente}"', () => {
+    const { unmount } = renderSheet({ open: true, initialProjetoId: 'cascata' });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('');
+    unmount();
+    renderSheet({ open: true, initialProjetoId: null });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('');
+  });
+
+  it('projeto de outro cliente é ignorado', () => {
+    renderSheet({ open: true, initialProjetoId: 'cliente_projeto_1/gateways' });
+    expect(screen.getByLabelText('Projeto principal').value).toBe('');
+  });
+
+  it('reaplica a pré-seleção a cada abertura, mesmo depois de o usuário ter mudado e cancelado', () => {
+    const { rerender } = renderSheet({ open: false, initialProjetoId: 'cascata/gateway' });
+    rerender(<NewChatSheet open cliente={clienteComCascata} projects={PROJECTS} onClose={vi.fn()} onSubmit={vi.fn()} initialProjetoId="cascata/gateway" />);
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cascata/gateway');
+
+    fireEvent.change(screen.getByLabelText('Projeto principal'), { target: { value: 'cascata/portal_light' } });
+    fireEvent.click(screen.getByText('Cancelar'));
+    rerender(<NewChatSheet open={false} cliente={clienteComCascata} projects={PROJECTS} onClose={vi.fn()} onSubmit={vi.fn()} initialProjetoId="cascata/gateway" />);
+    rerender(<NewChatSheet open cliente={clienteComCascata} projects={PROJECTS} onClose={vi.fn()} onSubmit={vi.fn()} initialProjetoId="cascata/gateway" />);
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cascata/gateway');
+  });
+
+  it('a pré-seleção não fala nada na região live (não foi interação)', () => {
+    renderSheet({ open: true, initialProjetoId: 'cascata/gateway' });
+    expect(document.querySelector('[aria-live="polite"]').textContent).toBe('');
+  });
+});

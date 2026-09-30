@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Planejamento da Fase N</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a class="on" href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a class="on" href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#81-situação-atual-medida-no-código">8.1 Situação atual (medida no código)</a></li><li><a href="#82-a-proposta">8.2 A proposta</a><ul><li><a href="#821-cliente-projeto-na-mesma-área-drill-down">8.2.1 Cliente → projeto na mesma área (drill-down)</a></li><li><a href="#822-espaço-à-direita-para-o-visualizador">8.2.2 Espaço à direita para o visualizador</a></li><li><a href="#823-decisões-fechadas-com-o-bruno">8.2.3 Decisões fechadas com o Bruno</a></li><li><a href="#824-regra-de-recolhimento-escolhida-pela-usabilidade">8.2.4 Regra de recolhimento (escolhida pela usabilidade)</a></li></ul></li><li><a href="#83-implementação-dev">8.3 Implementação (Dev)</a><ul><li><a href="#831-arquivos">8.3.1 Arquivos</a></li><li><a href="#832-estado-de-navegação">8.3.2 Estado de navegação</a></li><li><a href="#833-recolhimento-automático-sem-mexer-na-preferência-salva">8.3.3 Recolhimento automático (sem mexer na preferência salva)</a></li><li><a href="#834-painel-encaixado">8.3.4 Painel encaixado</a></li><li><a href="#835-ordem-dos-commits">8.3.5 Ordem dos commits</a></li></ul></li><li><a href="#84-testes-e-aceite">8.4 Testes e aceite</a><ul><li><a href="#automatizados">Automatizados</a></li><li><a href="#manual-ipad-deitado-ipad-em-pé-desktop-celular">Manual (iPad deitado, iPad em pé, desktop, celular)</a></li></ul></li><li><a href="#85-riscos">8.5 Riscos</a></li><li><a href="#86-definição-de-pronto">8.6 Definição de pronto</a></li><li><a href="#87-como-ficou-implementado-e-onde-divergiu-do-plano">8.7 Como ficou implementado (e onde divergiu do plano)</a><ul><li><a href="#divergências">Divergências</a></li><li><a href="#ponto-de-integração-para-a-fase-v">Ponto de integração para a Fase V</a></li><li><a href="#capturas-backend-real-árvore-de-exemplo-do-mockup">Capturas (backend real, árvore de exemplo do mockup)</a></li></ul></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 8 de 8</p><h1 id="parte-8-planejamento-da-fase-n-cliente-projeto-na-sidebar-e-espaço-para-o-visualizador">Parte 8 — Planejamento da Fase N: cliente → projeto na sidebar e espaço para o visualizador</h1>
+<blockquote>
+<p><strong>O pedido:</strong> liberar espaço no desktop e no tablet. Ao selecionar um
+cliente, <strong>a própria lista de clientes vira a lista de projetos</strong> desse
+cliente, com uma seta ou botão para <strong>voltar à lista de clientes</strong>. Com isso
+sobra espaço no <strong>lado direito</strong> para abrir o visualizador de arquivos
+(o "dropdown" da Fase V).</p>
+<p>É uma mudança pequena e localizada <strong>em cima do layout v2 atual</strong>: a
+sidebar continua onde está, com a mesma largura e o mesmo visual. Muda o
+<strong>conteúdo</strong> da seção de clientes e o que acontece com as colunas quando o
+visualizador abre.</p>
+</blockquote>
+<figure><img src="img/13-mockup-sidebar-cliente-projeto.svg" alt="Cliente → projeto e espaço para o visualizador" loading="lazy"><figcaption>Cliente → projeto e espaço para o visualizador</figcaption></figure>
+<hr />
+<h2 id="81-situação-atual-medida-no-código">8.1 Situação atual (medida no código)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Coluna</th>
+<th>Componente</th>
+<th>Largura</th>
+<th>O que tem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sidebar</td>
+<td><code>SidebarV2.jsx</code> + <code>ClienteList.jsx</code></td>
+<td>240 px (68 px recolhida)</td>
+<td>menu (Chat, Board, Tarefas, Configuração) + "Clientes" (Todos + clientes)</td>
+</tr>
+<tr>
+<td>Lista de chats</td>
+<td><code>ChatSidebarV2.jsx</code> + <code>ChatList.jsx</code></td>
+<td>280 px (68 px recolhida)</td>
+<td>conversas do cliente selecionado</td>
+</tr>
+<tr>
+<td>Conteúdo</td>
+<td><code>ChatV2.jsx</code> (terminal), <code>BoardV2</code>, <code>TarefasV2</code>…</td>
+<td>o resto</td>
+<td>no Board e em Tarefas há ainda uma <strong>barra de selects</strong> Cliente/Projeto (<code>ClienteProjetoFilterBar</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Problemas:</p>
+<ol>
+<li><strong>Projeto não tem lugar na navegação.</strong> Só existe como select na barra
+   do Board/Tarefas, que come uma faixa de ~45 px de altura, e o Chat não
+   filtra por projeto (mostra "Raiz" ou o subprojeto em cada linha).</li>
+<li><strong>Não há espaço para um painel à direita.</strong> Num iPad deitado (1180 px),
+   240 + 280 px deixam 660 px para o terminal. Abrir um visualizador ao lado
+   deixaria ~200 px de terminal.</li>
+</ol>
+<hr />
+<h2 id="82-a-proposta">8.2 A proposta</h2>
+<h3 id="821-cliente-projeto-na-mesma-área-drill-down">8.2.1 Cliente → projeto na mesma área (drill-down)</h3>
+<ol>
+<li><strong>Nível Clientes</strong> (como hoje): "Todos" + clientes. Clientes que têm
+   subprojetos mostram <strong>›</strong> à direita.</li>
+<li>Tocar num cliente <strong>com</strong> subprojetos: a seção inteira troca para o
+   <strong>nível Projetos</strong> daquele cliente, com animação curta de deslizar
+   (respeita <code>prefers-reduced-motion</code>). Tocar num cliente <strong>sem</strong> subprojetos
+   só o seleciona, como hoje.</li>
+<li><strong>Nível Projetos:</strong>
+   - botão <strong>← Clientes</strong> no topo (altura 44 px, largura toda);
+   - rótulo <code>PODESUBIR · PROJETOS</code>;
+   - <strong>Todos os projetos</strong> (= cliente inteiro, igual a selecionar o cliente hoje);
+   - <strong>Raiz</strong> (só se a pasta do cliente for elegível para chat, <code>elegivel: true</code>);
+   - os projetos filhos diretos, em ordem alfabética; os que têm filhos
+     mostram <strong>›</strong> e entram mais um nível: o rótulo vira
+     <code>API-PAGAMENTOS · PROJETOS</code> e o botão de voltar nomeia <strong>para onde ele
+     leva</strong>, <strong>← podesubir</strong> (o pai), no mesmo padrão de <strong>← Clientes</strong>.
+     <em>(Implementação: o texto original dizia "← api-pagamentos"; ver 8.7.)</em></li>
+<li>Selecionar um projeto <strong>filtra todas as telas</strong>: lista de chats, Board,
+   Tarefas e Artefatos.</li>
+<li><strong>A barra de selects continua no Board, em Tarefas e em Artefatos</strong>
+   (decisão do Bruno: "no board ainda tem que ter, principalmente quando
+   estiver em Todos"). Ela passa a <strong>partir</strong> da seleção da sidebar e continua
+   sendo um refinamento <strong>local</strong> da tela, como já é hoje no
+   <code>useClienteProjetoFilter</code>:</li>
+</ol>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Sidebar</th>
+<th>Barra de selects na tela</th>
+<th>O que a barra muda</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Todos</strong></td>
+<td>select de <strong>Cliente</strong> + select de <strong>Projeto</strong> (igual a hoje)</td>
+<td>só a tela atual; o chat e a sidebar não mudam</td>
+</tr>
+<tr>
+<td><strong>Cliente</strong> (Todos os projetos)</td>
+<td>select de <strong>Projeto</strong> do cliente (igual a hoje)</td>
+<td>só a tela atual</td>
+</tr>
+<tr>
+<td><strong>Projeto</strong> escolhido</td>
+<td>select de <strong>Projeto</strong> já <strong>preenchido</strong> com ele (mostra também os subprojetos)</td>
+<td>só a tela atual</td>
+</tr>
+</tbody>
+</table></div>
+<p>Sempre que a seleção da sidebar muda, a barra <strong>volta a acompanhá-la</strong>
+   (o refinamento local é descartado). Assim a sidebar é a base e a barra
+   serve para olhar outro cliente/projeto no Board sem perder o contexto do chat.
+6. <strong>Sidebar recolhida (68 px):</strong> no nível Projetos, o primeiro item é um
+   botão "←" e os projetos aparecem como avatares com iniciais (mesmo
+   <code>.v2-cliente-avatar</code>), com o nome no <code>title</code>. "Todos os projetos" usa o
+   glyph <strong>✱</strong> (o mesmo do "Todos") e "Raiz" usa <strong>⌂</strong>.
+7. <strong>Celular:</strong> o <code>MobileMenuScreen</code> usa o mesmo <code>ClienteList</code> (variante
+   <code>mobile</code>), então ganha o mesmo comportamento, com linhas de 54 px (o botão
+   de voltar também tem 54 px no celular). Entrar num cliente ou projeto com
+   filhos mantém o menu na tela; escolher um projeto segue o caminho do toque
+   num cliente (modal de chats na aba Chat, conteúdo direto nas outras).
+8. <strong>Memória:</strong> cliente, projeto e nível ficam salvos em <code>localStorage</code>
+   (<code>escritorio::v2_nav_scope</code>). Recarregar a página volta para o mesmo lugar.</p>
+<h3 id="822-espaço-à-direita-para-o-visualizador">8.2.2 Espaço à direita para o visualizador</h3>
+<ul>
+<li>O visualizador da Fase V passa a abrir como <strong>painel à direita</strong> (é o
+  "dropdown", só que ancorado na lateral). Continua saindo do botão
+  <strong>Visualizador</strong> do cabeçalho, com abas, <strong>⤢ Tela cheia</strong> e <strong>✕ Fechar</strong>.</li>
+<li><strong>Tela larga (≥ 1100 px: iPad deitado e desktop):</strong> o painel fica <strong>encaixado</strong>
+  (o terminal encolhe, nada fica por baixo), e a sidebar e a lista de chats
+  viram <strong>trilhos de 68 px</strong> automaticamente enquanto ele estiver aberto. Ao
+  fechar, elas voltam exatamente como estavam.</li>
+<li><strong>641–1099 px (iPad em pé, Split View):</strong> o painel abre <strong>por cima</strong>
+  (overlay), sem recolher nada.</li>
+<li><strong>≤ 640 px (celular):</strong> tela cheia, como já planejado.</li>
+<li>Largura do painel encaixado: <code>clamp(420px, 42vw, 780px)</code>.</li>
+</ul>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Largura da janela</th>
+<th>Hoje, sem visualizador</th>
+<th>Se abrisse ao lado hoje</th>
+<th>Proposta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>iPad deitado 1180 px</td>
+<td>240 + 280 · terminal 660</td>
+<td>terminal 200 · painel 460</td>
+<td>68 + 68 · terminal 524 · painel 520</td>
+</tr>
+<tr>
+<td>iPad Pro 13" 1366 px</td>
+<td>240 + 280 · terminal 846</td>
+<td>terminal 346 · painel 500</td>
+<td>68 + 68 · terminal 610 · painel 620</td>
+</tr>
+<tr>
+<td>Desktop 1920 px</td>
+<td>240 + 280 · terminal 1400</td>
+<td>terminal 680 · painel 720</td>
+<td>68 + 68 · terminal 1004 · painel 780</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="823-decisões-fechadas-com-o-bruno">8.2.3 Decisões fechadas com o Bruno</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ponto</th>
+<th>Decisão</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Barra de selects Cliente/Projeto</td>
+<td><strong>Continua</strong> no Board (principalmente em "Todos"), em Tarefas e em Artefatos, partindo da seleção da sidebar e agindo só na tela (item 5 acima)</td>
+</tr>
+<tr>
+<td>Cliente sem subprojetos</td>
+<td><strong>Só seleciona</strong>, não abre o nível Projetos</td>
+</tr>
+<tr>
+<td>Recolher as colunas ao abrir o visualizador</td>
+<td>"O que for melhor em usabilidade" → regra da seção 8.2.4</td>
+</tr>
+<tr>
+<td>Visualizador no chat</td>
+<td>Painel à direita (substitui o dropdown ancorado no botão da Fase V)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="824-regra-de-recolhimento-escolhida-pela-usabilidade">8.2.4 Regra de recolhimento (escolhida pela usabilidade)</h3>
+<ol>
+<li><strong>Tela larga (≥ 1100 px):</strong> ao abrir o visualizador, a sidebar e a lista
+   de chats <strong>recolhem sozinhas</strong> para trilhos de 68 px, com a mesma
+   transição de 180 ms de hoje. Motivo: quem abre um arquivo quer ler, e os
+   trilhos mantêm a navegação a um toque (avatares de projetos e de chats).</li>
+<li><strong>Seu controle vale mais:</strong> com o painel aberto, os botões de recolher
+   continuam funcionando. Se você <strong>expandir</strong> uma coluna, ela fica expandida
+   enquanto o painel estiver aberto (o terminal ou a lista encolhem, e o
+   painel mantém a largura mínima de 420 px).</li>
+<li><strong>Ao fechar o painel</strong>, tudo volta exatamente como estava antes de abrir.
+   A preferência salva (<code>localStorage</code>) <strong>nunca</strong> é alterada pelo recolhimento automático.</li>
+<li><strong>Tela média (641–1099 px)</strong> e <strong>celular:</strong> nada recolhe; o painel abre por
+   cima ou em tela cheia.</li>
+<li><strong>Girar o iPad</strong> com o painel aberto: ao passar para retrato, as colunas
+   voltam e o painel vira overlay; ao voltar para paisagem, recolhem de novo.</li>
+<li>Vale igual quando é o <strong>agente</strong> que abre o arquivo (abertura automática da Fase V).</li>
+</ol>
+<hr />
+<h2 id="83-implementação-dev">8.3 Implementação (Dev)</h2>
+<h3 id="831-arquivos">8.3.1 Arquivos</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/utils/projectTree.js              # NOVO: childrenOf, hasChildren, parentOf, labelFor, isInScope, scopeLabel (puro)
+frontend/src/hooks/useNavScope.js              # NOVO: {clienteId, projetoId, level, parentId} + persistência em localStorage
+frontend/src/layouts/v2/useViewerDockCollapse.js  # NOVO: recolhimento automático com override (8.3.3), testável isolado
+frontend/src/layouts/v2/ClienteList.jsx        # ALTERAR: níveis Clientes/Projetos, voltar, ›, avatares recolhidos
+frontend/src/layouts/v2/SidebarV2.jsx          # ALTERAR: repassa as props novas
+frontend/src/layouts/v2/MobileMenuScreen.jsx   # ALTERAR: repassa as props novas
+frontend/src/layouts/v2/AppV2.jsx              # ALTERAR: useNavScope no lugar de selectedClienteId; recolhimento forçado
+frontend/src/layouts/v2/ChatSidebarV2.jsx      # ALTERAR: repassa o projeto; título "cliente / projeto" (só com projeto)
+frontend/src/layouts/v2/ChatList.jsx           # ALTERAR: filtra por subárvore do projeto (Raiz = só o cliente)
+frontend/src/layouts/v2/MobileChatSheet.jsx    # ALTERAR: título "Chats de cliente / projeto", repassa o projeto
+frontend/src/layouts/v2/NewChatSheet.jsx       # ALTERAR: já abre com cliente e projeto selecionados (initialProjetoId)
+frontend/src/layouts/v2/ClienteProjetoFilterBar.jsx  # ALTERAR: rótulos "Raiz" e caminho relativo em 3+ níveis
+frontend/src/layouts/v2/theme.css              # ALTERAR: animação de troca de nível (só @keyframes + animation)
+frontend/src/layouts/v2/BoardV2.jsx            # ALTERAR: passa selectedProjetoId ao hook; MANTÉM a ClienteProjetoFilterBar
+frontend/src/layouts/v2/TarefasV2.jsx          # ALTERAR: idem
+frontend/src/layouts/v2/useClienteProjetoFilter.js  # ALTERAR: aceita selectedProjetoId da sidebar como ponto de partida;
+                                               #          refinamento local reseta quando a sidebar muda
+frontend/src/utils/viewport.js                 # ALTERAR: + WIDE_VIEWPORT_QUERY = '(min-width: 1100px)'
+</code></pre></div>
+<h3 id="832-estado-de-navegação">8.3.2 Estado de navegação</h3>
+<div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="c1">// useNavScope() → </span>
+<span class="p">{</span>
+<span class="w">  </span><span class="nx">clienteId</span><span class="o">:</span><span class="w"> </span><span class="s1">'podesubir'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">          </span><span class="c1">// null = "Todos"</span>
+<span class="w">  </span><span class="nx">projetoId</span><span class="o">:</span><span class="w"> </span><span class="s1">'podesubir/site'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">     </span><span class="c1">// null = "Todos os projetos" do cliente</span>
+<span class="w">  </span><span class="nx">level</span><span class="o">:</span><span class="w"> </span><span class="s1">'clientes'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'projetos'</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">parentId</span><span class="o">:</span><span class="w"> </span><span class="s1">'podesubir'</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">'podesubir/api-pagamentos'</span><span class="p">,</span><span class="w">   </span><span class="c1">// de quem os filhos estão sendo listados</span>
+<span class="w">  </span><span class="nx">selectCliente</span><span class="p">(</span><span class="nx">id</span><span class="o">|</span><span class="kc">null</span><span class="p">),</span><span class="w"> </span><span class="nx">enterCliente</span><span class="p">(</span><span class="nx">id</span><span class="p">),</span><span class="w"> </span><span class="nx">enterProjeto</span><span class="p">(</span><span class="nx">id</span><span class="p">),</span><span class="w"> </span><span class="nx">selectProjeto</span><span class="p">(</span><span class="nx">id</span><span class="o">|</span><span class="kc">null</span><span class="p">),</span><span class="w"> </span><span class="nx">back</span><span class="p">(),</span><span class="w"> </span><span class="nx">reset</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>projetoId === clienteId</code> é a <strong>Raiz</strong> (só a pasta do cliente, igualdade
+  exata); <code>null</code> é "Todos os projetos" (a subárvore inteira do cliente).</li>
+<li><code>selectCliente</code> (não previsto no plano) é o toque num cliente <strong>sem</strong>
+  subprojetos: seleciona sem entrar. <code>null</code> = "Todos".</li>
+<li>
+<p><code>back()</code> só muda o que a sidebar <strong>lista</strong>; a seleção fica. Quem limpa o
+  filtro é "Todos".</p>
+</li>
+<li>
+<p><code>AppV2</code> troca o <code>useState(selectedClienteId)</code> por <code>useNavScope()</code>, mantendo
+  a inicialização a partir do <code>selectedProjectId</code> do <code>TerminalContext</code>
+  (comportamento atual: abrir já no cliente certo).</p>
+</li>
+<li><code>handleSelectCliente</code> e o novo <code>handleSelectProjeto</code> continuam chamando
+  <code>selectProject(...)</code> do <code>TerminalContext</code>, como hoje, para o chat ativo
+  ficar em sincronia.</li>
+<li>As telas recebem <code>selectedClienteId</code> <strong>e</strong> <code>selectedProjetoId</code>. A regra de
+  filtro é <strong>por prefixo</strong> (<code>collectSubtreeIds</code>, já existente), para o caso de
+  3 níveis (<code>cliente/projeto/sub</code>) que já quebrou no Board.</li>
+</ul>
+<h3 id="833-recolhimento-automático-sem-mexer-na-preferência-salva">8.3.3 Recolhimento automático (sem mexer na preferência salva)</h3>
+<p><code>useSidebarCollapsed</code> grava em <code>localStorage</code> a cada clique. O recolhimento
+automático <strong>não</strong> pode sobrescrever isso, e o usuário precisa poder
+expandir com o painel aberto (8.2.4). Então (implementado no hook
+<code>layouts/v2/useViewerDockCollapse.js</code>, com o override zerado no próprio render
+em que o encaixe muda, em vez do <code>useEffect</code> abaixo):</p>
+<div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">viewerDocked</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">viewerOpen</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">isWide</span><span class="p">;</span><span class="w">              </span><span class="c1">// WIDE_VIEWPORT_QUERY</span>
+<span class="c1">// "expandi à mão com o painel aberto"; zera quando o painel fecha ou deixa de estar encaixado</span>
+<span class="kd">const</span><span class="w"> </span><span class="p">[</span><span class="nx">dockOverride</span><span class="p">,</span><span class="w"> </span><span class="nx">setDockOverride</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">useState</span><span class="p">({</span><span class="w"> </span><span class="nx">sidebar</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nx">chat</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">});</span>
+<span class="nx">useEffect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">viewerDocked</span><span class="p">)</span><span class="w"> </span><span class="nx">setDockOverride</span><span class="p">({</span><span class="w"> </span><span class="nx">sidebar</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nx">chat</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="w"> </span><span class="p">});</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">viewerDocked</span><span class="p">]);</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">sidebarEffective</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">viewerDocked</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="o">!</span><span class="nx">dockOverride</span><span class="p">.</span><span class="nx">sidebar</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="nx">sidebarCollapsed</span><span class="p">;</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">chatSidebarEffective</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">viewerDocked</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="o">!</span><span class="nx">dockOverride</span><span class="p">.</span><span class="nx">chat</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="nx">chatSidebarCollapsed</span><span class="p">;</span>
+
+<span class="c1">// botões de recolher: com o painel encaixado mexem só no override; sem painel, na preferência</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">onToggleSidebar</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span>
+<span class="w">  </span><span class="nx">viewerDocked</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="nx">setDockOverride</span><span class="p">((</span><span class="nx">o</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">({</span><span class="w"> </span><span class="p">...</span><span class="nx">o</span><span class="p">,</span><span class="w"> </span><span class="nx">sidebar</span><span class="o">:</span><span class="w"> </span><span class="o">!</span><span class="nx">o</span><span class="p">.</span><span class="nx">sidebar</span><span class="w"> </span><span class="p">}))</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="nx">toggleSidebar</span><span class="p">();</span>
+</code></pre></div>
+<ul>
+<li><code>SidebarV2</code>/<code>ChatSidebarV2</code> recebem o valor <strong>efetivo</strong> e o handler acima.</li>
+<li>Quando <code>viewerDocked</code> muda, <code>AppV2</code> dispara
+  <code>window.dispatchEvent(new CustomEvent('escritorio:sidebar-toggled'))</code>, o
+  mesmo evento que faz o <code>TerminalPanel</code> reajustar o xterm (ele espera ~250 ms,
+  compatível com a transição de 180 ms de <code>collapseLayout.js</code>).</li>
+<li>Abrir e fechar o painel encaixado também dispara esse evento, porque a
+  largura do terminal muda.</li>
+</ul>
+<h3 id="834-painel-encaixado">8.3.4 Painel encaixado</h3>
+<ul>
+<li>No <code>ChatV2</code> (e no <code>ArtefatosV2</code> da Fase A), o conteúdo vira uma linha flex:
+  <code>[conteúdo flex:1] [ViewerDock largura clamp(420px, 42vw, 780px)]</code>.</li>
+<li><code>ViewerDock</code> renderiza o mesmo <code>ViewerPanel</code> da Fase V. Abaixo de 1100 px o
+  mesmo painel é renderizado como overlay (<code>ViewerDrawer</code>), e no celular como
+  tela cheia (<code>ViewerFullscreen</code>).</li>
+<li>Sem <code>transform</code> em ancestral de elemento <code>position: fixed</code>
+  (<code>fixedPositioningInvariant.test.js</code>).</li>
+</ul>
+<h3 id="835-ordem-dos-commits">8.3.5 Ordem dos commits</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Passo</th>
+<th>Entrega</th>
+<th>Verificação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>projectTree.js</code> + testes (filhos diretos, ›, pai, 3 níveis)</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>useNavScope</code> + persistência + testes</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>ClienteList</code> com níveis e voltar (sidebar e mobile, aberta e recolhida)</td>
+<td>vitest (<code>ClienteList.test.jsx</code>, <code>SidebarV2.test.jsx</code>, <code>MobileMenuScreen.test.jsx</code>)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>AppV2</code> + <code>ChatSidebarV2</code> + <code>NewChatSheet</code> usando o escopo</td>
+<td>vitest (<code>AppV2.test.jsx</code>, <code>ChatSidebarV2.test.jsx</code>, <code>NewChatSheet.test.jsx</code>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>BoardV2</code>/<code>TarefasV2</code>/<code>useClienteProjetoFilter</code> partindo do escopo da sidebar, <strong>mantendo a barra</strong></td>
+<td>vitest (testes de Board/Tarefas/filtro atualizados)</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>WIDE_VIEWPORT_QUERY</code> + recolhimento automático com override + evento de refit</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Doc e aceite manual</td>
+<td>checklist 8.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>O passo 6 pode entrar aqui mesmo que a Fase V ainda não exista: basta um
+<code>viewerOpen</code> que por enquanto é sempre <code>false</code>. Quando a Fase V chegar, ela
+só liga esse valor.</p>
+<hr />
+<h2 id="84-testes-e-aceite">8.4 Testes e aceite</h2>
+<h3 id="automatizados">Automatizados</h3>
+<ul>
+<li><code>projectTree</code>: filhos diretos de cliente e de projeto; <code>hasChildren</code>;
+  ids parecidos (<code>cliente</code> × <code>cliente2/x</code>) não se misturam.</li>
+<li><code>ClienteList</code>: tocar em cliente com filhos entra no nível Projetos; sem
+  filhos só seleciona; <strong>← Clientes</strong> volta; nível 3 mostra <strong>← pai</strong>;
+  recolhida mostra "←" e avatares; variante mobile com 54 px.</li>
+<li><code>useNavScope</code>: grava e restaura do <code>localStorage</code>; ignora valor inválido
+  (projeto que não existe mais → volta para "Todos").</li>
+<li>Chat, Board e Tarefas filtram pela subárvore do projeto selecionado
+  (inclui caso de 3 níveis).</li>
+<li>Recolhimento automático não grava no <code>localStorage</code> e dispara
+  <code>escritorio:sidebar-toggled</code> ao entrar e ao sair.</li>
+<li>Com o painel encaixado, expandir uma coluna mantém ela expandida; fechar o
+  painel devolve o estado anterior; passar a largura abaixo de 1100 px desfaz o recolhimento.</li>
+<li>Barra de selects: em "Todos" mostra Cliente + Projeto e <strong>não</strong> altera a
+  sidebar; com projeto na sidebar, o select já vem preenchido; mudar a sidebar
+  descarta o refinamento local.</li>
+<li><code>fixedPositioningInvariant.test.js</code> continua passando.</li>
+</ul>
+<h3 id="manual-ipad-deitado-ipad-em-pé-desktop-celular">Manual (iPad deitado, iPad em pé, desktop, celular)</h3>
+<ol>
+<li>Tocar em "podesubir": a lista vira os projetos dele com <strong>← Clientes</strong>.</li>
+<li>Tocar em "site-institucional": lista de chats, Board, Tarefas e
+   Artefatos mostram só esse projeto; no Board o select de projeto já vem com ele.
+2b. Com a sidebar em "Todos", o Board continua com os dois selects e trocar
+   o cliente ali não muda a sidebar nem o chat.</li>
+<li><strong>← Clientes</strong> volta; "Todos" limpa o filtro.</li>
+<li>Projeto com subprojetos entra mais um nível e volta para o pai.</li>
+<li>Recarregar a página: continua no mesmo cliente/projeto.</li>
+<li>Com a sidebar recolhida, a navegação por avatares funciona.</li>
+<li>(Com a Fase V) abrir o visualizador no iPad deitado: as duas colunas viram
+   trilhos, o painel ocupa a direita, o terminal se reajusta sem texto
+   quebrado; fechar devolve tudo como estava.</li>
+<li>Mesmo teste no iPad em pé: painel por cima, nada recolhe.</li>
+</ol>
+<hr />
+<h2 id="85-riscos">8.5 Riscos</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risco</th>
+<th>Mitigação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Barra e sidebar discordarem e confundirem</td>
+<td>A barra sempre parte da sidebar e reseta quando ela muda; o rótulo da barra mostra o que está filtrado</td>
+</tr>
+<tr>
+<td>Terminal com texto desalinhado depois de encolher</td>
+<td>Disparar o evento de refit ao abrir/fechar o painel e ao forçar o recolhimento; testar rotação com o painel aberto</td>
+</tr>
+<tr>
+<td>Usuário se perder no nível Projetos</td>
+<td>Rótulo <code>CLIENTE · PROJETOS</code> e botão de voltar sempre visíveis; título da lista de chats mostra "cliente / projeto"</td>
+</tr>
+<tr>
+<td>Projeto salvo que deixou de existir</td>
+<td><code>useNavScope</code> valida contra <code>projects</code> e cai para "Todos"</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="86-definição-de-pronto">8.6 Definição de pronto</h2>
+<ul>
+<li><input type="checkbox" checked disabled> Nível Clientes → Projetos → subprojetos com voltar, na sidebar e no celular.</li>
+<li><input type="checkbox" checked disabled> Chat, Board, Tarefas (e Artefatos, quando existir) filtrados pelo escopo da sidebar; barra de selects mantida no Board/Tarefas/Artefatos, partindo da sidebar.</li>
+<li><input type="checkbox" checked disabled> Recolhimento automático pronto para o visualizador (com override manual), sem alterar a preferência salva.</li>
+<li><input type="checkbox" checked disabled> <code>npm test</code> verde; nenhuma mudança visual fora da seção de clientes e das colunas recolhidas com o painel aberto (exceção documentada em 8.7: o título "cliente / projeto" da lista de chats, que o próprio plano pede em 8.3.1 e 8.5).</li>
+<li><input type="checkbox" checked disabled> Documentação atualizada se a implementação divergir (seção 8.7).</li>
+</ul>
+<hr />
+<h2 id="87-como-ficou-implementado-e-onde-divergiu-do-plano">8.7 Como ficou implementado (e onde divergiu do plano)</h2>
+<h3 id="divergências">Divergências</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Plano</th>
+<th>Implementado</th>
+<th>Por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No 3º nível, o voltar vira <strong>← api-pagamentos</strong></td>
+<td>O voltar nomeia o <strong>destino</strong> (<strong>← podesubir</strong>) e o rótulo nomeia o nó listado (<code>API-PAGAMENTOS · PROJETOS</code>)</td>
+<td>Mesmo padrão de <strong>← Clientes</strong> (que também nomeia o destino); com o nome do nó atual no botão, ele diria "volte para onde você já está". Conferir no iPad</td>
+</tr>
+<tr>
+<td><code>useNavScope</code> com <code>enterCliente/enterProjeto/selectProjeto/back/reset</code></td>
+<td>+ <code>selectCliente(id ou null)</code></td>
+<td>O toque num cliente <strong>sem</strong> subprojetos só seleciona (decisão do Bruno) e precisa de uma ação própria</td>
+</tr>
+<tr>
+<td>"Raiz" sem representação definida</td>
+<td><code>projetoId === clienteId</code>, filtro por <strong>igualdade exata</strong> (só chats/cards/tarefas presos na pasta do cliente); só aparece no nível do cliente; na barra do Board/Tarefas vira uma opção "Raiz" quando a sidebar está nela</td>
+<td>É o único par que não tinha significado (a subárvore do cliente já é <code>projetoId: null</code>)</td>
+</tr>
+<tr>
+<td>Nos subníveis, "Todos os projetos" sem definição</td>
+<td>"Todos os projetos" = a subárvore do nó listado (ex.: <code>api-pagamentos</code> inteiro)</td>
+<td>Mesma ideia do nível do cliente, sem inventar rótulo novo</td>
+</tr>
+<tr>
+<td>Título da lista de chats "cliente / projeto"</td>
+<td>Mostrado <strong>só quando há projeto</strong> (com cliente inteiro ou "Todos" a coluna fica idêntica à de antes); no celular o título do sheet vira "Chats de cliente / projeto"</td>
+<td>Cumprir o pedido de não mudar o visual fora da sidebar nos estados que já existiam</td>
+</tr>
+<tr>
+<td>Recolhida: "←" + avatares dos projetos</td>
+<td>+ ✱ "Todos os projetos" e ⌂ "Raiz"</td>
+<td>Sem eles não dá para voltar ao cliente inteiro nem escolher a Raiz com a sidebar recolhida</td>
+</tr>
+<tr>
+<td>Voltar com 44 px</td>
+<td>44 px na sidebar, <strong>54 px no celular</strong></td>
+<td>Mesma altura das linhas do menu mobile</td>
+</tr>
+<tr>
+<td>Código do recolhimento dentro do <code>AppV2</code></td>
+<td>Hook <code>useViewerDockCollapse</code></td>
+<td>Testável sem o visualizador existir; a Fase V só liga <code>viewerOpen</code></td>
+</tr>
+<tr>
+<td>Barra reseta "quando a sidebar muda" (efeito)</td>
+<td>O descarte do refinamento acontece <strong>no mesmo render</strong> em que a sidebar muda</td>
+<td>Com efeito, esse render ainda buscaria cards pelo refinamento velho</td>
+</tr>
+<tr>
+<td>Barra com projeto da sidebar "mostra também os subprojetos"</td>
+<td>Opções = filhos diretos do cliente + ancestrais e subárvore do projeto da sidebar, em ordem de árvore; 3+ níveis aparecem como caminho (<code>api-pagamentos / v2</code>)</td>
+<td>O valor pré-preenchido precisa ser uma opção do <code>&lt;select&gt;</code></td>
+</tr>
+<tr>
+<td>Valor salvo inválido → "Todos"</td>
+<td>Validação só <strong>depois</strong> que <code>/api/projects</code> chega; qualquer peça inválida (cliente, projeto ou pai sem filhos) → "Todos"</td>
+<td><code>useProjects</code> começa com <code>[]</code>; validar antes apagaria a escolha salva em todo reload</td>
+</tr>
+<tr>
+<td>Linhas da sidebar</td>
+<td>Viram <code>role="button"</code> com Enter/Espaço; foco vai ao voltar ao entrar (e volta à linha de origem ao sair) <strong>só pelo teclado</strong></td>
+<td>Com um nível a mais, projetos inteiros ficariam fora do alcance do teclado do iPad</td>
+</tr>
+<tr>
+<td>Artefatos</td>
+<td>Não existe ainda (Fase A)</td>
+<td>O filtro por <code>useNavScope</code> já está pronto para a tela nova</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="ponto-de-integração-para-a-fase-v">Ponto de integração para a Fase V</h3>
+<ul>
+<li><code>AppV2.jsx</code>: <code>const [viewerOpen, setViewerOpen] = useState(false)</code> — a Fase V
+  chama <code>setViewerOpen(true/false)</code> ao abrir/fechar o painel (botão do
+  cabeçalho ou frame <code>viewer_open</code> do agente).</li>
+<li><code>dock = useViewerDockCollapse({ viewerOpen, isWide, … })</code>: com
+  <code>dock.viewerDocked === true</code> (≥ 1100 px) renderizar o <code>ViewerDock</code> à direita
+  do <code>ChatV2</code>; senão, overlay (<code>ViewerDrawer</code>) ou tela cheia no celular. As
+  colunas já recebem <code>dock.sidebarCollapsed</code>/<code>dock.chatSidebarCollapsed</code> e os
+  handlers <code>dock.onToggleSidebar</code>/<code>dock.onToggleChatSidebar</code>; o refit do
+  terminal (<code>escritorio:sidebar-toggled</code>) já dispara a cada troca de encaixe.</li>
+<li>Filtro do escopo para a tela Artefatos (Fase A): <code>nav.clienteId</code> e
+  <code>nav.projetoId</code> no <code>AppV2</code>, com <code>isInScope(projetoId, clienteId, projetoId)</code>
+  de <code>utils/projectTree.js</code>, e a barra via
+  <code>useClienteProjetoFilter(projects, clienteId, projetoId)</code>.</li>
+</ul>
+<h3 id="capturas-backend-real-árvore-de-exemplo-do-mockup">Capturas (backend real, árvore de exemplo do mockup)</h3>
+<p>Tiradas com Playwright em 1180×820 (iPad deitado), 820×1180 (iPad em pé) e
+390×844 (celular). Em nenhuma a página rola na horizontal; o único contêiner
+com rolagem horizontal é o das colunas do Board, que já rolava assim.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tela</th>
+<th>1180×820</th>
+<th>820×1180</th>
+<th>390×844</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nível Clientes</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--1-sidebar-clientes.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--1-sidebar-clientes.png">ver</a></td>
+<td><a href="img/fase-n/celular-390x844--1-menu-clientes.png">ver</a></td>
+</tr>
+<tr>
+<td>Nível Projetos (com filtro no chat)</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--2-sidebar-projetos.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--2-sidebar-projetos.png">ver</a></td>
+<td><a href="img/fase-n/celular-390x844--2-menu-projetos.png">ver</a></td>
+</tr>
+<tr>
+<td>Subprojetos (3º nível)</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--3-sidebar-subprojetos.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--3-sidebar-subprojetos.png">ver</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sidebar recolhida no nível Projetos</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--4-sidebar-recolhida-projetos.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--4-sidebar-recolhida-projetos.png">ver</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Sidebar e conversas recolhidas</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--5-sidebar-e-conversas-recolhidas.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--5-sidebar-e-conversas-recolhidas.png">ver</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Chats do projeto (sheet)</td>
+<td>—</td>
+<td>—</td>
+<td><a href="img/fase-n/celular-390x844--3-chats-do-projeto.png">ver</a></td>
+</tr>
+<tr>
+<td>Board com projeto da sidebar</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--6-board-projeto-da-sidebar.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--6-board-projeto-da-sidebar.png">ver</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Board em "Todos" com a barra</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--7-board-todos-barra-de-selects.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--7-board-todos-barra-de-selects.png">ver</a></td>
+<td><a href="img/fase-n/celular-390x844--4-board-todos-barra-de-selects.png">ver</a></td>
+</tr>
+<tr>
+<td>Board em "Todos", cliente escolhido na barra</td>
+<td><a href="img/fase-n/ipad-paisagem-1180x820--8-board-todos-cliente-escolhido-na-barra.png">ver</a></td>
+<td><a href="img/fase-n/ipad-retrato-820x1180--8-board-todos-cliente-escolhido-na-barra.png">ver</a></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Achado pré-existente (não corrigido nesta fase):</strong> no celular, o botão
+"Limpar concluídos" do Board se sobrepõe ao select "Todos os projetos" (a
+<code>main</code> mostra o mesmo). Fica para uma rodada que possa mexer no cabeçalho do
+Board.</p><div class="pager"><a href="07-planejamento-artefatos.html"><small>Anterior</small>7 · Planejamento da Fase A</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

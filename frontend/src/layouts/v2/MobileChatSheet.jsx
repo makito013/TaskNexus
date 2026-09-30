@@ -14,12 +14,18 @@
 // `escapeEnabled={!newChatSheetOpen}` no BottomSheet externo: mitiga ESC
 // fechando as duas sheets empilhadas de uma vez quando o NewChatSheet
 // (aninhado, seu próprio BottomSheet) está aberto por cima deste.
+//
+// Fase N: com um projeto escolhido no menu (`selectedProjetoId`), o título
+// vira "Chats de cliente / projeto", a lista filtra pela subárvore dele
+// (ChatList) e o "+ Novo chat" abre já apontando para ele — o mesmo contrato
+// da ChatSidebarV2 no desktop.
 
 import { useEffect, useState } from 'react';
 import { BottomSheet } from './BottomSheet.jsx';
 import { ChatList } from './ChatList.jsx';
 import { NewChatSheet } from './NewChatSheet.jsx';
 import { isClienteId } from '../../utils/clientes.js';
+import { scopeLabel } from '../../utils/projectTree.js';
 
 const styles = {
   header: {
@@ -81,10 +87,10 @@ const styles = {
   }),
 };
 
-function titleFor(selectedClienteId, selectedCliente, clienteOrfao) {
+function titleFor(selectedClienteId, selectedCliente, clienteOrfao, projetoLabel) {
   if (selectedClienteId == null) return 'Todos os chats';
   if (clienteOrfao) return 'Cliente não encontrado';
-  return `Chats de ${selectedCliente?.nome || selectedClienteId}`;
+  return `Chats de ${projetoLabel || selectedCliente?.nome || selectedClienteId}`;
 }
 
 export function MobileChatSheet({
@@ -95,6 +101,7 @@ export function MobileChatSheet({
   activeSessions,
   persistedSessions,
   selectedClienteId,
+  selectedProjetoId = null,
   onSelectChat,
   onRenameChat,
   onCloseChat,
@@ -113,6 +120,9 @@ export function MobileChatSheet({
   const noClienteSelecionado = selectedClienteId == null;
   const clienteOrfao = !noClienteSelecionado && !selectedCliente;
   const newChatDisabled = clienteOrfao;
+  const projetoLabel = selectedProjetoId != null && selectedClienteId != null
+    ? scopeLabel(selectedClienteId, selectedProjetoId, projects)
+    : null;
 
   // Achado da Segurança (etapa 9, retrabalho): `open` indo pra `false` fecha
   // o BottomSheet externo (que apenas retorna null — ver BottomSheet.jsx),
@@ -169,7 +179,7 @@ export function MobileChatSheet({
       escapeEnabled={!newChatSheetOpen}
     >
       <div style={styles.header}>
-        <div style={styles.title}>{titleFor(selectedClienteId, selectedCliente, clienteOrfao)}</div>
+        <div style={styles.title}>{titleFor(selectedClienteId, selectedCliente, clienteOrfao, projetoLabel)}</div>
       </div>
 
       <div style={styles.scrollArea}>
@@ -179,6 +189,7 @@ export function MobileChatSheet({
           activeSessions={activeSessions}
           persistedSessions={persistedSessions}
           selectedClienteId={selectedClienteId}
+          selectedProjetoId={selectedProjetoId}
           onSelectChat={handleSelectChat}
           onRenameChat={onRenameChat}
           onCloseChat={onCloseChat}
@@ -198,7 +209,7 @@ export function MobileChatSheet({
               ? 'Cliente selecionado não encontrado em projects'
               : noClienteSelecionado
               ? 'Novo chat — escolha o cliente'
-              : `Novo chat em ${selectedCliente?.nome || selectedClienteId}`
+              : `Novo chat em ${projetoLabel || selectedCliente?.nome || selectedClienteId}`
           }
         >
           + Novo chat
@@ -212,6 +223,7 @@ export function MobileChatSheet({
           cliente={selectedCliente}
           clientes={clientes}
           projects={projects}
+          initialProjetoId={selectedProjetoId}
           presentation="sheet"
           onSubmit={onStartNewChat}
           onRetryProjects={onRetryProjects}

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Visão geral e diagnóstico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a class="on" href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a class="on" href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#01-o-pedido-em-uma-frase-por-item">0.1 O pedido, em uma frase por item</a></li><li><a href="#02-a-equipe-e-o-que-cada-papel-olhou">0.2 A equipe e o que cada papel olhou</a></li><li><a href="#03-como-o-tasknexus-funciona-hoje-resumo-técnico">0.3 Como o TaskNexus funciona hoje (resumo técnico)</a></li><li><a href="#04-por-que-o-terminal-é-ruim-no-tablet-causa-raiz">0.4 Por que o terminal é ruim no tablet (causa raiz)</a></li><li><a href="#05-a-solução-em-uma-imagem">0.5 A solução em uma imagem</a></li><li><a href="#06-decisões-importantes-e-o-que-foi-descartado">0.6 Decisões importantes e o que foi descartado</a></li><li><a href="#07-glossário-rápido">0.7 Glossário rápido</a></li><li><a href="#08-como-ler-e-usar-estes-documentos-com-um-agente">0.8 Como ler e usar estes documentos com um agente</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 0 de 8</p><h1 id="parte-0-visão-geral-e-diagnóstico">Parte 0 — Visão geral e diagnóstico</h1>
+<blockquote>
+<p><strong>Para quem é este documento:</strong> para você (Bruno) entender o problema e as
+decisões, e para o agente que vai implementar entender <em>por que</em> cada
+decisão foi tomada antes de mexer no código. Leia esta parte antes das outras.</p>
+</blockquote>
+<h2 id="01-o-pedido-em-uma-frase-por-item">0.1 O pedido, em uma frase por item</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pedido</th>
+<th>Onde está a solução</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0a</td>
+<td>Liberar espaço: a lista de clientes da sidebar vira a lista de projetos do cliente (com voltar), sobrando o lado direito para o visualizador</td>
+<td><a href="08-planejamento-navegacao-cliente-projeto.html">Parte 8 — Planejamento da Fase N</a></td>
+</tr>
+<tr>
+<td>1a</td>
+<td><strong>Primeira entrega:</strong> como links no terminal não são clicáveis, o próprio agente faz o arquivo aparecer na tela, cada abertura vira uma aba nova, com botão de tela cheia</td>
+<td><a href="06-planejamento-fase-v.html">Parte 6 — Planejamento da Fase V</a></td>
+</tr>
+<tr>
+<td>1a+</td>
+<td>Aba <strong>Artefatos</strong> por cliente e projeto (md, pdf, html), abrindo no painel lateral de visualização, sem mudar o layout</td>
+<td><a href="07-planejamento-artefatos.html">Parte 7 — Planejamento da Fase A</a></td>
+</tr>
+<tr>
+<td>1b</td>
+<td>Ver arquivos <code>.html</code>, <code>.md</code> e de código no tablet e poder baixá-los, com o TaskNexus rodando no PC (navegador de arquivos completo)</td>
+<td><a href="01-visualizador-de-arquivos.html">Parte 1 — Visualizador de arquivos</a></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Trocar o terminal por uma conversa estilo WhatsApp, com links, blocos de código e markdown como no GitHub</td>
+<td><a href="02-chat-conversacional.html">Parte 2 — Chat conversacional</a></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Layout mais amigável</td>
+<td><a href="03-layout-amigavel.html">Parte 3 — Layout amigável</a></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Outras melhorias que a equipe enxergar</td>
+<td><a href="04-melhorias-adicionais.html">Parte 4 — Melhorias adicionais</a></td>
+</tr>
+<tr>
+<td>—</td>
+<td>Como executar tudo isso com um agente</td>
+<td><a href="05-plano-de-execucao-e-prompts.html">Parte 5 — Plano de execução e prompts</a></td>
+</tr>
+<tr>
+<td>—</td>
+<td>Retomar o trabalho numa janela nova</td>
+<td><a href="CONTEXTO-PARA-AGENTE.html">Contexto para o agente</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="02-a-equipe-e-o-que-cada-papel-olhou">0.2 A equipe e o que cada papel olhou</h2>
+<p>O documento foi escrito combinando quatro olhares. Em cada parte você vai ver
+seções marcadas com o papel que respondeu por elas.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Papel</th>
+<th>Pergunta que respondeu</th>
+<th>Onde aparece</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Design</strong></td>
+<td>Como isso deve parecer no iPad, no celular e no PC? Que tokens, tipografia e componentes?</td>
+<td>Mockups, seção "Design" de cada parte, Parte 3 inteira</td>
+</tr>
+<tr>
+<td><strong>UX</strong></td>
+<td>Qual é o caminho mais curto do dedo até o resultado? O que acontece quando dá errado?</td>
+<td>Fluxos, estados vazios/erro, gestos, atalhos</td>
+</tr>
+<tr>
+<td><strong>TL (tech lead)</strong></td>
+<td>Qual arquitetura resolve de verdade, sem gambiarra, e o que ela arrisca?</td>
+<td>Diagramas de arquitetura, decisões com alternativas descartadas, segurança</td>
+</tr>
+<tr>
+<td><strong>Dev</strong></td>
+<td>Quais arquivos criar/alterar, com qual contrato, e como testar?</td>
+<td>Seções "Implementação", contratos de API, critérios de aceite, Parte 5</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="03-como-o-tasknexus-funciona-hoje-resumo-técnico">0.3 Como o TaskNexus funciona hoje (resumo técnico)</h2>
+<ul>
+<li><strong>Backend:</strong> Python + FastAPI (<code>backend/app/main.py</code>, ~2.950 linhas num arquivo só).</li>
+<li><strong>Frontend:</strong> React 18 + Vite, sem TypeScript e sem biblioteca de UI. Layout
+  ativo é o <strong>v2</strong> (<code>frontend/src/layouts/v2/</code>), com tokens de cor <code>--v2-*</code> em
+  <code>theme.css</code> e fontes Figtree + IBM Plex Mono self-hosted.</li>
+<li><strong>Conversa com os agentes:</strong> cada sessão é um processo <code>claude</code>, <code>codex</code>,
+  <code>agy</code>, <code>cursor-agent</code> ou um shell, rodando dentro de um <strong>PTY</strong> no seu PC
+  (<code>backend/app/pty_manager.py</code>). O navegador recebe os <strong>bytes crus</strong> do PTY
+  por WebSocket (<code>/ws/pty/{session_key}</code>) e desenha num <strong>xterm.js</strong>
+  (<code>frontend/src/components/TerminalPanel.jsx</code>).</li>
+<li><strong>Chave de sessão:</strong> <code>session_key = "{projectId}::{agentId}[::sufixo]"</code>. O id
+  de conversa do CLI fica em <code>sessions.db</code> (tabela <code>sessions</code>,
+  <code>ConversationStore</code>), e é o que permite <code>--resume</code>.</li>
+<li><strong>Notificação de fim de turno:</strong> hook <code>Stop</code> do claude (e <code>notify</code> do codex)
+  faz POST em <code>/api/hooks/stop</code> → <code>mark_needs_attention</code> → badge, som e Web Push.</li>
+<li><strong>Board e Tarefas:</strong> CRUD em SQLite, e os agentes criam cards/tarefas via
+  dois servidores MCP injetados no spawn.</li>
+<li><strong>Anexos:</strong> já existe upload por projeto em <code>.escritorio/attachments/</code>
+  (<code>backend/app/attachments.py</code>) e o botão "Usar no chat", que cola o caminho
+  no terminal.</li>
+<li><strong>Autenticação:</strong> <strong>nenhuma.</strong> A premissa é "só eu acesso, pela minha
+  Tailscale/LAN". Isso importa muito para a Parte 1 (ver 0.6).</li>
+</ul>
+<figure><img src="img/01-arquitetura-atual.svg" alt="Arquitetura atual" loading="lazy"><figcaption>Arquitetura atual</figcaption></figure>
+<h2 id="04-por-que-o-terminal-é-ruim-no-tablet-causa-raiz">0.4 Por que o terminal é ruim no tablet (causa raiz)</h2>
+<p>O problema não é o tema nem o tamanho da fonte. É estrutural:</p>
+<ol>
+<li><strong>O texto vira desenho.</strong> O xterm.js pinta os caracteres num <code>&lt;canvas&gt;</code>
+   (ou WebGL). O iPadOS não tem texto real para selecionar, então o toque
+   longo, a lupa e o menu "Copiar" nativos não funcionam. Qualquer solução
+   de cópia dentro do xterm é imitação da seleção nativa.</li>
+<li><strong>O servidor não sabe o que é uma mensagem.</strong> O backend só repassa bytes.
+   Ele não sabe onde começa a resposta do agente, onde está um bloco de
+   código, um link, ou um pedido de permissão. Sem essa estrutura não dá para
+   desenhar bolhas, botão de copiar código ou botão "Permitir".</li>
+<li><strong>A TUI dos agentes é feita para teclado físico.</strong> Esc, Tab, Shift+Tab,
+   Ctrl+C e setas são o jeito de operar o claude/codex. No teclado virtual
+   essas teclas não existem, por isso nasceu o FAB de atalhos
+   (<code>TerminalShortcutsFab.jsx</code>), que é um remendo bem feito, mas remendo.</li>
+<li><strong>Resize e rotação quebram a tela.</strong> A TUI desenha com posição absoluta
+   de cursor. Girar o iPad muda colunas/linhas e o snapshot antigo reflui mal
+   (o próprio código já documenta isso em <code>pty_endpoint</code>).</li>
+<li><strong>Links não são clicáveis.</strong> O projeto não usa <code>@xterm/addon-web-links</code>
+   nem um link provider. URLs e caminhos <code>arquivo.py:42</code> são só texto.</li>
+</ol>
+<p><strong>Conclusão do TL:</strong> dá para melhorar o terminal (e a Parte 4 traz quick wins
+para isso), mas o salto que você pediu só acontece quando o backend passa a
+receber <strong>eventos estruturados</strong> do agente, em vez de pixels de terminal. Os
+CLIs do claude e do codex já oferecem isso oficialmente, e o chat é construído
+em cima disso.</p>
+<h2 id="05-a-solução-em-uma-imagem">0.5 A solução em uma imagem</h2>
+<figure><img src="img/02-arquitetura-proposta.svg" alt="Arquitetura proposta" loading="lazy"><figcaption>Arquitetura proposta</figcaption></figure>
+<p>Três ideias sustentam tudo:</p>
+<ol>
+<li><strong>Chat estruturado ao lado do terminal, não no lugar dele.</strong> Para <code>claude</code>
+   e <code>codex</code>, a sessão passa a abrir por padrão em <strong>modo Chat</strong>: o backend
+   roda o CLI no modo headless com saída JSON e repassa eventos normalizados
+   para a tela. O <strong>modo Terminal</strong> continua existindo, com o mesmo id de
+   conversa, para quem quiser a TUI ou para agentes sem modo JSON (<code>agy</code>,
+   <code>cursor</code>, shell).</li>
+<li><strong>Tudo que é arquivo vira link.</strong> Qualquer caminho que o agente menciona
+   no chat abre o <strong>visualizador de arquivos</strong>, com preview de markdown,
+   HTML e código, diff do git e botões de baixar e compartilhar.</li>
+<li><strong>O layout passa a ser pensado para o toque primeiro.</strong> Lista de conversas
+   estilo WhatsApp, três painéis no iPad deitado, pilha com abas no celular,
+   alvos de toque de 44 px e texto real (selecionável) em tudo.</li>
+</ol>
+<h2 id="06-decisões-importantes-e-o-que-foi-descartado">0.6 Decisões importantes e o que foi descartado</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Decisão</th>
+<th>Escolhida</th>
+<th>Descartada e por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>De onde vem a conversa estruturada</td>
+<td>Modo headless oficial: <code>claude -p --input-format stream-json --output-format stream-json</code> (Parte 2)</td>
+<td><strong>Ler a tela do terminal e "adivinhar" mensagens:</strong> frágil, quebra a cada versão do CLI. O README do projeto já rejeita parsing de terminal.</td>
+</tr>
+<tr>
+<td>O terminal some?</td>
+<td>Não. Vira "modo Terminal", alternável por sessão</td>
+<td>Remover: perderia <code>agy</code>, <code>cursor</code>, shells e os comandos de TUI (<code>/config</code>, <code>/model</code> interativos).</td>
+</tr>
+<tr>
+<td>Histórico ao abrir uma conversa antiga</td>
+<td>Log próprio <code>chat_events</code> no SQLite + importação única do <code>.jsonl</code> do claude</td>
+<td>Só ler o <code>.jsonl</code> sempre: formato interno do CLI, pode mudar sem aviso. Usamos só para importar uma vez.</td>
+</tr>
+<tr>
+<td>Preview de HTML</td>
+<td><code>&lt;iframe sandbox="allow-scripts"&gt;</code> servindo o arquivo de uma rota própria com CSP <code>sandbox</code></td>
+<td>Injetar o HTML na página: o HTML poderia chamar a API do TaskNexus (criar card, apagar coluna) com a sua sessão.</td>
+</tr>
+<tr>
+<td>Destaque de sintaxe</td>
+<td><strong>Shiki</strong> com carregamento preguiçoso das linguagens</td>
+<td>highlight.js: mais leve, porém visual pior e sem os temas do VS Code; Prism: manutenção parada.</td>
+</tr>
+<tr>
+<td>Autenticação</td>
+<td><strong>Obrigatória antes do navegador de arquivos completo</strong> (Parte 1 / fase F1). A Fase V pode vir antes porque só serve arquivos que o agente (ou você) abriu, por um id aleatório, com denylist</td>
+<td>Continuar sem auth: com a API de arquivos livre, qualquer um na sua rede baixaria seu <code>~/.ssh</code> se um caminho escapasse. Ver Parte 4, item 4.1.</td>
+</tr>
+<tr>
+<td>Primeira entrega</td>
+<td><strong>Fase V:</strong> tool MCP <code>abrir_no_visualizador</code> + visualizador em dropdown com abas e tela cheia (Parte 6)</td>
+<td>Começar pelo chat estruturado: resolve mais, mas demora muito mais; o problema imediato é não conseguir abrir arquivos</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="07-glossário-rápido">0.7 Glossário rápido</h2>
+<ul>
+<li><strong>PTY:</strong> terminal virtual. É o "fio" que liga o processo do agente ao xterm.js.</li>
+<li><strong>TUI:</strong> interface de texto desenhada no terminal (o visual do <code>claude</code> interativo).</li>
+<li><strong>Headless / <code>-p</code>:</strong> modo do CLI sem TUI, que conversa em JSON pela entrada e saída padrão.</li>
+<li><strong>stream-json:</strong> formato em que cada linha é um objeto JSON (um evento).</li>
+<li><strong>Evento normalizado:</strong> o formato único que o TaskNexus usa internamente, igual para claude e codex (Parte 2, seção 2.5).</li>
+<li><strong>Sandbox (iframe):</strong> isola o HTML visualizado para ele não acessar a página nem a API.</li>
+<li><strong>Token de acesso:</strong> senha longa gerada pelo servidor para você entrar no TaskNexus pelo tablet.</li>
+</ul>
+<h2 id="08-como-ler-e-usar-estes-documentos-com-um-agente">0.8 Como ler e usar estes documentos com um agente</h2>
+<ol>
+<li>Leia as Partes 1 a 4 na ordem, olhando os mockups.</li>
+<li>Marque o que você não quer (cada melhoria tem id, ex.: <code>4.3</code>).</li>
+<li>Comece pela <strong>Fase V</strong> (<a href="06-planejamento-fase-v.html">Parte 6</a>). Para as
+   fases seguintes, abra a <a href="05-plano-de-execucao-e-prompts.html">Parte 5</a> e copie o prompt da fase
+   que quer executar. Cada prompt já manda o agente ler as partes relevantes
+   deste diretório, então <strong>mantenha a pasta <code>docs/melhorias-tablet/</code> no repositório</strong>.</li>
+<li>Execute uma fase por PR. Cada fase foi desenhada para funcionar sozinha.</li>
+</ol><div class="pager"><a href="CONTEXTO-PARA-AGENTE.html"><small>Anterior</small>C · Contexto para o agente</a><a class="next" href="01-visualizador-de-arquivos.html"><small>Próxima</small>1 · Visualizador de arquivos</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 480" role="img" aria-label="Arquitetura atual: o navegador desenha a saída bruta do terminal num canvas xterm.js, o que impede seleção, links e leitura confortável no tablet">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b3530"/></marker>
+  </defs>
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .t{font-size:15px;font-weight:700}
+    .s{font-size:12px;fill:#6b645c}
+    .l{font-size:12px;font-weight:600}
+    .p{font-size:12px;fill:#a4412f}
+  </style>
+  <rect width="1000" height="480" rx="14" fill="#f7f5f0"/>
+  <text x="24" y="34" class="t">Hoje: um terminal de verdade dentro do navegador</text>
+
+  <!-- device -->
+  <rect x="24" y="60" width="250" height="220" rx="16" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="44" y="86" class="l">iPad · Safari</text>
+  <rect x="44" y="98" width="210" height="160" rx="8" fill="#26282e"/>
+  <text x="56" y="120" class="m" font-size="11" fill="#9fd9c5" style="fill:#9fd9c5">&gt; claude</text>
+  <text x="56" y="138" class="m" font-size="11" style="fill:#e6e3dd">╭──────────────────╮</text>
+  <text x="56" y="154" class="m" font-size="11" style="fill:#e6e3dd">│ Editando main.py │</text>
+  <text x="56" y="170" class="m" font-size="11" style="fill:#e6e3dd">╰──────────────────╯</text>
+  <text x="56" y="190" class="m" font-size="11" style="fill:#b9b4ab">https://exemplo.com/…</text>
+  <text x="56" y="210" class="m" font-size="11" style="fill:#b9b4ab">src/app/main.py:42</text>
+  <text x="56" y="240" class="m" font-size="11" style="fill:#9fd9c5">❯ █</text>
+  <text x="44" y="272" class="s">xterm.js pinta pixels num &lt;canvas&gt;</text>
+
+  <!-- backend -->
+  <rect x="380" y="60" width="250" height="220" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="400" y="86" class="l">Backend FastAPI (seu PC)</text>
+  <rect x="400" y="100" width="210" height="52" rx="8" fill="#eef6f2" stroke="#3f8f7c"/>
+  <text x="414" y="122" class="l">pty_endpoint</text>
+  <text x="414" y="140" class="s m">/ws/pty/{session_key}</text>
+  <rect x="400" y="170" width="210" height="52" rx="8" fill="#eef6f2" stroke="#3f8f7c"/>
+  <text x="414" y="192" class="l">PTYProcess</text>
+  <text x="414" y="210" class="s m">pty_manager.py · snapshot()</text>
+  <text x="400" y="252" class="s">Guarda o scrollback bruto (bytes)</text>
+  <text x="400" y="268" class="s">para reconectar sem perder a tela</text>
+
+  <!-- CLI -->
+  <rect x="736" y="60" width="240" height="220" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="756" y="86" class="l">Agente (processo filho)</text>
+  <rect x="756" y="100" width="200" height="52" rx="8" fill="#eef0fa" stroke="#5b6fbf"/>
+  <text x="770" y="122" class="l">claude / codex / agy</text>
+  <text x="770" y="140" class="s">interface TUI interativa</text>
+  <text x="756" y="178" class="s">Escreve sequências ANSI:</text>
+  <text x="756" y="196" class="s m">ESC[2J  ESC[12;4H  ESC[32m</text>
+  <text x="756" y="222" class="s">Salva a conversa em</text>
+  <text x="756" y="240" class="s m">~/.claude/projects/…/*.jsonl</text>
+
+  <line x1="278" y1="135" x2="376" y2="135" stroke="#3b3530" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="292" y="126" class="s">teclas (bytes)</text>
+  <line x1="376" y1="185" x2="278" y2="185" stroke="#3b3530" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="290" y="204" class="s">saída ANSI (bytes)</text>
+  <line x1="634" y1="135" x2="732" y2="135" stroke="#3b3530" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="652" y="126" class="s">stdin do PTY</text>
+  <line x1="732" y1="185" x2="634" y2="185" stroke="#3b3530" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="648" y="204" class="s">stdout do PTY</text>
+
+  <!-- problems -->
+  <rect x="24" y="300" width="952" height="160" rx="10" fill="#fbeeea" stroke="#e2b8ad"/>
+  <text x="44" y="326" class="l" style="fill:#a4412f">O que isso causa no tablet</text>
+  <text x="44" y="350" class="p">① Texto é desenho: não dá para selecionar e copiar com o toque nativo do iPadOS.</text>
+  <text x="44" y="370" class="p">② Links e caminhos de arquivo não são reconhecidos (nenhum addon de links ativo).</text>
+  <text x="44" y="390" class="p">③ O servidor só conhece bytes: não sabe onde começa uma mensagem, um bloco de código ou um pedido de permissão.</text>
+  <text x="44" y="410" class="p">④ Teclado virtual sem Esc/Tab/Ctrl: precisa do FAB de atalhos.</text>
+  <text x="44" y="430" class="p">⑤ Rotação/resize reflui mal: a TUI usa posição absoluta.</text>
+</svg>

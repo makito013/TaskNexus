@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" xml:space="preserve" role="img" aria-label="Tela Artefatos no layout v2 atual: menu lateral com o novo item Artefatos e a lista de projetos do cliente, chips de tipo e busca, cartões de artefatos agrupados por projeto e, à direita, o painel lateral de visualização aberto com abas">
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{white-space:pre;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .h{font-size:14px;font-weight:700}
+    .b{font-size:12px}
+    .s{font-size:10.5px;fill:#8a8378}
+    .w{fill:#ffffff}
+    .ann{font-size:12px;font-weight:700;fill:#b4531f}
+    .cap{font-size:11px;font-weight:700;letter-spacing:.06em;fill:#8a8378}
+  </style>
+  <rect width="1200" height="760" rx="16" fill="#e9e5dc"/>
+  <rect x="20" y="20" width="1160" height="720" rx="26" fill="#1f2024"/>
+  <rect x="32" y="32" width="1136" height="696" rx="16" fill="#f7f5f0"/>
+
+  <!-- SidebarV2 (atual) -->
+  <rect x="32" y="32" width="200" height="696" rx="16" fill="#fbfaf7"/>
+  <rect x="216" y="32" width="16" height="696" fill="#fbfaf7"/>
+  <line x1="232" y1="32" x2="232" y2="728" stroke="#e2ddd3"/>
+  <circle cx="58" cy="62" r="12" fill="#3f8f7c"/><text x="52" y="66" class="s w" style="font-weight:700">TN</text>
+  <text x="78" y="67" class="h">TaskNexus</text>
+  <text x="48" y="104" class="b">💬  Chat</text>
+  <text x="48" y="132" class="b">▦  Board</text>
+  <text x="48" y="160" class="b">✓  Tarefas</text>
+  <rect x="40" y="172" width="184" height="30" rx="8" fill="#e6f2ee"/>
+  <text x="48" y="192" class="b" style="font-weight:700;fill:#2f7564">◧  Artefatos</text>
+  <text x="48" y="222" class="b">◈  Configuração</text>
+  <line x1="44" y1="240" x2="220" y2="240" stroke="#e2ddd3"/>
+  <rect x="40" y="250" width="184" height="30" rx="8" fill="none" stroke="#d8d3c8"/>
+  <text x="50" y="270" class="b" style="font-weight:700">← Clientes</text>
+  <text x="48" y="300" class="cap">PODESUBIR · PROJETOS</text>
+  <rect x="40" y="310" width="184" height="28" rx="8" fill="#efece5"/>
+  <text x="48" y="329" class="b" style="font-weight:600">Todos os projetos</text>
+  <text x="48" y="358" class="b">site-institucional</text>
+  <text x="48" y="384" class="b">api-pagamentos</text>
+  <text x="206" y="384" class="b" style="fill:#8a8378">›</text>
+  <text x="48" y="410" class="b">app-mobile</text>
+  <text x="140" y="192" class="ann">A · item novo</text>
+
+  <!-- topbar -->
+  <line x1="232" y1="94" x2="1168" y2="94" stroke="#e2ddd3"/>
+  <text x="252" y="70" style="font-size:15px;font-weight:700">Artefatos</text>
+
+  <!-- filter bar -->
+  <line x1="232" y1="140" x2="1168" y2="140" stroke="#e2ddd3"/>
+  <rect x="412" y="106" width="52" height="24" rx="12" fill="#3f8f7c"/>
+  <text x="422" y="122" class="b w" style="font-weight:700">Todos</text>
+  <rect x="470" y="106" width="40" height="24" rx="12" fill="#efece5"/>
+  <text x="480" y="122" class="b">MD</text>
+  <rect x="516" y="106" width="50" height="24" rx="12" fill="#efece5"/>
+  <text x="526" y="122" class="b">HTML</text>
+  <rect x="572" y="106" width="42" height="24" rx="12" fill="#efece5"/>
+  <text x="582" y="122" class="b">PDF</text>
+  <rect x="628" y="106" width="180" height="24" rx="6" fill="#ffffff" stroke="#e2ddd3"/>
+  <text x="638" y="122" class="b" style="fill:#8a8378">Buscar artefatos</text>
+
+  <rect x="252" y="106" width="150" height="24" rx="6" fill="#efece5" stroke="#e2ddd3"/>
+  <text x="260" y="122" class="b" style="fill:#6b645c">Todos os projetos ▾</text>
+  <!-- group 1 -->
+  <text x="252" y="170" class="cap">PODESUBIR / SITE-INSTITUCIONAL · 3</text>
+  <!-- card -->
+  <g>
+    <rect x="252" y="182" width="170" height="130" rx="12" fill="#ffffff" stroke="#d8d3c8"/>
+    <rect x="264" y="194" width="42" height="20" rx="6" fill="#eef0fa"/><text x="272" y="208" class="s" style="fill:#44579f;font-weight:700">HTML</text>
+    <text x="264" y="236" class="b" style="font-weight:700">Relatório de testes</text>
+    <text x="264" y="254" class="s">docs/relatorio.html</text>
+    <text x="264" y="276" class="s">58 passaram, 2 falharam…</text>
+    <text x="264" y="298" class="s">claude · há 2 h · 18 KB</text>
+  </g>
+  <g>
+    <rect x="432" y="182" width="170" height="130" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+    <rect x="444" y="194" width="34" height="20" rx="6" fill="#e6f2ee"/><text x="452" y="208" class="s" style="fill:#2f7564;font-weight:700">MD</text>
+    <text x="444" y="236" class="b" style="font-weight:700">Plano de release 2.4</text>
+    <text x="444" y="254" class="s">docs/plano-release.md</text>
+    <text x="444" y="276" class="s">Objetivo: liberar o modo…</text>
+    <text x="444" y="298" class="s">claude · ontem · 12 KB</text>
+  </g>
+  <g>
+    <rect x="612" y="182" width="170" height="130" rx="12" fill="#ffffff" stroke="#d8d3c8"/>
+    <rect x="624" y="194" width="34" height="20" rx="6" fill="#fbeeea"/><text x="631" y="208" class="s" style="fill:#a4412f;font-weight:700">PDF</text>
+    <text x="624" y="236" class="b" style="font-weight:700">Proposta comercial</text>
+    <text x="624" y="254" class="s">entregas/proposta.pdf</text>
+    <text x="624" y="276" class="s">4 páginas</text>
+    <text x="624" y="298" class="s">codex · 24 set · 310 KB</text>
+  </g>
+
+  <!-- group 2 -->
+  <text x="252" y="346" class="cap">PODESUBIR / API-PAGAMENTOS · 2</text>
+  <g>
+    <rect x="252" y="358" width="170" height="130" rx="12" fill="#ffffff" stroke="#d8d3c8"/>
+    <rect x="264" y="370" width="34" height="20" rx="6" fill="#e6f2ee"/><text x="272" y="384" class="s" style="fill:#2f7564;font-weight:700">MD</text>
+    <text x="264" y="412" class="b" style="font-weight:700">ADR 07 — Webhooks</text>
+    <text x="264" y="430" class="s">docs/adr/07-webhooks.md</text>
+    <text x="264" y="452" class="s">Decisão: fila com retry…</text>
+    <text x="264" y="474" class="s">claude · 20 set · 6 KB</text>
+  </g>
+  <g>
+    <rect x="432" y="358" width="170" height="130" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-dasharray="5 4"/>
+    <rect x="444" y="370" width="42" height="20" rx="6" fill="#eef0fa"/><text x="452" y="384" class="s" style="fill:#44579f;font-weight:700">HTML</text>
+    <text x="444" y="412" class="b" style="font-weight:700">Diagrama de fluxo</text>
+    <text x="444" y="430" class="s">docs/fluxo.html</text>
+    <rect x="444" y="442" width="120" height="18" rx="6" fill="#fdf6e6"/>
+    <text x="450" y="455" class="s" style="fill:#8a5b05">arquivo não encontrado</text>
+    <text x="444" y="478" class="s">claude · 18 set</text>
+  </g>
+
+  <rect x="252" y="660" width="210" height="34" rx="9" fill="none" stroke="#d8d3c8"/>
+  <text x="266" y="682" class="b">＋ Importar do projeto…</text>
+  <text x="252" y="712" class="s">Tocar num cartão abre o arquivo no painel lateral →</text>
+
+  <!-- lateral viewer (overlay drawer) -->
+  <rect x="232" y="95" width="936" height="633" fill="#3b3530" opacity=".10"/>
+  <rect x="800" y="95" width="368" height="633" fill="#ffffff"/>
+  <line x1="800" y1="95" x2="800" y2="728" stroke="#d8d3c8"/>
+  <rect x="812" y="106" width="112" height="28" rx="8" fill="#e6f2ee"/>
+  <text x="822" y="125" class="b" style="font-weight:700;fill:#2f7564">plano-release…</text>
+  <rect x="930" y="106" width="104" height="28" rx="8" fill="#f3f1ec"/>
+  <text x="940" y="125" class="b">relatorio.html</text>
+  <rect x="1090" y="104" width="68" height="32" rx="9" fill="#ffffff" stroke="#d8d3c8"/>
+  <text x="1100" y="125" class="b" style="font-weight:700">✕ Fechar</text>
+  <line x1="800" y1="144" x2="1168" y2="144" stroke="#ece8df"/>
+  <text x="812" y="164" class="s">docs/plano-release.md · 12 KB</text>
+  <text x="990" y="164" class="b">⤓ ⧉ ↗</text>
+  <rect x="1060" y="150" width="98" height="22" rx="7" fill="#3f8f7c"/>
+  <text x="1068" y="165" class="s w" style="font-weight:700">⤢ Tela cheia</text>
+  <text x="820" y="206" style="font-size:18px;font-weight:700">Plano de release 2.4</text>
+  <line x1="820" y1="216" x2="1150" y2="216" stroke="#ece8df"/>
+  <text x="820" y="240" class="b">Objetivo: liberar o modo chat para</text>
+  <text x="820" y="258" class="b">todos os agentes claude até sexta.</text>
+  <text x="820" y="292" class="h">Checklist</text>
+  <text x="820" y="314" class="b">☑ Migrar ws de chat</text>
+  <text x="820" y="334" class="b">☐ Testar no iPad em retrato</text>
+  <rect x="820" y="352" width="330" height="70" rx="8" fill="#26282e"/>
+  <text x="832" y="374" class="m" style="font-size:10.5px;fill:#b9b4ab">bash                          Copiar</text>
+  <text x="832" y="400" class="m" style="font-size:11px;fill:#e6e3dd">cd frontend &amp;&amp; npm test</text>
+  <text x="1150" y="98" class="ann" text-anchor="end">B · painel lateral</text>
+</svg>

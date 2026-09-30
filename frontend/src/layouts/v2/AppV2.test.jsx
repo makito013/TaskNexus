@@ -19,14 +19,19 @@ import { render, screen, cleanup, fireEvent, act, within } from '@testing-librar
 import { installFakeVisualViewport } from '../../test/fakeVisualViewport.js';
 import { AppV2 } from './AppV2.jsx';
 
+// `mock`-prefixed + vi.fn() (mesmo motivo de mockUseTerminal abaixo): os
+// testes da Fase N precisam de uma árvore com subprojetos; o resto do arquivo
+// continua com a lista de um projeto só, restaurada no beforeEach.
+const DEFAULT_PROJECTS = [
+  // `elegivel: true` is load-bearing since the project cascade round: the
+  // Novo chat form only enables "Criar chat" when the resolved target
+  // project is eligible.
+  { id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }], sub_projetos: [], elegivel: true },
+];
+const mockProjectsList = vi.fn(() => DEFAULT_PROJECTS);
+
 vi.mock('../../hooks/useProjects.js', () => ({
-  useProjects: () => [
-    // `elegivel: true` is load-bearing since the project cascade round: the
-    // Novo chat form only enables "Criar chat" when the resolved target
-    // project is eligible.
-    [{ id: 'projA', nome: 'Projeto A', path: '/tmp/a', agentes: [{ id: 'claude', nome: 'Claude', papel: 'Assistente', ia: 'claude', cmd: ['claude'], default: true }], sub_projetos: [], elegivel: true }],
-    vi.fn(),
-  ],
+  useProjects: () => [mockProjectsList(), vi.fn()],
 }));
 
 // mockUseTerminal: a `mock`-prefixed variable is one of the few identifiers
@@ -124,6 +129,11 @@ beforeEach(() => {
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
+  // Fase N: o escopo da sidebar (useNavScope) persiste em localStorage — sem
+  // limpar, um teste que clica em "Todos" mudaria o ponto de partida do
+  // seguinte. E a lista de projetos volta à de um projeto só.
+  localStorage.removeItem('escritorio::v2_nav_scope');
+  mockProjectsList.mockImplementation(() => DEFAULT_PROJECTS);
   // Reset to the default (no active session) before every test — individual
   // tests below override activeSessionKey via mockUseTerminal.mockReturnValue
   // and must not leak that into unrelated tests.
@@ -351,19 +361,26 @@ describe('AppV2 — botão "Ajustar layout" (Layout v2, só na tela Chat)', () =
 // `useMediaQuery(MOBILE_VIEWPORT_QUERY)` resolve `true`. Mesmo fabricante de
 // MediaQueryList controlável de hooks/useMediaQuery.test.js — reaproveitado
 // aqui em vez de duplicado com uma variação própria.
+//
+// Fase N: o AppV2 passou a observar DUAS queries (a mobile e a
+// WIDE_VIEWPORT_QUERY do visualizador encaixado), então o fabricante guarda um
+// CONJUNTO de listeners — com um só, o último `useMediaQuery` a montar roubava
+// o lugar do outro e `fireChange` nunca chegava ao de mobile. Todas as queries
+// continuam respondendo o mesmo `matches` (o que estes testes controlam é a
+// fronteira mobile; com `viewerOpen` sempre false a larga não muda nada).
 function makeControllableMatchMedia(initialMatches) {
   let matches = initialMatches;
-  let changeHandler = null;
+  const changeHandlers = new Set();
   const mql = {
     get matches() { return matches; },
-    addEventListener: (event, handler) => { if (event === 'change') changeHandler = handler; },
-    removeEventListener: vi.fn(),
+    addEventListener: (event, handler) => { if (event === 'change') changeHandlers.add(handler); },
+    removeEventListener: (event, handler) => { if (event === 'change') changeHandlers.delete(handler); },
   };
   return {
     matchMediaFn: vi.fn(() => mql),
     fireChange: (nextMatches) => {
       matches = nextMatches;
-      changeHandler?.({ matches: nextMatches });
+      changeHandlers.forEach((handler) => handler({ matches: nextMatches }));
     },
   };
 }
@@ -842,5 +859,233 @@ describe('AppV2 — casco ancorado na visual viewport (Rodada 2, Frente B)', () 
     // são estáticas no objeto inline, ele não as toca e o valor imperativo fica.
     expect(shell.style.top).toBe('120px');
     expect(shell.style.height).toBe('500px');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fase N (08-planejamento-navegacao-cliente-projeto.md): a lista de clientes
+// da sidebar vira a lista de projetos do cliente (com voltar), e o projeto
+// escolhido vira filtro global — aqui, a ponta do Chat e a persistência.
+// ---------------------------------------------------------------------------
+const TREE_PROJECTS = [
+  ...DEFAULT_PROJECTS,
+  { id: 'pode', nome: 'Pode', path: '/tmp/pode', agentes: [], sub_projetos: ['pode/app', 'pode/site'], elegivel: true },
+  { id: 'pode/app', nome: 'app', path: '/tmp/pode/app', agentes: [], sub_projetos: [], elegivel: true },
+  { id: 'pode/site', nome: 'site', path: '/tmp/pode/site', agentes: [], sub_projetos: [], elegivel: true },
+];
+
+// Linha da sidebar por id — o `title` sozinho é ambíguo, porque a linha do chat
+// usa o nome do subprojeto como `title` também.
+const sidebarRow = (id) => document.querySelector(`[data-nav-id="${id}"]`);
+
+function mockTerminalWithTree(selectProject = vi.fn()) {
+  mockUseTerminal.mockReturnValue({
+    sessions: [],
+    activeSessionKey: null,
+    selectedProjectId: 'projA',
+    selectProject,
+    startSession: vi.fn(),
+    startNewInstance: vi.fn(),
+    terminateSession: vi.fn(),
+    renameSession: vi.fn(),
+    activeSessions: {},
+    persistedSessions: {
+      'pode/site::claude': { display_name: 'Chat do site' },
+      'pode/app::claude': { display_name: 'Chat do app' },
+      'projA::claude': { display_name: 'Chat do A' },
+    },
+  });
+  return selectProject;
+}
+
+describe('AppV2 — drill-down cliente → projeto na sidebar (Fase N)', () => {
+  beforeEach(() => {
+    mockProjectsList.mockImplementation(() => TREE_PROJECTS);
+  });
+
+  it('tocar num cliente com subprojetos troca a lista para os projetos dele e seleciona o cliente no chat', () => {
+    const selectProject = mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Pode'));
+
+    expect(screen.getByRole('button', { name: 'Voltar para Clientes' })).toBeTruthy();
+    expect(screen.getByText('Pode · Projetos')).toBeTruthy();
+    expect(selectProject).toHaveBeenLastCalledWith('pode');
+    // Cliente inteiro: os chats de todos os projetos dele, nenhum de fora.
+    expect(screen.getByText('Chat do site')).toBeTruthy();
+    expect(screen.getByText('Chat do app')).toBeTruthy();
+    expect(screen.queryByText('Chat do A')).toBeNull();
+  });
+
+  it('escolher um projeto filtra a lista de chats, mostra "cliente / projeto" e leva o chat junto', () => {
+    const selectProject = mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Pode'));
+    fireEvent.click(sidebarRow('pode/site'));
+
+    expect(selectProject).toHaveBeenLastCalledWith('pode/site');
+    expect(screen.getByTestId('chat-scope-title').textContent).toBe('Pode / site');
+    expect(screen.getByText('Chat do site')).toBeTruthy();
+    expect(screen.queryByText('Chat do app')).toBeNull();
+  });
+
+  it('"← Clientes" volta à lista de clientes sem limpar o filtro; "Todos" limpa', () => {
+    mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Pode'));
+    fireEvent.click(sidebarRow('pode/site'));
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar para Clientes' }));
+
+    expect(screen.getByTitle('Todos')).toBeTruthy();
+    expect(screen.queryByText('Chat do app')).toBeNull();
+
+    fireEvent.click(screen.getByTitle('Todos'));
+    expect(screen.queryByTestId('chat-scope-title')).toBeNull();
+    expect(screen.getByText('Chat do app')).toBeTruthy();
+    expect(screen.getByText('Chat do A')).toBeTruthy();
+  });
+
+  it('cliente sem subprojetos só é selecionado: a lista continua em Clientes', () => {
+    const selectProject = mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Todos'));
+    fireEvent.click(screen.getByTitle('Projeto A'));
+    expect(selectProject).toHaveBeenLastCalledWith('projA');
+    expect(screen.queryByRole('button', { name: 'Voltar para Clientes' })).toBeNull();
+  });
+
+  it('recarregar a página volta para o mesmo cliente/projeto/nível (localStorage)', () => {
+    mockTerminalWithTree();
+    const first = render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Pode'));
+    fireEvent.click(sidebarRow('pode/site'));
+    first.unmount();
+
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    expect(screen.getByText('Pode · Projetos')).toBeTruthy();
+    expect(sidebarRow('pode/site').getAttribute('aria-current')).toBe('true');
+    expect(screen.getByTestId('chat-scope-title').textContent).toBe('Pode / site');
+  });
+
+  it('projeto salvo que não existe mais cai para "Todos"', () => {
+    mockTerminalWithTree();
+    localStorage.setItem('escritorio::v2_nav_scope', JSON.stringify({
+      clienteId: 'pode', projetoId: 'pode/apagado', level: 'projetos', parentId: 'pode',
+    }));
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    expect(screen.getByTitle('Todos').getAttribute('aria-current')).toBe('true');
+    expect(screen.getByText('Chat do A')).toBeTruthy();
+  });
+});
+
+describe('AppV2 — drill-down no menu mobile (Fase N)', () => {
+  let originalMatchMedia;
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    window.matchMedia = makeControllableMatchMedia(true).matchMediaFn;
+    mockProjectsList.mockImplementation(() => TREE_PROJECTS);
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('entrar num cliente mantém o menu; escolher o projeto abre o modal de chats daquele projeto', () => {
+    mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    const menu = () => within(screen.getByTestId('mobile-menu-screen'));
+
+    fireEvent.click(menu().getByText('Pode'));
+    expect(menu().getByRole('button', { name: 'Voltar para Clientes' })).toBeTruthy();
+    expect(screen.getByTestId('mobile-menu-screen')).toBeTruthy();
+
+    fireEvent.click(menu().getByText('site'));
+    expect(screen.queryByTestId('mobile-menu-screen')).toBeNull();
+    expect(screen.getByText('Chats de Pode / site')).toBeTruthy();
+  });
+
+  it('na aba Board, escolher um projeto vai direto para o conteúdo', () => {
+    mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    const menu = () => within(screen.getByTestId('mobile-menu-screen'));
+    fireEvent.click(menu().getByRole('tab', { name: /Board/i }));
+    fireEvent.click(menu().getByText('Pode'));
+    fireEvent.click(menu().getByText('Todos os projetos'));
+    expect(screen.queryByTestId('mobile-menu-screen')).toBeNull();
+    expect(screen.getByText('Menu')).toBeTruthy();
+  });
+});
+
+describe('AppV2 — Board parte da sidebar e a barra age só na tela (Fase N, aceite 2/2b)', () => {
+  beforeEach(() => {
+    mockProjectsList.mockImplementation(() => TREE_PROJECTS);
+  });
+
+  it('projeto escolhido na sidebar chega ao Board com o select de projeto preenchido', () => {
+    mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Pode'));
+    fireEvent.click(sidebarRow('pode/site'));
+    goTo('Board');
+    expect(screen.getByLabelText('Filtrar por projeto').value).toBe('pode/site');
+  });
+
+  it('com a sidebar em "Todos", trocar o cliente na barra do Board não muda a sidebar nem o chat', () => {
+    const selectProject = mockTerminalWithTree();
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    fireEvent.click(screen.getByTitle('Todos'));
+    const callsBefore = selectProject.mock.calls.length;
+    goTo('Board');
+
+    fireEvent.change(screen.getByLabelText('Filtrar por cliente'), { target: { value: 'pode' } });
+    expect(screen.getByLabelText('Filtrar por projeto').disabled).toBe(false);
+
+    expect(screen.getByTitle('Todos').getAttribute('aria-current')).toBe('true');
+    expect(selectProject.mock.calls.length).toBe(callsBefore);
+    goTo('Chat');
+    expect(screen.getByText('Chat do A')).toBeTruthy();
+    expect(screen.getByText('Chat do app')).toBeTruthy();
+  });
+});
+
+// Fase N, passo 6: o recolhimento automático só vale com o visualizador
+// encaixado (Fase V). Até lá `viewerOpen` é sempre false, e em tela larga as
+// colunas têm de se comportar EXATAMENTE como antes — o botão de recolher
+// continua mexendo na preferência salva e disparando o refit.
+describe('AppV2 — colunas em tela larga sem visualizador (Fase N, passo 6)', () => {
+  let originalMatchMedia;
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    // Só a query larga casa: tablet deitado/desktop, nada de mobile.
+    window.matchMedia = vi.fn((query) => ({
+      matches: query === '(min-width: 1100px)',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    localStorage.setItem('escritorio::sidebar_collapsed', 'false');
+    localStorage.setItem('escritorio::chat_sidebar_collapsed', 'false');
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+    localStorage.removeItem('escritorio::sidebar_collapsed');
+    localStorage.removeItem('escritorio::chat_sidebar_collapsed');
+  });
+
+  it('as duas colunas abrem expandidas e os botões de recolher gravam a preferência, com refit', () => {
+    render(<AppV2 initialAppearance={{ layout_version: 'v2', theme_mode: 'dark' }} />);
+    expect(screen.getByRole('button', { name: 'Esconder barra lateral' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Esconder conversas' })).toBeTruthy();
+
+    const handler = vi.fn();
+    window.addEventListener('escritorio:sidebar-toggled', handler);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Esconder barra lateral' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Esconder conversas' }));
+    } finally {
+      window.removeEventListener('escritorio:sidebar-toggled', handler);
+    }
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem('escritorio::sidebar_collapsed')).toBe('true');
+    expect(localStorage.getItem('escritorio::chat_sidebar_collapsed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Mostrar barra lateral' })).toBeTruthy();
   });
 });

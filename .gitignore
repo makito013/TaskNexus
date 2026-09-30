@@ -31,6 +31,8 @@ docs/*
 !docs/windows-deploy.md
 !docs/images/
 !docs/images/**
+!docs/melhorias-tablet/
+!docs/melhorias-tablet/**
 
 # Pipeline de dev pessoal — não faz parte do app
 agentes/

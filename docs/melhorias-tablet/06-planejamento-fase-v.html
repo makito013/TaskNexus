@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Planejamento da Fase V</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a class="on" href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a class="on" href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#61-requisitos">6.1 Requisitos</a><ul><li><a href="#o-que-foi-pedido-palavras-do-bruno-organizadas">O que foi pedido (palavras do Bruno, organizadas)</a></li><li><a href="#como-cada-ponto-foi-interpretado-confirmar-antes-de-codar">Como cada ponto foi interpretado (confirmar antes de codar)</a></li></ul></li><li><a href="#62-experiência-de-uso-ux">6.2 Experiência de uso (UX)</a><ul><li><a href="#fluxo-principal">Fluxo principal</a></li><li><a href="#outros-pontos-de-entrada">Outros pontos de entrada</a></li><li><a href="#estados">Estados</a></li><li><a href="#teclado-e-toque">Teclado e toque</a></li></ul></li><li><a href="#63-arquitetura-tl">6.3 Arquitetura (TL)</a><ul><li><a href="#decisões">Decisões</a></li><li><a href="#ligação-com-a-aba-artefatos-fase-a-parte-7">Ligação com a aba Artefatos (Fase A, Parte 7)</a></li><li><a href="#o-que-fica-para-depois-não-entra-nesta-fase">O que fica para depois (não entra nesta fase)</a></li></ul></li><li><a href="#64-backend-dev">6.4 Backend (Dev)</a><ul><li><a href="#641-arquivos">6.4.1 Arquivos</a></li><li><a href="#642-file_accesspy">6.4.2 file_access.py</a></li><li><a href="#643-rotas">6.4.3 Rotas</a></li><li><a href="#644-aviso-ao-vivo-frame-viewer_open">6.4.4 Aviso ao vivo (frame viewer_open)</a></li><li><a href="#645-viewerstore">6.4.5 ViewerStore</a></li><li><a href="#646-adapter-mcp-mcp_viewer_adapterpy">6.4.6 Adapter MCP mcp_viewer_adapter.py</a></li></ul></li><li><a href="#65-frontend-dev">6.5 Frontend (Dev)</a><ul><li><a href="#651-arquivos">6.5.1 Arquivos</a></li><li><a href="#652-viewercontext">6.5.2 ViewerContext</a></li><li><a href="#653-painel-à-direita-dropdown-e-tela-cheia">6.5.3 Painel à direita (&quot;dropdown&quot;) e tela cheia</a></li><li><a href="#654-renderização">6.5.4 Renderização</a></li><li><a href="#655-destaque-de-sintaxe">6.5.5 Destaque de sintaxe</a></li><li><a href="#656-links-clicáveis-no-terminal-resolve-o-problema-de-origem">6.5.6 Links clicáveis no terminal (resolve o problema de origem)</a></li></ul></li><li><a href="#66-ordem-de-execução-um-commit-por-passo-testes-verdes-em-cada-um">6.6 Ordem de execução (um commit por passo, testes verdes em cada um)</a></li><li><a href="#67-testes">6.7 Testes</a><ul><li><a href="#backend">Backend</a></li><li><a href="#frontend">Frontend</a></li><li><a href="#aceite-manual-ipad-safari-e-pwa-instalado">Aceite manual (iPad, Safari e PWA instalado)</a></li></ul></li><li><a href="#68-riscos-e-como-mitigar">6.8 Riscos e como mitigar</a></li><li><a href="#69-definição-de-pronto">6.9 Definição de pronto</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 6 de 8</p><h1 id="parte-6-planejamento-da-fase-v-o-agente-abre-o-arquivo-na-tela">Parte 6 — Planejamento da Fase V: o agente abre o arquivo na tela</h1>
+<blockquote>
+<p><strong>Por que esta fase vem primeiro:</strong> hoje o chat é um terminal e <strong>não dá
+para clicar em links</strong>. Então, antes do navegador de arquivos completo
+(Parte 1) e do chat estruturado (Parte 2), a entrega mais útil é o
+<strong>próprio agente fazer o arquivo aparecer na tela</strong>. Ele chama uma
+ferramenta, e o arquivo abre numa aba nova de um visualizador que fica no
+cabeçalho do chat, com botão de tela cheia.</p>
+<p>Este documento é o <strong>plano de desenvolvimento</strong>: o que vai ser feito, em
+que ordem, com quais arquivos, contratos, testes e critérios de pronto.
+Ele foi escrito para ser executado por um agente numa janela de contexto
+limpa, lendo só esta pasta e o código.</p>
+</blockquote>
+<figure><img src="img/10-mockup-visualizador-dropdown.svg" alt="Dropdown e tela cheia" loading="lazy"><figcaption>Dropdown e tela cheia</figcaption></figure>
+<p>Legenda: <strong>A</strong> botão <strong>Visualizador</strong> no cabeçalho do chat, com contador de
+abas · <strong>B</strong> dropdown com uma aba por arquivo aberto · <strong>C</strong> barra do
+arquivo com Baixar (⤓), Copiar (⧉), Abrir no navegador (↗) e <strong>Tela cheia</strong> ·
+<strong>D</strong> o mesmo conteúdo em modal de tela cheia, com <strong>✕ Fechar</strong>.</p>
+<blockquote>
+<p><strong>Atualização (Fase N, <a href="08-planejamento-navegacao-cliente-projeto.html">Parte 8</a>):</strong>
+o "dropdown" do visualizador passa a abrir como <strong>painel à direita</strong>. Ele
+continua saindo do botão <strong>Visualizador</strong> do cabeçalho, com as mesmas abas,
+barra, <strong>⤢ Tela cheia</strong> e <strong>✕ Fechar</strong>. A forma de abrir depende da largura
+da tela:</p>
+<ul>
+<li><strong>≥ 1100 px</strong> (iPad deitado, desktop): painel <strong>encaixado</strong> à direita
+  (<code>ViewerDock</code>, largura <code>clamp(420px, 42vw, 780px)</code>); a sidebar e a lista de
+  chats viram trilhos de 68 px enquanto ele estiver aberto.</li>
+<li><strong>641–1099 px:</strong> painel <strong>por cima</strong> (<code>ViewerDrawer</code>).</li>
+<li><strong>≤ 640 px:</strong> tela cheia.</li>
+</ul>
+<p>Neste documento, onde estiver escrito "dropdown", leia <strong>esse painel</strong>. O
+conteúdo (<code>ViewerPanel</code>, abas, renderers) não muda. O mockup
+<a href="img/13-mockup-sidebar-cliente-projeto.svg">13</a> mostra a posição nova; o
+mockup acima continua valendo para o conteúdo do painel e para a tela cheia.</p>
+</blockquote>
+<hr />
+<h2 id="61-requisitos">6.1 Requisitos</h2>
+<h3 id="o-que-foi-pedido-palavras-do-bruno-organizadas">O que foi pedido (palavras do Bruno, organizadas)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Requisito</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>O <strong>próprio agente</strong> consegue fazer um arquivo <code>.md</code>, <code>.html</code> ou de código <strong>aparecer na tela</strong>.</td>
+</tr>
+<tr>
+<td>R2</td>
+<td><strong>Toda vez</strong> que o agente manda abrir, abre <strong>uma aba nova</strong> no visualizador.</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>Botão <strong>Tela cheia</strong>: o dropdown vira um <strong>modal de tela cheia na própria página</strong>, com botão de <strong>fechar</strong>.</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>Continua valendo o pedido original: ver <code>.md</code> como no GitHub, <code>.html</code> renderizado e código destacado, e <strong>baixar</strong> o arquivo no tablet.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="como-cada-ponto-foi-interpretado-confirmar-antes-de-codar">Como cada ponto foi interpretado (confirmar antes de codar)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ponto</th>
+<th>Interpretação adotada</th>
+<th>Alternativa, se o Bruno preferir</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Aba nova"</td>
+<td>Aba <strong>dentro do visualizador</strong> do TaskNexus, não aba do navegador. Um botão ↗ abre o arquivo numa aba do navegador quando for útil (ex.: HTML)</td>
+<td>Abrir sempre em aba do navegador. Não recomendado: no iPad isso tira você do app e o PWA instalado abre o Safari</td>
+</tr>
+<tr>
+<td>O mesmo arquivo pedido de novo</td>
+<td><strong>Reaproveita</strong> a aba existente, recarrega o conteúdo (o agente pode ter alterado) e a coloca em foco</td>
+<td>Criar uma aba duplicada toda vez (é só trocar uma flag no backend: <code>reuse=false</code>)</td>
+</tr>
+<tr>
+<td>Abrir sozinho</td>
+<td>Se a conversa do agente estiver <strong>visível</strong>, o dropdown <strong>abre sozinho</strong> na aba nova. Se não estiver, o botão mostra o contador e aparece um aviso "claude abriu <code>plano.md</code> · Ver"</td>
+<td>Nunca abrir sozinho, só contador</td>
+</tr>
+<tr>
+<td>Celular (≤ 640 px)</td>
+<td>Não há espaço para dropdown: o visualizador abre <strong>direto em tela cheia</strong>, por um botão flutuante ao lado do "☰ Menu"</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Abas por conversa</td>
+<td>Cada conversa tem as <strong>suas</strong> abas; trocar de conversa troca as abas</td>
+<td>Um conjunto global de abas</td>
+</tr>
+<tr>
+<td>Limite</td>
+<td>Até <strong>15 abas</strong> por conversa; ao passar disso, a mais antiga fecha</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="62-experiência-de-uso-ux">6.2 Experiência de uso (UX)</h2>
+<h3 id="fluxo-principal">Fluxo principal</h3>
+<ol>
+<li>Você pede ao agente, no terminal: "gera o relatório em HTML e me mostra".</li>
+<li>O agente cria o arquivo e chama a ferramenta <code>abrir_no_visualizador</code> com
+   <code>docs/relatorio.html</code>. No terminal aparece a chamada da ferramenta e o
+   retorno "Aberto no visualizador do usuário (aba 3)".</li>
+<li>No iPad, o dropdown do <strong>Visualizador</strong> abre sozinho abaixo do botão,
+   com a aba <code>relatorio.html</code> ativa, mostrando o HTML renderizado.</li>
+<li>Toque em <strong>⤢ Tela cheia</strong>: o conteúdo passa a ocupar a página inteira
+   (modal), com as mesmas abas no topo e <strong>✕ Fechar</strong> à direita.</li>
+<li><strong>✕ Fechar</strong> (ou Esc) volta para o dropdown. Tocar fora do dropdown ou
+   Esc no dropdown fecha o visualizador. As abas <strong>continuam lá</strong> para
+   reabrir pelo botão.</li>
+<li><strong>⤓ Baixar</strong> salva o arquivo no iPad (Arquivos › Downloads).</li>
+</ol>
+<h3 id="outros-pontos-de-entrada">Outros pontos de entrada</h3>
+<ul>
+<li><strong>Você pede sem o agente:</strong> clicar num caminho de arquivo que aparece no
+  terminal também abre no visualizador (6.5.6). Se o toque em link do
+  terminal não funcionar no iPad, basta pedir ao agente "abre X no visualizador".</li>
+<li><strong>Links dentro de um markdown aberto:</strong> link para outro arquivo do projeto
+  (<code>[plano](../plano.md)</code>) abre <strong>outra aba</strong> no visualizador; link <code>https://</code>
+  abre no navegador.</li>
+</ul>
+<h3 id="estados">Estados</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Estado</th>
+<th>O que aparece</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nenhuma aba</td>
+<td>Botão "Visualizador" sem contador; ao abrir: "Nenhum arquivo aberto ainda. Peça ao agente: <em>abre o README no visualizador</em>."</td>
+</tr>
+<tr>
+<td>Carregando</td>
+<td>Esqueleto (barras cinza) no corpo da aba</td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td>Renderizado como no GitHub (títulos, tabelas, checklists, código com botão Copiar)</td>
+</tr>
+<tr>
+<td>HTML</td>
+<td><code>iframe</code> isolado; alternância <strong>Preview · Código</strong></td>
+</tr>
+<tr>
+<td>Código/texto</td>
+<td>Destaque de sintaxe, números de linha, rola até <code>linha</code> se informada e a destaca por 2 s</td>
+</tr>
+<tr>
+<td>Imagem / PDF</td>
+<td><code>&lt;img&gt;</code> com zoom por pinça / <code>&lt;iframe&gt;</code> do PDF (Safari tem leitor nativo)</td>
+</tr>
+<tr>
+<td>Binário ou &gt; 1 MB</td>
+<td>Nome, tipo, tamanho e botão <strong>Baixar</strong> em destaque (sem preview)</td>
+</tr>
+<tr>
+<td>Arquivo apagado depois de aberto</td>
+<td>"Este arquivo não existe mais. O agente pode ter movido ou apagado." + botão Fechar aba</td>
+</tr>
+<tr>
+<td>Erro de rede</td>
+<td>"Não consegui carregar o arquivo. Tentar de novo"</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="teclado-e-toque">Teclado e toque</h3>
+<ul>
+<li>Esc: fecha a tela cheia; se não estiver em tela cheia, fecha o dropdown.</li>
+<li>Abas: toque troca; <strong>×</strong> fecha; rolagem horizontal quando não couberem.
+  "Fechar todas" no menu "⋯" da barra.</li>
+<li>Alvos de toque com no mínimo 44 px no iPad (as abas têm 36 px de altura
+  visual, mas a área tocável é 44 px com padding).</li>
+</ul>
+<hr />
+<h2 id="63-arquitetura-tl">6.3 Arquitetura (TL)</h2>
+<figure><img src="img/11-fluxo-agente-abre-arquivo.svg" alt="Fluxo da Fase V" loading="lazy"><figcaption>Fluxo da Fase V</figcaption></figure>
+<h3 id="decisões">Decisões</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Decisão</th>
+<th>Escolha</th>
+<th>Por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Como o agente "manda abrir"</td>
+<td><strong>Nova ferramenta MCP</strong> <code>abrir_no_visualizador</code>, num servidor MCP novo <code>escritorio-visualizador</code></td>
+<td>É o mesmo mecanismo das ferramentas de card e tarefa que já existem. O <code>_escritorio_mcp_servers()</code> registra para o <code>claude</code> <strong>e</strong> para o <code>codex</code> automaticamente</td>
+</tr>
+<tr>
+<td>Como o backend avisa a tela</td>
+<td><strong>Frame de controle</strong> <code>viewer_open</code> no WebSocket do terminal que já está aberto (<code>/ws/pty/{session_key}</code>)</td>
+<td>O canal já existe e o frontend já distingue frames de controle (<code>resume_failed</code>, <code>spawn_failed</code>) de saída do terminal. Nenhuma conexão nova</td>
+</tr>
+<tr>
+<td>E se a tela estiver fechada?</td>
+<td>A aba é <strong>gravada no banco</strong> (<code>viewer_items</code>). Ao abrir a conversa, o frontend busca as abas</td>
+<td>O aviso ao vivo é só conveniência; nada se perde</td>
+</tr>
+<tr>
+<td>Como servir o arquivo</td>
+<td>Rotas <strong>por aba</strong> (<code>/api/viewer/{item_id}/…</code>), onde <code>item_id</code> é aleatório</td>
+<td>Só arquivos que o agente (ou você) abriu ficam acessíveis, o que é bem menos exposição que um navegador de arquivos livre. Isso permite entregar esta fase <strong>antes</strong> da autenticação (F0)</td>
+</tr>
+<tr>
+<td>HTML com CSS/imagens relativos</td>
+<td>URL com o <strong>caminho do arquivo no fim</strong>: <code>/api/viewer/{item_id}/f/docs/relatorio.html</code></td>
+<td>O navegador resolve <code>style.css</code> para <code>/api/viewer/{item_id}/f/docs/style.css</code>, e o backend serve o vizinho dentro do mesmo projeto</td>
+</tr>
+<tr>
+<td>Isolamento do HTML</td>
+<td><code>iframe sandbox="allow-scripts allow-popups"</code> <strong>sem</strong> <code>allow-same-origin</code> + cabeçalho <code>Content-Security-Policy: sandbox …</code></td>
+<td>O HTML roda numa origem opaca e não consegue chamar a API do TaskNexus</td>
+</tr>
+<tr>
+<td>Onde o painel abre</td>
+<td>À direita: encaixado (≥ 1100 px, com as colunas recolhidas enquanto aberto), por cima (641–1099 px) ou tela cheia (celular)</td>
+<td>Pedido do Bruno: liberar o lado direito para o visualizador (Parte 8)</td>
+</tr>
+<tr>
+<td>Tela cheia</td>
+<td>Portal para <code>document.body</code>, mesmo contrato do <code>CenteredModal.jsx</code> (fora do wrapper que recebe <code>inert</code>, sem <code>transform</code> em ancestral de <code>position: fixed</code>)</td>
+<td>Respeita a invariante já testada em <code>fixedPositioningInvariant.test.js</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="ligação-com-a-aba-artefatos-fase-a-parte-7">Ligação com a aba Artefatos (Fase A, Parte 7)</h3>
+<p>A fase seguinte cria a aba <strong>Artefatos</strong> por cliente e projeto
+(<a href="07-planejamento-artefatos.html">Parte 7</a>). Para ela reaproveitar esta fase sem
+copiar código: (1) servir conteúdo e arquivos a partir de um módulo
+<code>file_serving.py</code> que recebe <code>(project_root, rel_path, download)</code>; (2) o
+<code>ViewerPanel</code> e os renderers não podem depender de <code>session_key</code>, só do item
+(que terá uma origem: <code>viewer</code> ou <code>artifact</code>); (3) na Fase A, o
+<code>abrir_no_visualizador</code> passa a publicar automaticamente <code>.md</code>/<code>.html</code>/<code>.pdf</code> como artefato.</p>
+<h3 id="o-que-fica-para-depois-não-entra-nesta-fase">O que fica para depois (não entra nesta fase)</h3>
+<p>Árvore de pastas, busca ⌘P, diff do git, zip de pasta, preview-url assinada
+e autenticação. Estão nas Partes 1 e 4 e nas fases F0/F1. O código desta
+fase deve ser <strong>reaproveitado</strong> lá (<code>file_access.py</code> e os renderers).</p>
+<hr />
+<h2 id="64-backend-dev">6.4 Backend (Dev)</h2>
+<h3 id="641-arquivos">6.4.1 Arquivos</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/file_access.py            # NOVO: resolve_safe_path, is_denied, detect_kind, language_for
+backend/app/viewer_store.py           # NOVO: ViewerStore (tabela viewer_items no sessions.db)
+backend/app/file_serving.py           # NOVO: content/f/download a partir de (project_root, rel_path);
+                                      #       reaproveitado pela aba Artefatos (Parte 7)
+backend/app/viewer_api.py             # NOVO: APIRouter com as rotas 6.4.3 (usa file_serving)
+backend/app/mcp_viewer_adapter.py     # NOVO: servidor MCP stdio com a tool abrir_no_visualizador
+backend/app/main.py                   # ALTERAR: registrar router, iniciar ViewerStore no lifespan,
+                                      #          incluir "escritorio-visualizador" em _escritorio_mcp_servers,
+                                      #          função notify_viewer_open(session_key, item)
+backend/tests/test_file_access.py
+backend/tests/test_viewer_store.py
+backend/tests/test_viewer_endpoints.py
+backend/tests/test_mcp_viewer_adapter.py
+backend/tests/test_websocket.py       # ALTERAR: caso do frame viewer_open
+</code></pre></div>
+<p>Se a refatoração de routers (4.3) ainda não tiver acontecido, <strong>não</strong> a faça
+nesta fase: só crie o <code>viewer_api.py</code> como <code>APIRouter</code> e registre com
+<code>app.include_router(...)</code>. O <code>main.py</code> ganha poucas linhas.</p>
+<h3 id="642-file_accesspy">6.4.2 <code>file_access.py</code></h3>
+<div class="code"><div class="code-head"><span>python</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_safe_path</span><span class="p">(</span><span class="n">project_root</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">caminho</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Aceita caminho relativo à raiz do projeto ou absoluto DENTRO dela.</span>
+<span class="sd">    Devolve o caminho real (realpath). Levanta:</span>
+<span class="sd">      PermissionError  -&gt; fora do projeto, caractere proibido, ou denylist</span>
+<span class="sd">      FileNotFoundError -&gt; não existe</span>
+<span class="sd">      IsADirectoryError -&gt; é pasta</span>
+<span class="sd">    """</span>
+</code></pre></div>
+<ul>
+<li>Rejeitar <code>\x00</code>. Aceitar <code>\</code> só no Windows, normalizando (o middleware
+  <code>RejectBackslashPathMiddleware</code> atua na URL, não no corpo JSON da tool).</li>
+<li>Relativo: <code>os.path.join(root, caminho)</code>. Absoluto: usar como está.
+  Depois <code>realpath</code> nos dois lados e <code>commonpath</code> (reaproveitar a lógica de
+  <code>_is_within_directory</code> de <code>attachments.py</code>, que já trata drive diferente no
+  Windows; extrair para cá e fazer <code>attachments.py</code> importar daqui).</li>
+<li><strong>Denylist</strong> (<code>is_denied(rel_path)</code>): <code>.env</code> e <code>.env.*</code> (exceto
+  <code>.env.example</code>), <code>*.pem</code>, <code>*.key</code>, <code>*.p12</code>, <code>*.pfx</code>, <code>id_rsa*</code>,
+  <code>id_ed25519*</code>, <code>*.kdbx</code>, qualquer coisa dentro de <code>.git/</code>, <code>.npmrc</code>,
+  <code>.pypirc</code>, <code>credentials*.json</code>, <code>*.db</code>, <code>*.db-wal</code>, <code>*.db-shm</code>.</li>
+<li><code>detect_kind(path, head_bytes)</code> → <code>markdown | html | code | image | pdf | video | binary</code>
+  (pela extensão; <code>binary</code> se houver <code>\x00</code> nos primeiros 8 KB).</li>
+<li><code>language_for(path)</code> → id de linguagem para o destaque de sintaxe
+  (<code>.py→python</code>, <code>.js/.mjs→javascript</code>, <code>.jsx→jsx</code>, <code>.ts→typescript</code>,
+  <code>.tsx→tsx</code>, <code>.json→json</code>, <code>.css→css</code>, <code>.html→html</code>, <code>.sh→bash</code>,
+  <code>.ps1→powershell</code>, <code>.yml/.yaml→yaml</code>, <code>.toml→toml</code>, <code>.sql→sql</code>,
+  <code>.md→markdown</code>, <code>Dockerfile→docker</code>, senão <code>text</code>).</li>
+</ul>
+<h3 id="643-rotas">6.4.3 Rotas</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Rota</th>
+<th>Quem chama</th>
+<th>Corpo / resposta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /api/hooks/viewer/open</code></td>
+<td>só o adapter MCP (loopback)</td>
+<td>corpo <code>{"claude_session_id","caminho","titulo"?,"linha"?}</code> → <code>{"success":true,"item":{…},"reused":false,"delivered":true}</code> ou <code>{"success":false,"error":"&lt;mensagem para o agente&gt;"}</code></td>
+</tr>
+<tr>
+<td><code>POST /api/sessions/{session_key}/viewer</code></td>
+<td>frontend (clique em caminho no terminal, link num markdown)</td>
+<td><code>{"caminho","linha"?,"relativo_a"?}</code> → mesmo formato. <code>relativo_a</code> = caminho do arquivo onde o link estava, para resolver <code>../x.md</code></td>
+</tr>
+<tr>
+<td><code>GET /api/sessions/{session_key}/viewer</code></td>
+<td>frontend ao montar/trocar de conversa</td>
+<td><code>{"items":[…]}</code> na ordem de criação</td>
+</tr>
+<tr>
+<td><code>DELETE /api/sessions/{session_key}/viewer/{item_id}</code></td>
+<td>fechar aba</td>
+<td><code>{"status":"closed"}</code></td>
+</tr>
+<tr>
+<td><code>DELETE /api/sessions/{session_key}/viewer</code></td>
+<td>fechar todas</td>
+<td><code>{"status":"closed","count":n}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/viewer/{item_id}/content</code></td>
+<td>corpo da aba (markdown, código, texto)</td>
+<td><code>{"item_id","path","size","mtime","kind","language","is_text","text"?,"truncated"}</code> (texto até 1 MB)</td>
+</tr>
+<tr>
+<td><code>GET /api/viewer/{item_id}/f/{file_path:path}</code></td>
+<td>HTML no iframe, imagens, PDF, assets relativos</td>
+<td><code>FileResponse</code>; <code>file_path</code> é relativo à raiz do projeto do item e passa por <code>resolve_safe_path</code> + denylist</td>
+</tr>
+<tr>
+<td><code>GET /api/viewer/{item_id}/f/{file_path:path}?download=1</code></td>
+<td>botão Baixar</td>
+<td>igual + <code>Content-Disposition: attachment; filename*=UTF-8''&lt;nome&gt;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Formato de <code>item</code>:</p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"item_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vw_5Jc2k0q8Qm1Y0oHq3a1bXw"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"session_key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"podesubir/tasknexus::claude"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"project_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"podesubir/tasknexus"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"docs/relatorio.html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"relatorio.html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"line"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"language"</span><span class="p">:</span><span class="w"> </span><span class="s2">"html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"opened_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"agent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1727650000.12</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"updated_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1727650000.12</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Regras:</p>
+<ul>
+<li><code>session_key</code> → <code>project_id</code> = <code>session_key.partition("::")[0]</code> (mesma
+  regra usada em <code>continue_session</code>) → <code>_resolve_project_or_404</code> → <code>project.path</code>.</li>
+<li>Hook: <code>claude_session_id</code> → <code>store.get_session_key_by_claude_id</code> (igual
+  aos hooks de card). Sem sessão: <code>{"success":false,"error":"Sessão do TaskNexus não encontrada"}</code>.</li>
+<li><strong>Reaproveitar aba:</strong> se já existir item aberto na mesma sessão com o mesmo
+  <code>path</code>, atualiza <code>line</code>, <code>title</code> e <code>updated_at</code>, e devolve <code>reused:true</code>.</li>
+<li><strong>Limite de 15</strong> abas por sessão: ao criar a 16ª, apaga a de <code>updated_at</code>
+  mais antigo.</li>
+<li>Cabeçalhos da rota <code>f/</code> para <code>text/html</code>, <code>image/svg+xml</code>, <code>application/xhtml+xml</code>, <code>text/xml</code>:
+  <code>Content-Security-Policy: sandbox allow-scripts allow-popups; default-src * data: blob: 'unsafe-inline' 'unsafe-eval'</code>,
+  <code>X-Content-Type-Options: nosniff</code>. Para todos: <code>Cache-Control: no-store</code>
+  (o agente reescreve arquivos).</li>
+<li>Rotas <code>/api/hooks/viewer/*</code> aceitam só cliente loopback (<code>127.0.0.1</code>/<code>::1</code>).
+  O <code>_hook_callback_base_url()</code> já aponta os adaptadores para <code>http://127.0.0.1:&lt;porta&gt;</code>;
+  a exceção é quando <code>HOOK_CALLBACK_BASE_URL</code> está definida (backend atrás de
+  proxy/container): nesse caso <strong>não</strong> aplicar a checagem por IP, senão o hook
+  para de funcionar. Não mexer nos hooks existentes nesta fase.</li>
+<li>Todo acesso a disco com <code>asyncio.to_thread</code>.</li>
+</ul>
+<h3 id="644-aviso-ao-vivo-frame-viewer_open">6.4.4 Aviso ao vivo (frame <code>viewer_open</code>)</h3>
+<p>Nova função no <code>main.py</code>, chamada pelas duas rotas <code>POST</code> depois de gravar:</p>
+<div class="code"><div class="code-head"><span>python</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">notify_viewer_open</span><span class="p">(</span><span class="n">session_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">reused</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">ws</span> <span class="o">=</span> <span class="n">_active_connections</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">session_key</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ws</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">await</span> <span class="n">ws</span><span class="o">.</span><span class="n">send_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"viewer_open"</span><span class="p">,</span> <span class="s2">"item"</span><span class="p">:</span> <span class="n">item</span><span class="p">,</span> <span class="s2">"reused"</span><span class="p">:</span> <span class="n">reused</span><span class="p">}))</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>          <span class="c1"># socket fechando: a aba já está no banco, o front busca depois</span>
+        <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div>
+<p><code>send_text</code> já é o canal dos frames de controle neste WebSocket (a saída do
+PTY vai sempre como bytes), então não há mistura com o terminal.</p>
+<h3 id="645-viewerstore">6.4.5 <code>ViewerStore</code></h3>
+<p>Mesmo padrão dos stores atuais: conexão <code>aiosqlite</code> própria no <code>sessions.db</code>,
+<code>PRAGMA journal_mode=WAL</code>, <code>busy_timeout=5000</code>, <code>initialize()</code> no <code>lifespan</code>.</p>
+<div class="code"><div class="code-head"><span>sql</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">viewer_items</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">item_id</span><span class="w">     </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">session_key</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">project_id</span><span class="w">  </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">path</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">title</span><span class="w">       </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">line</span><span class="w">        </span><span class="nb">INTEGER</span><span class="p">,</span>
+<span class="w">  </span><span class="n">kind</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="k">language</span><span class="w">    </span><span class="nb">TEXT</span><span class="p">,</span>
+<span class="w">  </span><span class="n">opened_by</span><span class="w">   </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">          </span><span class="c1">-- 'agent' | 'user'</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w">  </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w">  </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">ix_viewer_items_session</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">viewer_items</span><span class="p">(</span><span class="n">session_key</span><span class="p">,</span><span class="w"> </span><span class="n">updated_at</span><span class="p">);</span>
+</code></pre></div>
+<p>Ao encerrar uma sessão (<code>POST /api/sessions/{sk}/terminate</code>), apagar as
+abas dela.</p>
+<h3 id="646-adapter-mcp-mcp_viewer_adapterpy">6.4.6 Adapter MCP <code>mcp_viewer_adapter.py</code></h3>
+<p>Copie o esqueleto de <code>mcp_card_adapter.py</code> (JSON-RPC 2.0 por linha no stdio,
+stdlib pura, Python 3.9, TLS de loopback sem verificação, <code>PYTHONUTF8=1</code>).
+Uma única tool:</p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abrir_no_visualizador"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Abre um arquivo do projeto no visualizador do TaskNexus, na tela do usuário (inclusive no iPad), numa aba nova. Use SEMPRE que criar ou alterar um arquivo que o usuário deva ler ou conferir (relatórios .html, documentos .md, planos, diagramas, trechos de código importantes) e sempre que o usuário pedir para ver, abrir ou mostrar um arquivo. O usuário não consegue clicar em links no terminal, então esta é a forma de mostrar arquivos a ele. Markdown aparece renderizado, HTML aparece como página, código aparece com destaque de sintaxe, e o usuário pode baixar o arquivo."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"inputSchema"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"object"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"properties"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"caminho"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Caminho do arquivo, relativo à raiz do projeto (ex.: docs/plano.md) ou absoluto dentro do projeto."</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"titulo"</span><span class="p">:</span><span class="w">  </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Opcional. Nome curto da aba. Padrão: nome do arquivo."</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"linha"</span><span class="p">:</span><span class="w">   </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"integer"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Opcional. Linha para rolar e destacar (arquivos de código)."</span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"required"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"caminho"</span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>Env vars: <code>ESCRITORIO_CLAUDE_SESSION_ID</code> e <code>ESCRITORIO_HOOK_VIEWER_OPEN_URL</code>
+  (<code>{base_url}/api/hooks/viewer/open</code>).</li>
+<li>Respostas da tool (texto, para o agente ler):</li>
+<li>sucesso, entregue: <code>Aberto no visualizador do usuário: docs/relatorio.html (aba nova).</code></li>
+<li>sucesso, aba reaproveitada: <code>…: docs/relatorio.html (aba já existia, foi atualizada).</code></li>
+<li>sucesso, tela fechada: <code>Registrado no visualizador: docs/relatorio.html. O usuário verá ao abrir o TaskNexus.</code></li>
+<li>erro do backend: o texto de <code>error</code> (ex.: <code>Arquivo não encontrado: docs/x.md</code>,
+    <code>Caminho fora do projeto</code>, <code>Arquivo protegido (segredos não são exibidos)</code>).</li>
+<li>backend fora do ar: <code>Não foi possível falar com o TaskNexus agora.</code> (sem travar, sem retry).</li>
+<li>Registro: nova entrada <code>"escritorio-visualizador"</code> em <code>_escritorio_mcp_servers()</code>.
+  Com isso o <code>claude</code> recebe pelo <code>--mcp-config</code> e o <code>codex</code> pelos
+  <code>-c mcp_servers.*</code>, sem outra mudança. Conferir que os testes de contrato do
+  spawn (<code>test_pty_manager*</code>, testes do codex) continuam passando e atualizar o
+  que listar os servidores esperados.</li>
+</ul>
+<hr />
+<h2 id="65-frontend-dev">6.5 Frontend (Dev)</h2>
+<h3 id="651-arquivos">6.5.1 Arquivos</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/features/viewer/
+  ViewerContext.jsx        # estado das abas por sessão + ações; Provider junto do TerminalProvider
+  viewerApi.js             # fetch das rotas 6.4.3
+  ViewerButton.jsx         # botão "Visualizador" com contador (cabeçalho do chat, iPad/PC)
+  ViewerMobileButton.jsx   # botão flutuante ao lado do "☰ Menu" (celular)
+  ViewerDock.jsx           # painel encaixado à direita (≥ 1100 px) — ver Parte 8
+  ViewerDrawer.jsx         # mesmo painel por cima do conteúdo (641–1099 px), padrão do TasksDrawer
+  ViewerFullscreen.jsx     # modal de tela cheia (portal, contrato do CenteredModal)
+  ViewerPanel.jsx          # abas + barra de ações + corpo (usado pelos dois contêineres)
+  ViewerTabs.jsx
+  ViewerToolbar.jsx        # Baixar, Copiar, Abrir no navegador, Tela cheia/Fechar, ⋯ (Fechar todas)
+  useViewerContent.js      # busca /content com cache por item_id+updated_at
+  renderers/
+    MarkdownView.jsx       # utils/markdown.js ampliado + destaque + botão Copiar nos blocos
+    HtmlView.jsx           # iframe sandbox + Preview/Código
+    CodeView.jsx           # destaque de sintaxe, números de linha, rolar até a linha
+    ImageView.jsx
+    PdfView.jsx
+    BinaryView.jsx
+frontend/src/utils/markdown.js                  # ALTERAR: GFM, links, imagens relativas (6.5.4)
+frontend/src/components/TerminalPanel.jsx       # ALTERAR: frame viewer_open (+ links 6.5.6)
+frontend/src/layouts/v2/AppV2.jsx               # ALTERAR: ViewerButton no cabeçalho; botão mobile
+frontend/src/App.jsx (ou main.jsx)              # ALTERAR: ViewerProvider
+package.json                                    # + shiki, + @xterm/addon-web-links
+</code></pre></div>
+<h3 id="652-viewercontext">6.5.2 <code>ViewerContext</code></h3>
+<div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="c1">// estado</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="nx">bySession</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">[</span><span class="nx">sessionKey</span><span class="p">]</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">items</span><span class="o">:</span><span class="w"> </span><span class="nx">Item</span><span class="p">[],</span><span class="w"> </span><span class="nx">activeId</span><span class="o">:</span><span class="w"> </span><span class="nx">string</span><span class="o">|</span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="nx">loaded</span><span class="o">:</span><span class="w"> </span><span class="kr">boolean</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="nx">open</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">            </span><span class="c1">// dropdown aberto</span>
+<span class="w">  </span><span class="nx">fullscreen</span><span class="o">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">      </span><span class="c1">// modal de tela cheia</span>
+<span class="w">  </span><span class="nx">unseen</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">[</span><span class="nx">sessionKey</span><span class="p">]</span><span class="o">:</span><span class="w"> </span><span class="nx">number</span><span class="w"> </span><span class="p">}</span><span class="w">   </span><span class="c1">// contador para abas abertas com a conversa fora de vista</span>
+<span class="p">}</span>
+<span class="c1">// ações</span>
+<span class="nx">loadItems</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">)</span><span class="w">                 </span><span class="c1">// GET, ao montar/trocar de conversa (se !loaded)</span>
+<span class="nx">receiveOpen</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="nx">item</span><span class="p">,</span><span class="w"> </span><span class="nx">reused</span><span class="p">)</span><span class="w"> </span><span class="c1">// chamado pelo frame viewer_open</span>
+<span class="nx">openByPath</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="nx">caminho</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="nx">linha</span><span class="p">,</span><span class="w"> </span><span class="nx">relativoA</span><span class="p">})</span><span class="w">  </span><span class="c1">// POST (links clicados pelo usuário)</span>
+<span class="nx">closeItem</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="nx">itemId</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">closeAll</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">)</span>
+<span class="nx">setActive</span><span class="p">(</span><span class="nx">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="nx">itemId</span><span class="p">)</span>
+<span class="nx">setOpen</span><span class="p">(</span><span class="nx">bool</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">setFullscreen</span><span class="p">(</span><span class="nx">bool</span><span class="p">)</span>
+</code></pre></div>
+<p><code>receiveOpen</code>: adiciona ou atualiza o item e o torna ativo. Se
+<code>sessionKey === activeSessionKey</code> e a tela de chat estiver visível: <code>open=true</code>
+(no celular, <code>fullscreen=true</code>). Senão: <code>unseen[sessionKey]++</code> e aviso curto
+(toast) "claude abriu <code>relatorio.html</code> · Ver".</p>
+<p>O <code>TerminalPanel</code> é montado também em testes isolados, sem Provider: use
+<code>useContext</code> com fallback nulo e só chame <code>receiveOpen</code> se o contexto existir.</p>
+<h3 id="653-painel-à-direita-dropdown-e-tela-cheia">6.5.3 Painel à direita ("dropdown") e tela cheia</h3>
+<ul>
+<li><strong>Painel à direita</strong>, escolhido pela largura (Parte 8, seção 8.2.2):</li>
+<li><code>ViewerDock</code> (≥ 1100 px, <code>WIDE_VIEWPORT_QUERY</code>): irmão flex do conteúdo
+    do <code>ChatV2</code>, largura <code>clamp(420px, 42vw, 780px)</code>, borda esquerda
+    <code>--v2-border</code>. Ao abrir/fechar, liga o <strong>recolhimento forçado</strong> das colunas
+    (Parte 8, 8.3.3) e dispara <code>escritorio:sidebar-toggled</code> para o xterm se reajustar.</li>
+<li><code>ViewerDrawer</code> (641–1099 px): overlay à direita no padrão do
+    <code>TasksDrawer.jsx</code>, largura <code>min(560px, 92vw)</code>, faixa <code>--v2-scrim</code> leve;
+    fecha com Esc, ✕ ou toque fora.</li>
+<li>Fecha também quando a sessão ativa muda? <strong>Não</strong>: as abas são por sessão,
+    então o painel troca para as abas da nova sessão (ou mostra o estado vazio).</li>
+<li>Se a Fase N ainda não tiver sido feita, o <code>ViewerDock</code> funciona do mesmo
+  jeito, só que sem o recolhimento automático (o usuário recolhe à mão).</li>
+<li><strong>Tela cheia:</strong> <code>ViewerFullscreen</code> renderiza o <code>ViewerPanel</code> num portal em
+  <code>document.body</code>, <code>position: fixed; inset: 0</code>, respeitando
+  <code>--v2-safe-*</code>. Barra superior: abas à esquerda, <strong>✕ Fechar</strong> à direita
+  (44 px). Esc ou Fechar → <code>fullscreen=false</code> (volta ao painel à direita no iPad/PC;
+  no celular fecha tudo).</li>
+<li><strong>Um só painel por vez:</strong> quando <code>fullscreen</code> é verdadeiro, o painel à direita não
+  renderiza. A aba ativa é a mesma nos dois (estado no contexto). O <code>iframe</code> do
+  HTML recarrega ao trocar de contêiner, o que é aceitável.</li>
+<li>Botão no cabeçalho: ao lado de <code>AttachmentsMenu</code> na topbar do <code>AppV2</code>
+  (mesma guarda <code>!isMobile &amp;&amp; v2Screen === 'chat'</code>). Rótulo "Visualizador" e
+  selo com o número de abas; selo destacado quando <code>unseen &gt; 0</code>.</li>
+<li>Celular: <code>ViewerMobileButton</code> flutuante perto do "☰ Menu" quando
+  <code>mobileView === 'content'</code>, abrindo direto em tela cheia.</li>
+</ul>
+<h3 id="654-renderização">6.5.4 Renderização</h3>
+<ul>
+<li><strong>Markdown:</strong> ampliar <code>renderMarkdown</code> com <code>marked</code> em modo GFM; manter
+  <code>DOMPurify</code>. Depois de montar, os <code>&lt;pre&gt;&lt;code class="language-x"&gt;</code> recebem
+  destaque (6.5.5) e um cabeçalho com linguagem e <strong>Copiar</strong>
+  (<code>utils/clipboard.js</code>). Links:</li>
+<li><code>http(s)://</code> → nova aba do navegador (<code>target="_blank" rel="noopener noreferrer"</code>);</li>
+<li>relativos que apontam para arquivo (<code>../plano.md</code>, <code>src/app.py#L10</code>) →
+    interceptar o clique e chamar <code>openByPath(sessionKey, href, {relativoA: item.path})</code>,
+    abrindo <strong>outra aba</strong> do visualizador;</li>
+<li>âncoras <code>#secao</code> → rolar dentro do painel.
+  Imagens relativas → <code>src</code> reescrito para <code>/api/viewer/{item_id}/f/&lt;caminho resolvido&gt;</code>.</li>
+<li><strong>HTML:</strong> <code>&lt;iframe src="/api/viewer/{item_id}/f/{path}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"&gt;</code>
+  ocupando o corpo inteiro; alternância <strong>Preview · Código</strong> (Código usa o <code>CodeView</code>).</li>
+<li><strong>Código:</strong> números de linha, quebra de linha opcional, rolar até <code>line</code> e
+  destacar por 2 s. Seleção de texto nativa.</li>
+<li><strong>Arquivos grandes/binários:</strong> <code>BinaryView</code> com Baixar.</li>
+</ul>
+<h3 id="655-destaque-de-sintaxe">6.5.5 Destaque de sintaxe</h3>
+<p>Usar <strong>Shiki</strong> com carregamento sob demanda (import dinâmico do núcleo e de
+cada linguagem só quando aparecer), temas <code>github-light</code>/<code>github-dark</code>
+conforme <code>data-theme</code>. Se o custo de bundle ficar alto para o iPad (medir com
+<code>npm run build</code>), a alternativa aceita é <code>highlight.js</code> com linguagens
+registradas sob demanda; registrar a decisão no PR.</p>
+<h3 id="656-links-clicáveis-no-terminal-resolve-o-problema-de-origem">6.5.6 Links clicáveis no terminal (resolve o problema de origem)</h3>
+<ul>
+<li><code>@xterm/addon-web-links</code>: URLs <code>https://…</code> viram links e abrem em nova aba
+  do navegador.</li>
+<li><code>term.registerLinkProvider</code> para <strong>caminhos de arquivo</strong> (<code>docs/plano.md</code>,
+  <code>src/app.py:42</code>, <code>./README.md</code>, absolutos dentro do projeto): ao ativar,
+  chama <code>openByPath(sessionKey, caminho, {linha})</code>.</li>
+<li><strong>Verificação obrigatória no iPad:</strong> o xterm ativa links por clique; no
+  toque do iPad isso deve funcionar, mas precisa ser testado. Se não
+  funcionar, registrar no PR. O caminho garantido continua sendo o agente
+  chamar a tool.</li>
+</ul>
+<hr />
+<h2 id="66-ordem-de-execução-um-commit-por-passo-testes-verdes-em-cada-um">6.6 Ordem de execução (um commit por passo, testes verdes em cada um)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Passo</th>
+<th>Entrega</th>
+<th>Verificação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>file_access.py</code> + testes; <code>attachments.py</code> passa a importar a contenção daqui</td>
+<td><code>pytest tests/test_file_access.py tests/test_attachments*.py</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ViewerStore</code> + rotas 6.4.3 (sem MCP, sem WS)</td>
+<td><code>pytest tests/test_viewer_store.py tests/test_viewer_endpoints.py</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>mcp_viewer_adapter.py</code> + registro em <code>_escritorio_mcp_servers</code></td>
+<td><code>pytest tests/test_mcp_viewer_adapter.py</code> + suíte do spawn/codex</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>notify_viewer_open</code> + frame no WS</td>
+<td>caso novo em <code>test_websocket.py</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>ViewerContext</code> + tratamento do frame no <code>TerminalPanel</code></td>
+<td>vitest do contexto e do <code>isControlFrame</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Dropdown, abas, barra, renderers Markdown/Código/Binário</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>7</td>
+<td>HTML (iframe), imagem, PDF, download</td>
+<td>vitest + manual</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Tela cheia + botão mobile</td>
+<td>vitest + manual</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Links no terminal (6.5.6)</td>
+<td>manual no iPad</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Atualizar README do projeto (seção de uso) e esta doc se algo mudou</td>
+<td>revisão</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="67-testes">6.7 Testes</h2>
+<h3 id="backend">Backend</h3>
+<ul>
+<li><code>resolve_safe_path</code>: relativo ok; absoluto dentro ok; <code>../fora</code>,
+  absoluto fora, symlink para fora, <code>\x00</code>, pasta, inexistente, cada item da
+  denylist. No Windows: drive diferente → recusa.</li>
+<li>Rotas: criar item pelo hook com <code>claude_session_id</code> válido e inválido;
+  reaproveitar aba do mesmo caminho (<code>reused:true</code>); limite de 15; listar em
+  ordem; fechar uma e todas; <code>content</code> de markdown, de binário (<code>is_text:false</code>)
+  e de arquivo &gt; 1 MB (<code>truncated:true</code>); <code>f/</code> com HTML tem CSP <code>sandbox</code>;
+  <code>f/</code> servindo <code>style.css</code> vizinho; <code>f/</code> recusando <code>.env</code> e <code>../../</code>;
+  <code>download=1</code> com nome acentuado; hook vindo de IP não-loopback → 403.</li>
+<li>Adapter MCP: <code>initialize</code>, <code>tools/list</code> com a tool, <code>tools/call</code> com sucesso,
+  com erro do backend e com backend fora do ar (mesmo estilo de
+  <code>test_mcp_card_adapter.py</code>).</li>
+<li>WebSocket: com cliente conectado na sessão, o POST gera um frame de texto
+  <code>viewer_open</code>; sem cliente, <code>delivered:false</code> e nada quebra.</li>
+</ul>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li><code>isControlFrame</code> reconhece <code>viewer_open</code>.</li>
+<li><code>ViewerContext</code>: <code>receiveOpen</code> com conversa visível abre o dropdown; com
+  conversa oculta incrementa <code>unseen</code>; aba reaproveitada não duplica; fechar
+  a última aba fecha o dropdown.</li>
+<li><code>MarkdownView</code>: link externo com <code>rel="noopener noreferrer"</code>; link relativo
+  chama <code>openByPath</code> com <code>relativoA</code>; imagem relativa reescrita para <code>/api/viewer/…/f/…</code>.</li>
+<li><code>HtmlView</code>: iframe <strong>sem</strong> <code>allow-same-origin</code>.</li>
+<li><code>ViewerFullscreen</code>: Esc chama <code>setFullscreen(false)</code>; renderiza em portal.</li>
+<li>Manter <code>fixedPositioningInvariant.test.js</code> passando.</li>
+</ul>
+<h3 id="aceite-manual-ipad-safari-e-pwa-instalado">Aceite manual (iPad, Safari e PWA instalado)</h3>
+<ol>
+<li>Pedir ao claude: "crie <code>docs/teste-visualizador.md</code> com uma tabela, uma
+   checklist e um bloco de Python, e abra no visualizador". O dropdown abre
+   sozinho com a aba renderizada.</li>
+<li>Pedir outro arquivo: abre <strong>aba nova</strong>; pedir o primeiro de novo: foca a
+   aba existente com o conteúdo atualizado.</li>
+<li>Pedir um <code>.html</code> com CSS e imagem em arquivos separados: aparece com estilo e imagem.</li>
+<li><strong>⤢ Tela cheia</strong> → modal ocupando a página; <strong>✕ Fechar</strong> volta ao dropdown; Esc também.</li>
+<li><strong>⤓ Baixar</strong> num <code>.md</code>: arquivo em Arquivos › Downloads.</li>
+<li>Selecionar três linhas de um bloco de código com o dedo e colar no Notas.</li>
+<li>Estar em outra conversa quando o agente abre um arquivo: contador no botão
+   e aviso; ao trocar para a conversa, as abas estão lá.</li>
+<li>Recarregar a página: as abas continuam.</li>
+<li>No celular: botão flutuante abre direto em tela cheia.</li>
+<li>Pedir ao agente para abrir <code>.env</code>: ele recebe "Arquivo protegido" e nada aparece.</li>
+<li>Tocar num caminho de arquivo no terminal (registrar se funcionou no iPad).</li>
+<li>Mesmo teste 1 com o <code>codex</code>.</li>
+</ol>
+<hr />
+<h2 id="68-riscos-e-como-mitigar">6.8 Riscos e como mitigar</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risco</th>
+<th>Mitigação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O agente não usa a tool por conta própria</td>
+<td>Descrição da tool diz explicitamente quando usar. Se ainda assim não usar, adicionar uma linha ao <code>system_prompt</code> do agente no cadastro de agentes (Configuração) ou ao <code>CLAUDE.md</code> do projeto: "Sempre que criar ou alterar um arquivo que eu deva ver, abra-o com abrir_no_visualizador."</td>
+</tr>
+<tr>
+<td>Sem autenticação, alguém na rede lista abas e lê arquivos</td>
+<td>Superfície limitada a arquivos abertos + vizinhos do mesmo projeto, com denylist. A autenticação (4.1, fase F0) fecha isso de vez e deve vir logo em seguida</td>
+</tr>
+<tr>
+<td>HTML malicioso gerado por engano</td>
+<td><code>iframe</code> sem <code>allow-same-origin</code> + CSP <code>sandbox</code> no cabeçalho</td>
+</tr>
+<tr>
+<td>Bundle pesado (Shiki, marked) no iPad</td>
+<td>Imports dinâmicos; medir com <code>npm run build</code> e registrar tamanhos no PR</td>
+</tr>
+<tr>
+<td>Frame chega enquanto o WS está sendo substituído (evicção de leitor único)</td>
+<td>A aba está no banco; <code>loadItems</code> na montagem recupera</td>
+</tr>
+<tr>
+<td>Conversa aberta em dois aparelhos: só o conectado recebe o frame</td>
+<td>O outro vê as abas ao abrir a conversa (GET). Assinatura múltipla fica para o chat da Parte 2</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="69-definição-de-pronto">6.9 Definição de pronto</h2>
+<ul>
+<li><input type="checkbox" disabled> Todos os testes (<code>pytest</code> e <code>npm test</code>) passando, incluindo os novos.</li>
+<li><input type="checkbox" disabled> Os 12 passos de aceite manual conferidos no iPad (itens que dependem do
+      aparelho marcados como "verificar" no PR, se o agente não tiver iPad).</li>
+<li><input type="checkbox" disabled> <code>deploy.sh</code> e <code>deploy.ps1</code> funcionando sem mudança de uso.</li>
+<li><input type="checkbox" disabled> README do projeto com uma seção curta "Visualizador de arquivos".</li>
+<li><input type="checkbox" disabled> Este documento atualizado se a implementação divergir.</li>
+</ul><div class="pager"><a href="05-plano-de-execucao-e-prompts.html"><small>Anterior</small>5 · Plano e prompts</a><a class="next" href="07-planejamento-artefatos.html"><small>Próxima</small>7 · Planejamento da Fase A</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

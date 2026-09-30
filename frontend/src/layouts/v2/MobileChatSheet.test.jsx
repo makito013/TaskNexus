@@ -425,3 +425,19 @@ describe('MobileChatSheet — reset do NewChatSheet quando o cliente selecionado
     expect(screen.getByLabelText('Cliente')).toBeTruthy();
   });
 });
+
+// Fase N: com um projeto escolhido no menu, o sheet nomeia o escopo e o
+// "+ Novo chat" abre já apontando para ele.
+describe('MobileChatSheet — escopo de projeto (Fase N)', () => {
+  it('título "Chats de cliente / projeto" e NewChatSheet com o projeto preenchido', () => {
+    render(<MobileChatSheet {...baseProps({ selectedProjetoId: 'cliente_projeto_1/subprojeto_1' })} />);
+    expect(screen.getByText('Chats de Cliente 1 / subprojeto_1')).toBeTruthy();
+    fireEvent.click(getFooterNewChatButton());
+    expect(screen.getByLabelText('Projeto principal').value).toBe('cliente_projeto_1/subprojeto_1');
+  });
+
+  it('sem projeto, o título continua "Chats de {cliente}"', () => {
+    render(<MobileChatSheet {...baseProps({ selectedProjetoId: null })} />);
+    expect(screen.getByText('Chats de Cliente 1')).toBeTruthy();
+  });
+});

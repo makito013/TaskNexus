@@ -249,7 +249,10 @@ function OpenDoneSections({ open, done, onToggle, onOpenDetail, projects, hideCl
   );
 }
 
-export function TarefasV2({ projects = [], selectedClienteId }) {
+// Fase N: `selectedProjetoId` é o PROJETO escolhido na sidebar (useNavScope no
+// AppV2). A barra parte dele e refina só nesta tela — mesma tabela do BoardV2,
+// documentada em useClienteProjetoFilter.js.
+export function TarefasV2({ projects = [], selectedClienteId, selectedProjetoId: sidebarProjetoId = null }) {
   const { tasks, loading, completeTask, reopenTask } = useGlobalTasks();
 
   // Cascata Cliente -> Projeto (estado local desta tela, mesmo hook que
@@ -266,7 +269,7 @@ export function TarefasV2({ projects = [], selectedClienteId }) {
     selectedProjetoId,
     setSelectedProjetoId,
     selectedProjectIds,
-  } = useClienteProjetoFilter(projects, selectedClienteId);
+  } = useClienteProjetoFilter(projects, selectedClienteId, sidebarProjetoId);
 
   const handleToggle = (task) => {
     if (task.status === 'done') reopenTask(task.session_key, task.id);

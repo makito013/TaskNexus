@@ -12,10 +12,34 @@
 // dropped cards living in 3+ level hierarchies (cliente/projeto/sub). The
 // dropdown stays shallow (direct children only) while the filter behind it
 // goes deep — intentional, see the tests named for it.
+//
+// Fase N (08-planejamento-navegacao-cliente-projeto.md, 8.2.1 item 5 —
+// decisão do Bruno: a barra CONTINUA no Board/Tarefas, "principalmente quando
+// estiver em Todos"): a sidebar agora escolhe também um PROJETO
+// (`sidebarProjetoId`, do useNavScope no AppV2), e a barra passa a PARTIR dela:
+//
+//   Sidebar                 Barra                                    Muda
+//   "Todos"                 Cliente + Projeto (igual a antes)        só a tela
+//   Cliente                 Projeto do cliente (igual a antes)       só a tela
+//   Projeto                 Projeto já PREENCHIDO com ele, listando  só a tela
+//                           também os subprojetos dele
+//
+// O refinamento feito na barra é LOCAL (nunca volta para a sidebar nem para o
+// chat) e é DESCARTADO sempre que a sidebar muda — cliente OU projeto —: a
+// sidebar é a base, a barra é "olhar outra coisa só aqui". O descarte acontece
+// no próprio render em que a sidebar muda (estado marcado com a chave do
+// escopo, ajustado durante o render), não num efeito: com efeito, esse render
+// ainda filtraria pelo refinamento velho e o Board dispararia uma busca por
+// ele antes de corrigir.
+//
+// "Raiz" (sidebar com `projetoId === clienteId`) filtra SÓ os itens presos
+// direto no cliente — igualdade exata, não subárvore (utils/projectTree.js) —
+// e ganha uma opção "Raiz" no select para ele poder vir preenchido.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { clienteIdFromProjetoId, isClienteId } from '../../utils/clientes.js';
 import { resolveClienteNome } from '../../utils/taskGroups.js';
+import { compareProjectPaths } from '../../utils/projects.js';
 
 // Every project id in `rootId`'s subtree, including `rootId` itself. Matching
 // is on the full "rootId/" prefix so that a sibling whose id merely starts
@@ -52,19 +76,44 @@ export function resolveCardTags(projetoId, projects) {
   return { clienteId, clienteNome, projetoNome };
 }
 
-export function useClienteProjetoFilter(projects, sidebarClienteId) {
-  // Local Tier-1 selection: only relevant while the sidebar is on "Todos"
-  // (sidebarClienteId == null). Covers the "board opened via Todos" case.
-  const [localClienteId, setLocalClienteId] = useState(null);
+export function useClienteProjetoFilter(projects, sidebarClienteId, sidebarProjetoId = null) {
+  // Um projeto sem cliente na sidebar não tem sentido ("Todos" é sempre
+  // projeto nulo); normaliza para a barra nunca partir de um par impossível.
+  const anchorProjetoId = sidebarClienteId != null ? (sidebarProjetoId ?? null) : null;
 
-  // Reset the local pick whenever the sidebar LEAVES "Todos" — a stale local
-  // selection can't survive that transition.
-  useEffect(() => {
-    if (sidebarClienteId != null) setLocalClienteId(null);
-  }, [sidebarClienteId]);
+  // Refinamento LOCAL da barra, marcado com o escopo da sidebar em que foi
+  // feito. `clienteId` só vale enquanto a sidebar está em "Todos" (Tier 1
+  // local); `projetoId` é o Tier 2, que nasce igual ao projeto da sidebar.
+  const scopeKey = `${sidebarClienteId ?? ''}\n${anchorProjetoId ?? ''}`;
+  const [refinement, setRefinement] = useState(
+    () => ({ scopeKey, clienteId: null, projetoId: anchorProjetoId })
+  );
+  let current = refinement;
+  if (refinement.scopeKey !== scopeKey) {
+    // A sidebar mudou: a barra volta a acompanhá-la NESTE render.
+    current = { scopeKey, clienteId: null, projetoId: anchorProjetoId };
+    setRefinement(current);
+  }
 
+  const localClienteId = current.clienteId;
+  const selectedProjetoId = current.projetoId;
   const clienteSelectEnabled = sidebarClienteId == null;
   const effectiveClienteId = sidebarClienteId ?? localClienteId;
+
+  // Trocar o cliente no select local recomeça o Tier 2 em "Todos os projetos"
+  // — um projeto do cliente anterior não existe no novo.
+  const setLocalClienteId = useCallback(
+    (clienteId) => setRefinement({ scopeKey, clienteId, projetoId: null }),
+    [scopeKey]
+  );
+  const setSelectedProjetoId = useCallback(
+    (projetoId) => setRefinement((r) => ({
+      scopeKey,
+      clienteId: r.scopeKey === scopeKey ? r.clienteId : null,
+      projetoId,
+    })),
+    [scopeKey]
+  );
 
   // Top-level projects are the "clientes" candidates — same rule AppV2.jsx
   // already uses to build the sidebar list, consumed here from the single
@@ -74,23 +123,40 @@ export function useClienteProjetoFilter(projects, sidebarClienteId) {
     [projects]
   );
 
-  // Direct children only: this feeds the (shallow) Tier-2 dropdown.
+  // Direct children only: this feeds the (shallow) Tier-2 dropdown. With a
+  // project chosen on the sidebar the dropdown also carries that project's
+  // ancestors and its whole subtree ("mostra também os subprojetos"), in tree
+  // order, so the pre-filled value is always one of the options; "Raiz" adds
+  // the client itself as the first option.
   const subProjetoIds = useMemo(() => {
     const found = (projects || []).find((p) => p.id === effectiveClienteId);
-    return found?.sub_projetos || [];
-  }, [projects, effectiveClienteId]);
-
-  const [selectedProjetoId, setSelectedProjetoId] = useState(null);
-  useEffect(() => { setSelectedProjetoId(null); }, [effectiveClienteId]);
+    const direct = found?.sub_projetos || [];
+    if (anchorProjetoId == null || effectiveClienteId == null) return direct;
+    if (anchorProjetoId === effectiveClienteId) return [effectiveClienteId, ...direct];
+    const inClient = `${effectiveClienteId}/`;
+    const related = (projects || [])
+      .map((p) => p.id)
+      .filter((id) => id.startsWith(inClient)
+        && (anchorProjetoId === id
+          || anchorProjetoId.startsWith(`${id}/`)
+          || id.startsWith(`${anchorProjetoId}/`)));
+    // O próprio projeto da sidebar entra mesmo antes de `projects` chegar,
+    // senão o select preenchido ficaria sem a opção correspondente.
+    return Array.from(new Set([...direct, ...related, anchorProjetoId])).sort(compareProjectPaths);
+  }, [projects, effectiveClienteId, anchorProjetoId]);
 
   const selectedProjectIds = useMemo(() => {
     if (effectiveClienteId == null) return [];
 
-    // Guard against a `selectedProjetoId` left over from the previous client:
-    // the reset above runs in an effect, so the render where
-    // `effectiveClienteId` changes still sees the old project id. Ignoring an
-    // id outside the current client keeps that render from leaking the other
-    // client's cards.
+    // "Raiz" (Fase N): só o próprio cliente, igualdade exata — a subárvore do
+    // cliente inteiro já é o `selectedProjetoId == null` abaixo.
+    if (selectedProjetoId === effectiveClienteId) return [effectiveClienteId];
+
+    // Guard against a `selectedProjetoId` from another client. The reset used
+    // to run in an effect (one render late); since Fase N it happens in the
+    // very render where the client changes, but the guard stays as defense in
+    // depth — a stale `onChange` from a select of the previous client must
+    // never leak the other client's cards into a query.
     const rootId =
       selectedProjetoId && selectedProjetoId.startsWith(`${effectiveClienteId}/`)
         ? selectedProjetoId

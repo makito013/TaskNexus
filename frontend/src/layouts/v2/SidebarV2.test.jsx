@@ -75,16 +75,19 @@ describe('SidebarV2 — seção "Clientes" (renomeada de "Projetos")', () => {
     expect(onSelectCliente).toHaveBeenCalledWith('cliente_projeto_1');
   });
 
+  // Fase N: o nome passou a morar num <span> dentro da linha (reticência +
+  // espaço para o "›"), então o estilo de item ativo é lido da LINHA — o nó
+  // com `title` —, onde ele sempre esteve.
   it('sem cliente selecionado (selectedClienteId=null): "Todos" fica com o estilo de item ativo', () => {
     render(<SidebarV2 {...baseProps({ selectedClienteId: null })} />);
-    const todosItem = screen.getByText('Todos');
+    const todosItem = screen.getByTitle('Todos');
     expect(todosItem.style.color).toBe('var(--v2-text)');
   });
 
   it('com um cliente selecionado: o item daquele cliente fica com o estilo de item ativo, "Todos" não', () => {
     render(<SidebarV2 {...baseProps({ selectedClienteId: 'cliente_projeto_1' })} />);
-    const clienteItem = screen.getByText('Cliente 1');
-    const todosItem = screen.getByText('Todos');
+    const clienteItem = screen.getByTitle('Cliente 1');
+    const todosItem = screen.getByTitle('Todos');
     expect(clienteItem.style.color).toBe('var(--v2-text)');
     expect(todosItem.style.color).toBe('var(--v2-text-dim)');
   });
@@ -152,5 +155,46 @@ describe('SidebarV2 — navegação entre telas', () => {
     render(<SidebarV2 {...baseProps({ onSelectScreen })} />);
     fireEvent.keyDown(screen.getByRole('tab', { name: /Board/i }), { key: 'Enter' });
     expect(onSelectScreen).toHaveBeenCalledWith('board');
+  });
+});
+
+// Fase N: a SidebarV2 só repassa o escopo de navegação ao ClienteList — a
+// cobertura do drill-down em si vive em ClienteList.test.jsx.
+describe('SidebarV2 — drill-down Clientes → Projetos (Fase N)', () => {
+  const PROJECTS = [
+    { id: 'podesubir', nome: 'Pode Subir', elegivel: true },
+    { id: 'podesubir/site', nome: 'site', elegivel: true },
+    { id: 'cliente_projeto_1', nome: 'Cliente 1', elegivel: true },
+  ];
+  const drillProps = (overrides = {}) => baseProps({
+    projects: PROJECTS,
+    onEnterCliente: vi.fn(),
+    onSelectProjeto: vi.fn(),
+    onEnterProjeto: vi.fn(),
+    onBack: vi.fn(),
+    ...overrides,
+  });
+
+  it('tocar num cliente com subprojetos chama onEnterCliente', () => {
+    const props = drillProps();
+    render(<SidebarV2 {...props} />);
+    fireEvent.click(screen.getByText('Pode Subir'));
+    expect(props.onEnterCliente).toHaveBeenCalledWith('podesubir');
+  });
+
+  it('no nível Projetos, repassa voltar e seleção de projeto', () => {
+    const props = drillProps({ selectedClienteId: 'podesubir', navLevel: 'projetos', navParentId: 'podesubir' });
+    render(<SidebarV2 {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar para Clientes' }));
+    fireEvent.click(screen.getByText('site'));
+    expect(props.onBack).toHaveBeenCalled();
+    expect(props.onSelectProjeto).toHaveBeenCalledWith('podesubir/site');
+  });
+
+  it('RF01 continua valendo no nível Projetos: voltar e lista rolam junto com o nav', () => {
+    render(<SidebarV2 {...drillProps({ selectedClienteId: 'podesubir', navLevel: 'projetos', navParentId: 'podesubir' })} />);
+    const scrollArea = screen.getByRole('tablist').parentElement;
+    expect(scrollArea.contains(screen.getByRole('button', { name: 'Voltar para Clientes' }))).toBe(true);
+    expect(scrollArea.contains(screen.getByText('Pode Subir · Projetos'))).toBe(true);
   });
 });

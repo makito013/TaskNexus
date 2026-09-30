@@ -24,12 +24,21 @@
 // grupos, no modo "Todos") também some — os avatares de clientes diferentes
 // ficam numa lista contínua sem separador de texto. Estado vazio
 // (`emptyState`) não renderiza nada (sem espaço pro texto).
+//
+// Fase N (filtro global por projeto): com um projeto escolhido na sidebar
+// (`selectedProjetoId`), a lista do cliente encolhe para a SUBÁRVORE desse
+// projeto (`isInScope`, utils/projectTree.js — por prefixo, então 3 níveis
+// funcionam), e "Raiz" (`selectedProjetoId === selectedClienteId`) mostra só
+// os chats presos na pasta do próprio cliente. O meta de cada linha continua
+// relativo ao cliente, como antes. O estado vazio passa a nomear o escopo
+// inteiro ("podesubir / site") para não parecer que o cliente não tem chat.
 
 import { tabLabels } from '../../utils/sessionLabels.js';
 import { RenameableLabel } from '../../components/RenameableLabel.jsx';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { useAgentSettings } from '../../hooks/useAgentSettings.js';
 import { relativeProjectPath, truncatePathMeta } from '../../utils/projects.js';
+import { isInScope, scopeLabel } from '../../utils/projectTree.js';
 
 const styles = {
   list: {
@@ -135,6 +144,7 @@ export function ChatList({
   activeSessions,
   persistedSessions,
   selectedClienteId,
+  selectedProjetoId = null,
   onSelectChat,
   onRenameChat,
   onCloseChat,
@@ -203,14 +213,19 @@ export function ChatList({
   let listContent;
   if (selectedClienteId != null) {
     // Lista única (sem sub-agrupamento) só com as sessões do cliente
-    // selecionado.
-    const filteredChats = labeledChats.filter(
-      (chat) => clienteIdFromProjetoId(chat.projectId) === selectedClienteId
+    // selecionado — e, com um projeto escolhido, só as da subárvore dele.
+    const filteredChats = labeledChats.filter((chat) =>
+      selectedProjetoId == null
+        ? clienteIdFromProjetoId(chat.projectId) === selectedClienteId
+        : isInScope(chat.projectId, selectedClienteId, selectedProjetoId)
     );
     if (filteredChats.length === 0) {
       // Collapsed: sem espaço pro texto do estado vazio — omite o bloco.
       const clienteNome = selectedCliente?.nome || selectedClienteId;
-      listContent = collapsed ? null : renderEmptyState(clienteNome);
+      const escopoNome = selectedProjetoId == null
+        ? clienteNome
+        : scopeLabel(selectedClienteId, selectedProjetoId, projects);
+      listContent = collapsed ? null : renderEmptyState(escopoNome);
     } else {
       listContent = filteredChats.map((chat) =>
         renderChatRow(

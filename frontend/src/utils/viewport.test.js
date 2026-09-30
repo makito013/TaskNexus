@@ -15,7 +15,7 @@
 // estreito, ~744px, confirmado em CONTEXTO.md seção 4) — se alguém mudar
 // "640px" para, digamos, "768px" sem querer, este teste quebra na hora.
 import { describe, it, expect } from 'vitest';
-import { MOBILE_VIEWPORT_QUERY, NARROW_VIEWPORT_QUERY } from './viewport.js';
+import { MOBILE_VIEWPORT_QUERY, NARROW_VIEWPORT_QUERY, WIDE_VIEWPORT_QUERY } from './viewport.js';
 
 // Extrai o número de "(max-width: NNNpx)" sem depender de parsing de CSS de
 // verdade — string simples o bastante para isso ser seguro.
@@ -42,5 +42,19 @@ describe('viewport — MOBILE_VIEWPORT_QUERY nunca alcança a largura de um iPad
 describe('viewport — NARROW_VIEWPORT_QUERY (regressão, não específico da navegação mobile)', () => {
   it('é exatamente "(max-width: 820px)"', () => {
     expect(NARROW_VIEWPORT_QUERY).toBe('(max-width: 820px)');
+  });
+});
+
+// Fase N: breakpoint do painel encaixado (recolhimento automático das colunas).
+describe('viewport — WIDE_VIEWPORT_QUERY (Fase N, visualizador encaixado)', () => {
+  it('é exatamente "(min-width: 1100px)"', () => {
+    expect(WIDE_VIEWPORT_QUERY).toBe('(min-width: 1100px)');
+  });
+
+  it('pega o iPad deitado (1180px) e deixa o iPad em pé (820px) e o iPad Pro 11" em pé (834px) de fora', () => {
+    const minWidth = Number(/min-width:\s*(\d+)px/.exec(WIDE_VIEWPORT_QUERY)[1]);
+    expect(minWidth).toBeLessThanOrEqual(1180);
+    expect(minWidth).toBeGreaterThan(834);
+    expect(minWidth).toBeGreaterThan(maxWidthPx(NARROW_VIEWPORT_QUERY));
   });
 });

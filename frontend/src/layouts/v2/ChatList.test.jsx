@@ -191,3 +191,56 @@ describe('ChatList — meta de profundidade >= 2 (truncatePathMeta + title)', ()
     expect(meta.style.color).toBe('var(--v2-text-dim)');
   });
 });
+
+// Fase N: com um projeto escolhido na sidebar, a lista do cliente encolhe para
+// a subárvore dele (3 níveis inclusive); "Raiz" mostra só a pasta do cliente.
+describe('ChatList — filtro pelo projeto da sidebar (Fase N)', () => {
+  const tree = [
+    { id: 'pode', nome: 'pode', elegivel: true },
+    { id: 'pode/site', nome: 'site', elegivel: true },
+    { id: 'pode/api', nome: 'api', elegivel: false },
+    { id: 'pode/api/v2', nome: 'v2', elegivel: true },
+    { id: 'pode/api2', nome: 'api2', elegivel: true },
+  ];
+  const sessions = {
+    'pode::claude': { display_name: 'Chat raiz' },
+    'pode/site::claude': { display_name: 'Chat site' },
+    'pode/api/v2::claude': { display_name: 'Chat v2' },
+    'pode/api2::claude': { display_name: 'Chat api2' },
+  };
+  const props = (overrides) => baseProps({
+    projects: tree,
+    persistedSessions: sessions,
+    selectedClienteId: 'pode',
+    selectedCliente: tree[0],
+    collapsed: false,
+    ...overrides,
+  });
+  const labels = () => Array.from(document.querySelectorAll('.v2-chat-avatar')).map((a) => a.parentElement.textContent);
+
+  it('sem projeto: todos os chats do cliente, como antes', () => {
+    render(<ChatList {...props({ selectedProjetoId: null })} />);
+    expect(screen.getByText('Chat raiz')).toBeTruthy();
+    expect(screen.getByText('Chat v2')).toBeTruthy();
+    expect(labels()).toHaveLength(4);
+  });
+
+  it('projeto com filhos: ele e a subárvore (neto incluído), sem o irmão de nome parecido', () => {
+    render(<ChatList {...props({ selectedProjetoId: 'pode/api' })} />);
+    expect(screen.getByText('Chat v2')).toBeTruthy();
+    expect(screen.queryByText('Chat api2')).toBeNull();
+    expect(screen.queryByText('Chat raiz')).toBeNull();
+    expect(screen.queryByText('Chat site')).toBeNull();
+  });
+
+  it('Raiz: só os chats presos na pasta do próprio cliente', () => {
+    render(<ChatList {...props({ selectedProjetoId: 'pode' })} />);
+    expect(screen.getByText('Chat raiz')).toBeTruthy();
+    expect(labels()).toHaveLength(1);
+  });
+
+  it('estado vazio nomeia o escopo inteiro ("cliente / projeto")', () => {
+    render(<ChatList {...props({ persistedSessions: { 'pode::claude': {} }, selectedProjetoId: 'pode/site' })} />);
+    expect(screen.getByText(/Nenhum chat aberto para pode \/ site\./)).toBeTruthy();
+  });
+});

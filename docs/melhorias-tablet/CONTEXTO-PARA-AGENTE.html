@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Contexto para o agente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a class="on" href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a class="on" href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#1-quem-pediu-e-como-gosta-de-trabalhar">1. Quem pediu e como gosta de trabalhar</a></li><li><a href="#2-o-problema">2. O problema</a></li><li><a href="#3-o-que-foi-pedido">3. O que foi pedido</a></li><li><a href="#4-onde-está-cada-coisa-esta-pasta">4. Onde está cada coisa (esta pasta)</a></li><li><a href="#5-decisões-já-tomadas-não-reabrir-sem-o-bruno-pedir">5. Decisões já tomadas (não reabrir sem o Bruno pedir)</a></li><li><a href="#6-mapa-do-código-que-importa">6. Mapa do código que importa</a></li><li><a href="#7-estado-atual">7. Estado atual</a></li><li><a href="#8-regras-para-quem-for-desenvolver">8. Regras para quem for desenvolver</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Contexto para retomar o trabalho</p><h1 id="contexto-para-o-agente-leia-primeiro-numa-janela-nova">Contexto para o agente (leia primeiro numa janela nova)</h1>
+<blockquote>
+<p>Este arquivo existe para que <strong>qualquer agente, numa janela de contexto
+limpa</strong>, entenda em poucos minutos o que já foi decidido e feito, e continue
+o trabalho sem precisar da conversa original. Se você é esse agente, leia
+este arquivo inteiro antes de qualquer outra coisa.</p>
+</blockquote>
+<h2 id="1-quem-pediu-e-como-gosta-de-trabalhar">1. Quem pediu e como gosta de trabalhar</h2>
+<ul>
+<li><strong>Usuário:</strong> Bruno, dono do repositório <code>brunopodesubir/TaskNexus-adjustes</code>.</li>
+<li><strong>Idioma:</strong> português do Brasil em tudo (docs, comentários, mensagens de commit).</li>
+<li><strong>Formato de documentação:</strong> sempre <strong>um <code>.md</code> e um <code>.html</code></strong> de cada
+  documento. O HTML é gerado pelo <code>build_html.py</code> desta pasta.</li>
+<li><strong>Como ele usa o TaskNexus:</strong> o backend roda no PC dele (Windows com
+  <code>deploy.ps1</code>, e também macOS/Linux com <code>deploy.sh</code>), e ele acessa pelo
+  <strong>iPad</strong> (Safari e PWA instalado), via Tailscale (<code>https://&lt;host&gt;.ts.net</code>).</li>
+<li><strong>Fluxo de trabalho combinado:</strong> planejamento e documentação numa janela;
+  desenvolvimento numa <strong>janela de contexto limpa</strong>. Quando ele pedir, o agente
+  de planejamento entrega o <strong>prompt de desenvolvimento</strong> da fase. Não
+  entregar nem executar a fase sem ele pedir.</li>
+<li><strong>Qualidade esperada:</strong> trabalho de "equipe completa" (Design, UX, TL e
+  Dev), documentação muito explicada, com imagens e diagramas, testes, e
+  sem gambiarra.</li>
+</ul>
+<h2 id="2-o-problema">2. O problema</h2>
+<p>O TaskNexus é um "escritório" web para conversar com agentes de IA (<code>claude</code>,
+<code>codex</code>, <code>agy</code>, <code>cursor-agent</code>, shells) rodando no PC, mais Board (kanban) e
+Tarefas. A conversa hoje é um <strong>terminal real</strong> (xterm.js ligado a um PTY por
+WebSocket). No tablet isso é ruim:</p>
+<ul>
+<li>não dá para <strong>clicar em links</strong> nem em caminhos de arquivo;</li>
+<li>não dá para <strong>selecionar e copiar</strong> texto com o toque nativo (o xterm desenha em canvas);</li>
+<li>faltam Esc, Tab e Ctrl no teclado virtual;</li>
+<li>a tela se desorganiza ao girar o iPad;</li>
+<li>não há como <strong>ver arquivos</strong> <code>.md</code>/<code>.html</code>/código nem <strong>baixá-los</strong> para o tablet.</li>
+</ul>
+<h2 id="3-o-que-foi-pedido">3. O que foi pedido</h2>
+<ol>
+<li>Visualizar arquivos <code>.html</code>, <code>.md</code> e de código, e baixá-los no tablet.</li>
+<li>Trocar o terminal por um <strong>chat estilo WhatsApp</strong> (links, blocos de código,
+   markdown como no GitHub).</li>
+<li>Um layout mais amigável.</li>
+<li>Outras melhorias que a equipe enxergar.</li>
+<li><strong>Ajuste posterior (mais recente, tem prioridade):</strong> como não dá para
+   clicar em links no terminal, a primeira entrega é o <strong>próprio agente fazer o
+   arquivo aparecer na tela</strong>. Cada abertura vira <strong>uma aba nova</strong>, num
+   visualizador em <strong>dropdown</strong> com botão de <strong>tela cheia</strong> (modal na página
+   com botão de fechar). Isso virou a <strong>Fase V</strong>.</li>
+<li><strong>Ajuste seguinte:</strong> uma aba <strong>Artefatos</strong>, "igual à do Claude", organizada
+   <strong>por cliente e projeto</strong>, com os artefatos criados (<code>.md</code>, <code>.pdf</code>, <code>.html</code>).
+   Tocar num artefato abre o <strong>painel lateral de visualização</strong>. <strong>Sem mexer no
+   layout:</strong> tudo em cima do layout v2 atual. Isso virou a <strong>Fase A</strong>.</li>
+<li><strong>Ajuste seguinte:</strong> liberar espaço no desktop/tablet. Ao selecionar um
+   cliente, <strong>a própria lista de clientes da sidebar vira a lista de projetos</strong>
+   dele, com seta/botão para <strong>voltar aos clientes</strong>, sobrando o <strong>lado
+   direito</strong> para o visualizador (o "dropdown"). Isso virou a <strong>Fase N</strong>.</li>
+</ol>
+<h2 id="4-onde-está-cada-coisa-esta-pasta">4. Onde está cada coisa (esta pasta)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arquivo</th>
+<th>Para quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>README.md</code></td>
+<td>Índice</td>
+</tr>
+<tr>
+<td><code>00-visao-geral-e-diagnostico.md</code></td>
+<td>Arquitetura atual, causa raiz, decisões e alternativas descartadas</td>
+</tr>
+<tr>
+<td><code>01-visualizador-de-arquivos.md</code></td>
+<td>Visualizador. A seção 1.0 resume a Fase V; o resto é o navegador de arquivos completo (fase F1)</td>
+</tr>
+<tr>
+<td><code>02-chat-conversacional.md</code></td>
+<td>Chat estruturado via <code>claude -p --input-format stream-json --output-format stream-json</code>, aprovações por tool MCP, protocolo <code>/ws/chat</code>, banco <code>chat_events</code></td>
+</tr>
+<tr>
+<td><code>03-layout-amigavel.md</code></td>
+<td>Tokens, layouts por largura, rotas reais, lista estilo WhatsApp, ⌘K, acessibilidade</td>
+</tr>
+<tr>
+<td><code>04-melhorias-adicionais.md</code></td>
+<td>14 melhorias (4.1 autenticação é obrigatória antes do navegador completo)</td>
+</tr>
+<tr>
+<td><code>05-plano-de-execucao-e-prompts.md</code></td>
+<td>Fases FV, F0–F4 e prompts das fases F0–F4</td>
+</tr>
+<tr>
+<td><code>06-planejamento-fase-v.md</code></td>
+<td><strong>Plano de desenvolvimento da Fase V (segunda a executar)</strong></td>
+</tr>
+<tr>
+<td><code>08-planejamento-navegacao-cliente-projeto.md</code></td>
+<td><strong>Plano da Fase N (sidebar clientes → projetos + espaço à direita), a primeira a executar</strong></td>
+</tr>
+<tr>
+<td><code>07-planejamento-artefatos.md</code></td>
+<td><strong>Plano de desenvolvimento da Fase A (aba Artefatos), logo depois da V</strong></td>
+</tr>
+<tr>
+<td><code>documentacao-completa.md</code> / <code>.html</code></td>
+<td>Todas as partes num arquivo só</td>
+</tr>
+<tr>
+<td><code>img/*.svg</code></td>
+<td>Diagramas e mockups (01–11)</td>
+</tr>
+<tr>
+<td><code>build_html.py</code></td>
+<td>Gera os HTML e o <code>documentacao-completa.md</code>: <code>pip install markdown pygments pymdown-extensions &amp;&amp; python3 docs/melhorias-tablet/build_html.py</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="5-decisões-já-tomadas-não-reabrir-sem-o-bruno-pedir">5. Decisões já tomadas (não reabrir sem o Bruno pedir)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tema</th>
+<th>Decisão</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ordem</td>
+<td><strong>FN</strong> (sidebar cliente → projeto) → <strong>FV</strong> (agente abre arquivo) → <strong>FA</strong> (aba Artefatos) → <strong>F0</strong> (auth + routers + restante dos quick wins) → <strong>F1</strong> (navegador de arquivos) e <strong>F2</strong> (chat claude) → <strong>F3</strong> (layout v3) → <strong>F4</strong> (codex + extras)</td>
+</tr>
+<tr>
+<td>Como o agente mostra arquivo</td>
+<td>Tool MCP <code>abrir_no_visualizador(caminho, titulo?, linha?)</code> num servidor novo <code>escritorio-visualizador</code>, registrado em <code>_escritorio_mcp_servers()</code> (vale para <code>claude</code> e <code>codex</code>)</td>
+</tr>
+<tr>
+<td>Como a tela fica sabendo</td>
+<td>Frame de controle <code>{"type":"viewer_open",…}</code> no WebSocket <code>/ws/pty/{session_key}</code> já existente, com abas persistidas na tabela <code>viewer_items</code></td>
+</tr>
+<tr>
+<td>"Aba nova"</td>
+<td>Aba <strong>dentro do visualizador</strong> (não do navegador); o mesmo arquivo reaproveita a aba e recarrega (interpretação a confirmar com o Bruno; alternativa trivial documentada na Parte 6)</td>
+</tr>
+<tr>
+<td>Tela cheia</td>
+<td>Modal em portal (<code>document.body</code>), mesmo contrato do <code>CenteredModal.jsx</code>, com ✕ Fechar e Esc; no celular abre sempre em tela cheia</td>
+</tr>
+<tr>
+<td>Segurança do visualizador</td>
+<td>Rotas por <code>item_id</code> aleatório, <code>resolve_safe_path</code> (realpath + commonpath), denylist de segredos, HTML em <code>iframe sandbox</code> sem <code>allow-same-origin</code> + CSP <code>sandbox</code></td>
+</tr>
+<tr>
+<td>Artefatos</td>
+<td>Tabela <code>artifacts</code> única por (projeto, caminho); tool <code>publicar_artefato</code> no servidor <code>escritorio-visualizador</code>; <code>abrir_no_visualizador</code> de <code>.md</code>/<code>.html</code>/<code>.pdf</code> publica automaticamente; remover da lista não apaga o arquivo; tela nova <code>artefatos</code> em <code>NAV_ITEMS</code> do <code>AppV2</code>, com <code>ClienteProjetoFilterBar</code>; o visualizador é o mesmo painel à direita do chat</td>
+</tr>
+<tr>
+<td>Navegação</td>
+<td>Drill-down no <code>ClienteList</code> (Clientes → Projetos → subprojetos, com <strong>← voltar</strong>); escopo global <code>useNavScope</code> (cliente + projeto, salvo em <code>localStorage</code>) filtra Chat, Board, Tarefas e Artefatos; cliente sem subprojetos só é selecionado; <code>ClienteProjetoFilterBar</code> <strong>continua</strong> no Board (principalmente em "Todos"), Tarefas e Artefatos, partindo da sidebar e agindo só na tela (decisão do Bruno)</td>
+</tr>
+<tr>
+<td>Visualizador</td>
+<td>Abre <strong>à direita</strong>: encaixado (<code>ViewerDock</code>) em ≥ 1100 px com a sidebar e a lista de chats recolhidas automaticamente <strong>só enquanto aberto</strong> (sem gravar a preferência; se o usuário expandir com o painel aberto, fica expandida; ao fechar, volta tudo como estava), por cima (<code>ViewerDrawer</code>) em 641–1099 px, tela cheia no celular. Onde as Partes 6/7 dizem "dropdown", é esse painel</td>
+</tr>
+<tr>
+<td>Layout</td>
+<td><strong>Não mexer no layout agora.</strong> Fases V e A entram em cima do v2 atual; o layout v3 (Parte 3) fica para depois</td>
+</tr>
+<tr>
+<td>Autenticação</td>
+<td>Obrigatória antes do navegador de arquivos livre (F1); a FV pode vir antes por ter superfície limitada</td>
+</tr>
+<tr>
+<td>Chat estruturado</td>
+<td>Modo headless oficial do <code>claude</code> (flags verificadas na 2.1.x); aprovações por <code>--permission-prompt-tool</code> apontando para uma tool MCP nossa; <strong>não</strong> usar o SDK Python do Claude porque o backend roda em <strong>Python 3.9.6</strong> (SDK exige 3.10+)</td>
+</tr>
+<tr>
+<td>Terminal</td>
+<td>Continua existindo como "modo Terminal"; nunca rodar TUI e modo JSON ao mesmo tempo na mesma sessão</td>
+</tr>
+<tr>
+<td>Stack</td>
+<td>Sem TypeScript, sem biblioteca de UI/CSS, tokens <code>--v2-*</code> de <code>frontend/src/layouts/v2/theme.css</code>, fontes Figtree e IBM Plex Mono self-hosted</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="6-mapa-do-código-que-importa">6. Mapa do código que importa</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Área</th>
+<th>Arquivo</th>
+<th>Observação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rotas, WebSocket do PTY, hooks, spawn dos CLIs</td>
+<td><code>backend/app/main.py</code> (~2.950 linhas)</td>
+<td><code>pty_endpoint</code>, <code>_active_connections</code>, <code>_ensure_pty</code>, <code>_escritorio_mcp_servers</code>, <code>_build_mcp_config_json</code>, <code>_build_codex_config_overrides</code>, <code>_hook_callback_base_url</code>, <code>_resolve_project_or_404</code>, hooks <code>/api/hooks/*</code></td>
+</tr>
+<tr>
+<td>Processo PTY</td>
+<td><code>backend/app/pty_manager.py</code></td>
+<td><code>snapshot()</code>, <code>_schedule_reap</code> (SIGTERM → SIGKILL)</td>
+</tr>
+<tr>
+<td>Id de conversa ↔ session_key</td>
+<td><code>backend/app/conversation_store.py</code></td>
+<td><code>get_session_key_by_claude_id</code></td>
+</tr>
+<tr>
+<td>Modelo de adapter MCP</td>
+<td><code>backend/app/mcp_card_adapter.py</code>, <code>mcp_task_adapter.py</code></td>
+<td>stdio JSON-RPC, stdlib, Python 3.9</td>
+</tr>
+<tr>
+<td>Contenção de caminho existente</td>
+<td><code>backend/app/attachments.py</code></td>
+<td><code>_is_within_directory</code></td>
+</tr>
+<tr>
+<td>Terminal no navegador</td>
+<td><code>frontend/src/components/TerminalPanel.jsx</code></td>
+<td><code>CONTROL_FRAME_TYPES</code>, <code>isControlFrame</code>, <code>ws.onmessage</code></td>
+</tr>
+<tr>
+<td>Estado das sessões</td>
+<td><code>frontend/src/components/TerminalContext.jsx</code></td>
+<td><code>TerminalProvider</code>, <code>useTerminal</code></td>
+</tr>
+<tr>
+<td>Casco do layout v2</td>
+<td><code>frontend/src/layouts/v2/AppV2.jsx</code></td>
+<td><code>NAV_ITEMS</code>, <code>SCREEN_TITLES</code>, <code>v2Screen</code>; topbar com <code>AttachmentsMenu</code> e <code>ResetLayoutButton</code> (guarda <code>!isMobile &amp;&amp; v2Screen === 'chat'</code>)</td>
+</tr>
+<tr>
+<td>Filtro cliente/projeto</td>
+<td><code>layouts/v2/useClienteProjetoFilter.js</code>, <code>ClienteProjetoFilterBar.jsx</code>, <code>utils/clientes.js</code></td>
+<td>usado por <code>BoardV2</code> e <code>TarefasV2</code>; subárvore por prefixo (<code>collectSubtreeIds</code>)</td>
+</tr>
+<tr>
+<td>Drawer lateral existente</td>
+<td><code>frontend/src/components/TasksDrawer.jsx</code></td>
+<td>padrão para o <code>ViewerDrawer</code> da Fase A</td>
+</tr>
+<tr>
+<td>Padrão de popover</td>
+<td><code>frontend/src/layouts/v2/AttachmentsMenu.jsx</code>, <code>TaskQuickCreatePopover.jsx</code></td>
+<td>scrim, Esc, clique fora</td>
+</tr>
+<tr>
+<td>Padrão de modal</td>
+<td><code>frontend/src/layouts/v2/CenteredModal.jsx</code></td>
+<td>portal; invariante em <code>fixedPositioningInvariant.test.js</code></td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td><code>frontend/src/utils/markdown.js</code></td>
+<td><code>marked</code> + <code>DOMPurify</code></td>
+</tr>
+<tr>
+<td>Copiar</td>
+<td><code>frontend/src/utils/clipboard.js</code></td>
+<td><code>copyTextToClipboard</code></td>
+</tr>
+<tr>
+<td>Testes</td>
+<td><code>backend/tests/</code> (pytest), <code>frontend/src/**/*.test.js(x)</code> (vitest)</td>
+<td><code>cd backend &amp;&amp; .venv/bin/pytest</code>; <code>cd frontend &amp;&amp; npm test</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="7-estado-atual">7. Estado atual</h2>
+<ul>
+<li><strong>Branch de trabalho da documentação:</strong> <code>claude/elegant-carson-ehd59f</code>
+  (a pasta <code>docs/melhorias-tablet/</code> foi liberada no <code>.gitignore</code>, que ignora <code>docs/*</code> por padrão).</li>
+<li><strong>Código:</strong> a <strong>Fase N</strong> foi implementada (frontend só) na branch
+  <code>claude/elegant-carson-ehd59f</code>: drill-down cliente → projeto no <code>ClienteList</code>,
+  escopo global <code>useNavScope</code>, filtro por projeto no Chat/Board/Tarefas e o
+  recolhimento automático pronto em <code>useViewerDockCollapse</code> (com <code>viewerOpen</code>
+  sempre <code>false</code> no <code>AppV2</code> até a Fase V ligar). O que divergiu do plano e os
+  pontos de integração estão na seção <strong>8.7</strong> da Parte 8.</li>
+<li><strong>Próxima ação:</strong> quando o Bruno pedir, entregar o prompt de desenvolvimento
+  da <strong>Fase V</strong> (<code>06-planejamento-fase-v.md</code>) e depois o da <strong>Fase A</strong>
+  (<code>07-planejamento-artefatos.md</code>), para ele usar numa janela limpa. A Fase V
+  liga <code>setViewerOpen</code> no <code>AppV2</code> (ver 8.7). O desenvolvimento deve acontecer
+  numa branch própria (a que a sessão de desenvolvimento indicar), com um PR
+  para a fase.</li>
+</ul>
+<h2 id="8-regras-para-quem-for-desenvolver">8. Regras para quem for desenvolver</h2>
+<ol>
+<li>Ler este arquivo, o <code>README.md</code> do projeto, a parte da fase e o código citado antes de escrever qualquer coisa.</li>
+<li>Python <strong>3.9</strong> no backend (sem <code>match</code>, sem <code>X | Y</code> fora de <code>from __future__ import annotations</code>).</li>
+<li>Nunca <code>shell=True</code>. Todo caminho vindo de cliente ou agente passa por <code>resolve_safe_path</code>.</li>
+<li>Testes para todo código novo; <code>pytest</code> e <code>npm test</code> verdes a cada commit.</li>
+<li>Não quebrar: modo Terminal, Board, Tarefas, push, <code>deploy.sh</code>, <code>deploy.ps1</code>.</li>
+<li>Comentários explicam o <strong>porquê</strong>, em português, no estilo do código existente.</li>
+<li>Se o código real divergir da documentação, seguir o código e <strong>atualizar a doc</strong> no mesmo PR (e regenerar os HTML com <code>build_html.py</code>).</li>
+<li>Commits pequenos, um PR por fase, com checklist de aceite manual no iPad.</li>
+</ol><div class="pager"><a class="next" href="00-visao-geral-e-diagnostico.html"><small>Próxima</small>0 · Visão geral e diagnóstico</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

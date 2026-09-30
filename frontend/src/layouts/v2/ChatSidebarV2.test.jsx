@@ -521,3 +521,55 @@ describe('ChatV2 — mounts the real TerminalPanel with AppV1-equivalent props',
     expect(screen.getByText('Meu Projeto')).toBeTruthy();
   });
 });
+
+// Fase N: com um projeto escolhido na sidebar, a coluna mostra "cliente /
+// projeto" (só nesse caso — "Todos" e cliente inteiro ficam como antes),
+// filtra a lista e abre o "+ Novo chat" já no projeto.
+describe('ChatSidebarV2 — escopo de projeto da sidebar (Fase N)', () => {
+  const tree = [
+    { id: 'pode', nome: 'Pode', path: '/tmp/pode', agentes: [], elegivel: true },
+    { id: 'pode/site', nome: 'site', path: '/tmp/pode/site', agentes: [], elegivel: true },
+    { id: 'pode/app', nome: 'app', path: '/tmp/pode/app', agentes: [], elegivel: true },
+  ];
+  const props = (overrides) => ({
+    ...chatSidebarBaseProps,
+    projects: tree,
+    selectedClienteId: 'pode',
+    persistedSessions: {
+      'pode/site::claude': { display_name: 'Chat do site' },
+      'pode/app::claude': { display_name: 'Chat do app' },
+    },
+    activeSessions: {},
+    ...overrides,
+  });
+
+  it('sem projeto: nenhum título de escopo (coluna igual à de antes)', () => {
+    render(<ChatSidebarV2 {...props({ selectedProjetoId: null })} />);
+    expect(screen.queryByTestId('chat-scope-title')).toBeNull();
+    expect(screen.getByText('Chat do site')).toBeTruthy();
+    expect(screen.getByText('Chat do app')).toBeTruthy();
+  });
+
+  it('com projeto: título "cliente / projeto", lista filtrada e tooltip do "+ Novo chat" com o escopo', () => {
+    render(<ChatSidebarV2 {...props({ selectedProjetoId: 'pode/site' })} />);
+    expect(screen.getByTestId('chat-scope-title').textContent).toBe('Pode / site');
+    expect(screen.getByText('Chat do site')).toBeTruthy();
+    expect(screen.queryByText('Chat do app')).toBeNull();
+    expect(screen.getByText('+ Novo chat').title).toBe('Novo chat em Pode / site');
+  });
+
+  it('recolhida: o título some (não há espaço no trilho de 68px)', () => {
+    render(<ChatSidebarV2 {...props({ selectedProjetoId: 'pode/site', collapsed: true })} />);
+    expect(screen.queryByTestId('chat-scope-title')).toBeNull();
+  });
+
+  it('"+ Novo chat" abre com o projeto já escolhido e cria o chat nele', () => {
+    const onStartNewChat = vi.fn();
+    render(<ChatSidebarV2 {...props({ selectedProjetoId: 'pode/site', onStartNewChat })} />);
+    fireEvent.click(screen.getByText('+ Novo chat'));
+    expect(screen.getByLabelText('Projeto principal').value).toBe('pode/site');
+    fireEvent.change(screen.getByLabelText('IA / Agente'), { target: { value: 'claude' } });
+    fireEvent.click(screen.getByText('Criar chat'));
+    expect(onStartNewChat).toHaveBeenCalledWith('pode/site', 'claude');
+  });
+});

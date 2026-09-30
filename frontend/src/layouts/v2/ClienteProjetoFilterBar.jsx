@@ -14,9 +14,27 @@
 // - sidebar on a specific client: project select only, the client is fixed.
 //   Here it is hidden when that client has no direct children, since
 //   "Todos os projetos" would be its only option and nothing can change that.
+//
+// Fase N: with a project chosen on the sidebar, the project select comes
+// pre-filled with it and also lists its subprojects (the option list is built
+// by useClienteProjetoFilter). Options deeper than a direct child read as the
+// path below the client ("api-pagamentos / v2") so siblings with the same
+// folder name stay distinguishable, and the client itself reads "Raiz".
 
 import { resolveClienteNome } from '../../utils/taskGroups.js';
-import { resolveProjectName } from './useClienteProjetoFilter.js';
+import { relativeProjectPath } from '../../utils/projects.js';
+import { labelFor } from '../../utils/projectTree.js';
+
+// Text of a project <option>. Falls back to the folder name for a project the
+// list does not know yet, like every other <option> label in the app
+// (resolveProjectLabel, utils/projects.js) — an empty option would read as a
+// broken select.
+function projetoOptionLabel(projetoId, clienteId, projects) {
+  if (projetoId === clienteId) return 'Raiz';
+  const depth = projetoId.split('/').length - clienteId.split('/').length;
+  if (depth >= 2) return relativeProjectPath(projetoId, clienteId);
+  return labelFor(projetoId, projects);
+}
 
 const styles = {
   bar: {
@@ -93,7 +111,7 @@ export function ClienteProjetoFilterBar({
           <option value="">Todos os projetos</option>
           {subProjetoIds.map((projetoId) => (
             <option key={projetoId} value={projetoId}>
-              {resolveProjectName(projetoId, projects)}
+              {projetoOptionLabel(projetoId, effectiveClienteId, projects)}
             </option>
           ))}
         </select>

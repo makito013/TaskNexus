@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" role="img" aria-label="Fluxo da Fase V: o agente chama a ferramenta MCP abrir_no_visualizador, o backend valida o caminho, grava a aba e avisa a tela pelo WebSocket do terminal já aberto; a tela abre o dropdown com a nova aba">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3b3530"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2f7564"/></marker>
+  </defs>
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .h{font-size:13px;font-weight:700}
+    .s{font-size:11.5px;fill:#6b645c}
+    .g{font-size:11.5px;fill:#2f7564;font-weight:600}
+    .t{font-size:15px;font-weight:700}
+    .n{font-size:11px;font-weight:700;letter-spacing:.06em;fill:#8a8378}
+  </style>
+  <rect width="1000" height="430" rx="14" fill="#f7f5f0"/>
+  <text x="24" y="34" class="t">Fase V: o agente faz o arquivo aparecer na tela</text>
+  <text x="24" y="64" class="n">NO SEU PC</text>
+  <text x="780" y="64" class="n">NO IPAD</text>
+
+  <rect x="24" y="76" width="170" height="96" rx="10" fill="#ffffff" stroke="#5b6fbf" stroke-width="1.5"/>
+  <text x="38" y="100" class="h">claude / codex (PTY)</text>
+  <text x="38" y="120" class="s">decide mostrar</text>
+  <text x="38" y="138" class="s m">docs/plano.md</text>
+  <text x="38" y="158" class="s">e chama a tool</text>
+
+  <rect x="230" y="76" width="200" height="96" rx="10" fill="#ffffff" stroke="#3f8f7c" stroke-width="1.5"/>
+  <text x="244" y="100" class="h">mcp_viewer_adapter.py</text>
+  <text x="244" y="120" class="s">tool abrir_no_visualizador</text>
+  <text x="244" y="138" class="s">{caminho, titulo?, linha?}</text>
+  <text x="244" y="158" class="s">stdio · stdlib · Python 3.9</text>
+
+  <rect x="466" y="76" width="270" height="196" rx="10" fill="#ffffff" stroke="#3f8f7c" stroke-width="1.5"/>
+  <text x="480" y="100" class="h">Backend · POST /api/hooks/viewer/open</text>
+  <text x="480" y="122" class="s">1. claude_session_id → session_key</text>
+  <text x="480" y="142" class="s">2. session_key → projeto → pasta</text>
+  <text x="480" y="162" class="s">3. resolve_safe_path + denylist</text>
+  <text x="480" y="182" class="s">4. mesmo arquivo aberto? reusa aba</text>
+  <text x="480" y="202" class="s">5. grava em viewer_items (id aleatório)</text>
+  <text x="480" y="222" class="s">6. manda frame viewer_open pelo</text>
+  <text x="480" y="240" class="s m">   /ws/pty/{session_key}</text>
+  <text x="480" y="260" class="s">7. responde texto à tool</text>
+
+  <rect x="776" y="76" width="200" height="196" rx="10" fill="#ffffff" stroke="#3f8f7c" stroke-width="1.5"/>
+  <text x="790" y="100" class="h">Frontend</text>
+  <text x="790" y="122" class="s">TerminalPanel recebe</text>
+  <text x="790" y="140" class="s m">viewer_open</text>
+  <text x="790" y="162" class="s">→ ViewerContext.addItem</text>
+  <text x="790" y="184" class="s">conversa visível: abre o</text>
+  <text x="790" y="202" class="s">dropdown na aba nova</text>
+  <text x="790" y="224" class="s">senão: contador no botão</text>
+  <text x="790" y="242" class="s">+ aviso "claude abriu…"</text>
+
+  <line x1="196" y1="124" x2="226" y2="124" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="432" y1="124" x2="462" y2="124" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="436" y="116" class="s" font-size="10">HTTP</text>
+  <line x1="738" y1="232" x2="772" y2="232" stroke="#2f7564" stroke-width="2" marker-end="url(#g)"/>
+  <polyline points="466,262 330,262 330,176" fill="none" stroke="#3b3530" stroke-width="1.3" stroke-dasharray="4 4" marker-end="url(#a)"/>
+  <text x="340" y="252" class="s">"Aberto no visualizador" ou erro legível</text>
+
+  <rect x="24" y="296" width="952" height="116" rx="10" fill="#ffffff" stroke="#d8d3c8"/>
+  <text x="44" y="322" class="h">Depois que a aba existe, o conteúdo vem por rotas próprias da aba</text>
+  <text x="44" y="346" class="s m">GET /api/viewer/{item_id}/content          metadados + texto (até 1 MB) para markdown e código</text>
+  <text x="44" y="366" class="s m">GET /api/viewer/{item_id}/f/{caminho}      bytes; HTML num iframe sandbox acha CSS e imagens relativos</text>
+  <text x="44" y="386" class="s m">GET /api/viewer/{item_id}/f/{caminho}?download=1   download (Content-Disposition: attachment)</text>
+  <text x="44" y="404" class="g">item_id é aleatório e só existe para arquivos que o agente (ou você) abriu.</text>
+</svg>

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#partes">Partes</a></li><li><a href="#imagens">Imagens</a></li><li><a href="#como-regenerar-os-html">Como regenerar os HTML</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Índice</p><h1 id="tasknexus-no-tablet-documentação-das-melhorias">TaskNexus no tablet — documentação das melhorias</h1>
+<p>Documentação de design, UX, arquitetura e implementação para tornar o
+TaskNexus confortável no iPad e no celular: <strong>chat no lugar do terminal</strong>,
+<strong>visualizador e download de arquivos</strong>, <strong>layout pensado para toque</strong> e
+melhorias extras. Escrita para ser lida por você e executada por um agente
+Claude, fase por fase.</p>
+<figure><img src="img/03-mockup-chat-ipad.svg" alt="Mockup do chat no iPad" loading="lazy"><figcaption>Mockup do chat no iPad</figcaption></figure>
+<h2 id="partes">Partes</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Parte</th>
+<th>Conteúdo</th>
+<th>HTML</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a></td>
+<td>Como o sistema funciona hoje, por que o terminal é ruim no tablet, a solução numa imagem, decisões e alternativas descartadas</td>
+<td><a href="00-visao-geral-e-diagnostico.html">html</a></td>
+</tr>
+<tr>
+<td><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a></td>
+<td>Ver <code>.md</code>, <code>.html</code>, código, imagens e PDF; baixar e compartilhar no iPad; API, segurança, componentes, testes</td>
+<td><a href="01-visualizador-de-arquivos.html">html</a></td>
+</tr>
+<tr>
+<td><a href="02-chat-conversacional.html">2 · Chat conversacional</a></td>
+<td>Conversa estilo WhatsApp com markdown, código, links e aprovações; protocolo, banco, código, testes</td>
+<td><a href="02-chat-conversacional.html">html</a></td>
+</tr>
+<tr>
+<td><a href="03-layout-amigavel.html">3 · Layout amigável</a></td>
+<td>Diagnóstico de UX, tokens, layouts por tamanho de tela, rotas, lista de conversas, atalhos, acessibilidade</td>
+<td><a href="03-layout-amigavel.html">html</a></td>
+</tr>
+<tr>
+<td><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a></td>
+<td>14 melhorias com o quê, por quê, como, esforço e prioridade (inclui autenticação obrigatória)</td>
+<td><a href="04-melhorias-adicionais.html">html</a></td>
+</tr>
+<tr>
+<td><a href="05-plano-de-execucao-e-prompts.html">5 · Plano de execução e prompts</a></td>
+<td>Fases FN, FV, FA e F0–F4, critérios de pronto e prompts prontos para colar num agente</td>
+<td><a href="05-plano-de-execucao-e-prompts.html">html</a></td>
+</tr>
+<tr>
+<td><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a></td>
+<td>O agente abre arquivos na tela, em abas, num painel à direita com tela cheia. Requisitos, UX, contratos, ordem de commits, testes e aceite</td>
+<td><a href="06-planejamento-fase-v.html">html</a></td>
+</tr>
+<tr>
+<td><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a></td>
+<td>Aba <strong>Artefatos</strong> por cliente e projeto (md, pdf, html) no layout atual, abrindo no painel lateral. Requisitos, UX, contratos, testes e aceite</td>
+<td><a href="07-planejamento-artefatos.html">html</a></td>
+</tr>
+<tr>
+<td><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></td>
+<td>Sidebar: clientes → projetos com voltar, filtro global por projeto e espaço à direita para o visualizador (colunas viram trilhos quando ele abre)</td>
+<td><a href="08-planejamento-navegacao-cliente-projeto.html">html</a></td>
+</tr>
+<tr>
+<td><a href="CONTEXTO-PARA-AGENTE.html">Contexto para o agente</a></td>
+<td>Resumo de tudo (decisões, estado, próximos passos) para retomar numa janela de contexto nova</td>
+<td><a href="CONTEXTO-PARA-AGENTE.html">html</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>Versão em página única, com todas as partes:
+<a href="documentacao-completa.html"><code>documentacao-completa.html</code></a> (imagens embutidas, boa para abrir no iPad) e
+<a href="documentacao-completa.html"><code>documentacao-completa.md</code></a> (um único Markdown para entregar a um agente).</p>
+<h2 id="imagens">Imagens</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arquivo</th>
+<th>O que mostra</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>img/01-arquitetura-atual.svg</code></td>
+<td>Fluxo atual xterm.js ⇄ WebSocket ⇄ PTY ⇄ CLI e os problemas no tablet</td>
+</tr>
+<tr>
+<td><code>img/02-arquitetura-proposta.svg</code></td>
+<td>Chat estruturado, adaptadores, ChatStore e API de arquivos</td>
+</tr>
+<tr>
+<td><code>img/03-mockup-chat-ipad.svg</code></td>
+<td>Chat no iPad deitado</td>
+</tr>
+<tr>
+<td><code>img/04-mockup-arquivos-ipad.svg</code></td>
+<td>Visualizador de arquivos no iPad</td>
+</tr>
+<tr>
+<td><code>img/05-mockup-celular.svg</code></td>
+<td>Lista, conversa e arquivo no celular</td>
+</tr>
+<tr>
+<td><code>img/06-sequencia-turno.svg</code></td>
+<td>Sequência de um turno com streaming e aprovação</td>
+</tr>
+<tr>
+<td><code>img/07-fluxo-visualizador.svg</code></td>
+<td>Escolha do renderizador e fluxo de download/compartilhar</td>
+</tr>
+<tr>
+<td><code>img/08-navegacao-responsiva.svg</code></td>
+<td>Três layouts por largura de tela</td>
+</tr>
+<tr>
+<td><code>img/09-roadmap.svg</code></td>
+<td>Ordem das fases</td>
+</tr>
+<tr>
+<td><code>img/10-mockup-visualizador-dropdown.svg</code></td>
+<td>Visualizador em dropdown com abas e em tela cheia (Fase V)</td>
+</tr>
+<tr>
+<td><code>img/11-fluxo-agente-abre-arquivo.svg</code></td>
+<td>Caminho da tool MCP até a aba aparecer na tela (Fase V)</td>
+</tr>
+<tr>
+<td><code>img/12-mockup-artefatos.svg</code></td>
+<td>Tela Artefatos no layout atual com o painel lateral aberto (Fase A)</td>
+</tr>
+<tr>
+<td><code>img/13-mockup-sidebar-cliente-projeto.svg</code></td>
+<td>Clientes → projetos na sidebar e visualizador encaixado à direita, com as contas de largura (Fase N)</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="como-regenerar-os-html">Como regenerar os HTML</h2>
+<p>Os <code>.md</code> são a fonte. Depois de editar, rode:</p>
+<div class="code"><div class="code-head"><span>bash</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown<span class="w"> </span>pygments<span class="w"> </span>pymdown-extensions
+python3<span class="w"> </span>docs/melhorias-tablet/build_html.py
+</code></pre></div>
+<p>O script gera um <code>.html</code> por parte, o <code>documentacao-completa.html</code> com as
+imagens embutidas e o <code>documentacao-completa.md</code> (todas as partes num arquivo só).</p></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

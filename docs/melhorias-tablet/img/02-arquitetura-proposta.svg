@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" role="img" aria-label="Arquitetura proposta: um canal de chat estruturado em JSON ao lado do terminal, com adaptadores por agente, um log de eventos em SQLite e uma API de arquivos">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b3530"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3f8f7c"/></marker>
+  </defs>
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .t{font-size:15px;font-weight:700}
+    .s{font-size:12px;fill:#6b645c}
+    .l{font-size:13px;font-weight:600}
+    .n{font-size:11px;font-weight:700;letter-spacing:.06em;fill:#8a8378}
+    .g{font-size:12px;fill:#2f7564;font-weight:600}
+  </style>
+  <rect width="1000" height="600" rx="14" fill="#f7f5f0"/>
+  <text x="24" y="34" class="t">Proposta: o chat conversa com o agente em JSON; o terminal vira modo alternativo</text>
+
+  <!-- columns labels -->
+  <text x="24" y="70" class="n">NAVEGADOR (iPad / celular / PC)</text>
+  <text x="360" y="70" class="n">BACKEND FASTAPI (seu PC)</text>
+  <text x="760" y="70" class="n">AGENTES E DISCO</text>
+
+  <!-- browser -->
+  <rect x="24" y="82" width="290" height="140" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+  <text x="42" y="108" class="l">ChatView (novo)</text>
+  <text x="42" y="128" class="s">bolhas · markdown · código com cópia</text>
+  <text x="42" y="146" class="s">links clicáveis · cartões de ferramenta</text>
+  <text x="42" y="164" class="s">aprovar/negar · composer com textarea</text>
+  <text x="42" y="182" class="s">seleção e ditado nativos do iPadOS</text>
+  <text x="42" y="206" class="g">modo padrão para claude e codex</text>
+
+  <rect x="24" y="240" width="290" height="90" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="42" y="266" class="l">TerminalPanel (existente)</text>
+  <text x="42" y="286" class="s">xterm.js + links clicáveis (quick win)</text>
+  <text x="42" y="304" class="s">fallback: agy, cursor, shell, /comandos TUI</text>
+
+  <rect x="24" y="348" width="290" height="96" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+  <text x="42" y="374" class="l">FileViewer (novo)</text>
+  <text x="42" y="394" class="s">árvore · preview MD/HTML/código/imagem</text>
+  <text x="42" y="412" class="s">diff do git · baixar · compartilhar</text>
+  <text x="42" y="432" class="g">abre a partir de links no chat</text>
+
+  <!-- backend -->
+  <rect x="360" y="82" width="360" height="150" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+  <text x="378" y="108" class="l">ChatSessionManager <tspan class="s m">chat_manager.py</tspan></text>
+  <text x="378" y="128" class="s">um processo de agente por sessão · fila de envio</text>
+  <text x="378" y="146" class="s">normaliza eventos → ChatEvent {seq, kind, …}</text>
+  <rect x="378" y="160" width="160" height="56" rx="8" fill="#eef6f2" stroke="#3f8f7c"/>
+  <text x="390" y="182" class="l">ClaudeAdapter</text>
+  <text x="390" y="200" class="s m" font-size="10.5">claude -p stream-json</text>
+  <rect x="546" y="160" width="160" height="56" rx="8" fill="#eef0fa" stroke="#5b6fbf"/>
+  <text x="558" y="182" class="l">CodexAdapter</text>
+  <text x="558" y="200" class="s m">codex app-server</text>
+
+  <rect x="360" y="250" width="360" height="80" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="378" y="276" class="l">pty_endpoint + PTYProcess (existente)</text>
+  <text x="378" y="296" class="s">continua igual; só um modo roda por sessão</text>
+  <text x="378" y="314" class="s">troca Chat ⇄ Terminal = encerra um, retoma o outro</text>
+
+  <rect x="360" y="348" width="170" height="96" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+  <text x="376" y="374" class="l">ChatStore</text>
+  <text x="376" y="394" class="s">tabela chat_events</text>
+  <text x="376" y="412" class="s">replay por seq</text>
+  <text x="376" y="430" class="s m">sessions.db</text>
+
+  <rect x="550" y="348" width="170" height="96" rx="12" fill="#ffffff" stroke="#3f8f7c" stroke-width="2"/>
+  <text x="566" y="374" class="l">FilesAPI</text>
+  <text x="566" y="394" class="s m">/api/fs/{token}/…</text>
+  <text x="566" y="412" class="s">tree · content · raw</text>
+  <text x="566" y="430" class="s">search · git diff</text>
+
+  <!-- right -->
+  <rect x="760" y="82" width="216" height="150" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="776" y="108" class="l">CLIs dos agentes</text>
+  <text x="776" y="130" class="s">claude (headless, JSON)</text>
+  <text x="776" y="148" class="s">codex (JSON-RPC)</text>
+  <text x="776" y="166" class="s">mesmo session id do</text>
+  <text x="776" y="184" class="s">terminal → mesma conversa</text>
+  <text x="776" y="212" class="s m">MCP: tarefas + cards</text>
+
+  <rect x="760" y="250" width="216" height="80" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="776" y="276" class="l">Transcripts .jsonl</text>
+  <text x="776" y="296" class="s m">~/.claude/projects/…</text>
+  <text x="776" y="314" class="s">importa histórico antigo</text>
+
+  <rect x="760" y="348" width="216" height="96" rx="12" fill="#ffffff" stroke="#d8d3c8" stroke-width="1.5"/>
+  <text x="776" y="374" class="l">Pastas dos projetos</text>
+  <text x="776" y="394" class="s m">PROJECTS_ROOT/…</text>
+  <text x="776" y="412" class="s">leitura com checagem</text>
+  <text x="776" y="430" class="s">de caminho e denylist</text>
+
+  <!-- arrows -->
+  <line x1="316" y1="140" x2="356" y2="140" stroke="#3f8f7c" stroke-width="2" marker-end="url(#g)" marker-start="url(#g)"/>
+  <text x="318" y="160" class="g m" font-size="10">/ws/chat</text>
+  <line x1="316" y1="290" x2="356" y2="290" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="318" y="310" class="s m" font-size="10">/ws/pty</text>
+  <text x="318" y="414" class="g m" font-size="10">HTTP</text>
+  <polyline points="316,420 340,420 340,456 635,456 635,448" fill="none" stroke="#3f8f7c" stroke-width="2" marker-end="url(#g)"/>
+  <line x1="722" y1="150" x2="756" y2="150" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)" marker-start="url(#a)"/>
+  <line x1="722" y1="290" x2="756" y2="160" stroke="#3b3530" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#a)"/>
+  <line x1="722" y1="396" x2="756" y2="396" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="450" y1="234" x2="450" y2="344" stroke="#3f8f7c" stroke-width="2" marker-end="url(#g)"/>
+  <text x="456" y="340" class="g" font-size="11">grava eventos</text>
+  
+
+  <!-- legend / event list -->
+  <rect x="24" y="466" width="952" height="116" rx="10" fill="#ffffff" stroke="#d8d3c8"/>
+  <text x="44" y="492" class="l">Frames JSON do /ws/chat</text>
+  <text x="44" y="516" class="s m" font-size="10.5">servidor → cliente: history · message_start · text_delta · tool_use · tool_result · permission_request · turn_end · status · error</text>
+  <text x="44" y="540" class="s m" font-size="10.5">cliente → servidor:  hello{last_seq} · send{text, attachments} · permission_response · interrupt · set_mode</text>
+  <text x="44" y="566" class="s">Todo evento tem seq crescente: ao reconectar, o cliente pede "tudo depois de seq N" e nada se perde nem duplica.</text>
+</svg>

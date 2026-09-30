@@ -116,3 +116,40 @@ describe('MobileMenuScreen — rodapé de aparência', () => {
     expect(screen.getByRole('group', { name: 'Tema' })).toBeTruthy();
   });
 });
+
+// Fase N: o menu mobile usa o mesmo ClienteList, então ganha o drill-down.
+describe('MobileMenuScreen — drill-down Clientes → Projetos (Fase N)', () => {
+  const PROJECTS = [
+    { id: 'podesubir', nome: 'Pode Subir', elegivel: true },
+    { id: 'podesubir/site', nome: 'site', elegivel: true },
+    { id: 'cliente_projeto_1', nome: 'Cliente 1', elegivel: true },
+  ];
+
+  it('tocar num cliente com subprojetos entra; no nível Projetos as linhas têm 54px', () => {
+    const onEnterCliente = vi.fn();
+    const { rerender } = render(<MobileMenuScreen {...baseProps({ projects: PROJECTS, onEnterCliente })} />);
+    fireEvent.click(screen.getByText('Pode Subir'));
+    expect(onEnterCliente).toHaveBeenCalledWith('podesubir');
+
+    const onSelectProjeto = vi.fn();
+    const onBack = vi.fn();
+    rerender(
+      <MobileMenuScreen
+        {...baseProps({
+          projects: PROJECTS,
+          onEnterCliente,
+          onSelectProjeto,
+          onBack,
+          selectedClienteId: 'podesubir',
+          navLevel: 'projetos',
+          navParentId: 'podesubir',
+        })}
+      />
+    );
+    expect(screen.getByTitle('site').style.minHeight).toBe('54px');
+    fireEvent.click(screen.getByText('site'));
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar para Clientes' }));
+    expect(onSelectProjeto).toHaveBeenCalledWith('podesubir/site');
+    expect(onBack).toHaveBeenCalled();
+  });
+});

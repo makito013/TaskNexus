@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" xml:space="preserve" role="img" aria-label="Navegação cliente para projeto na sidebar: 1, a sidebar lista clientes; 2, ao tocar num cliente a mesma área lista os projetos dele com botão voltar para clientes; 3, com o visualizador aberto as colunas da esquerda viram trilhos estreitos e o painel do visualizador ocupa o lado direito">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#b4531f"/></marker>
+  </defs>
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{white-space:pre;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .h{font-size:13px;font-weight:700}
+    .b{font-size:11.5px}
+    .s{font-size:10px;fill:#8a8378}
+    .w{fill:#ffffff}
+    .cap{font-size:10px;font-weight:700;letter-spacing:.06em;fill:#8a8378}
+    .ttl{font-size:13px;font-weight:700;fill:#6b645c}
+    .ann{font-size:11px;font-weight:700;fill:#b4531f}
+  </style>
+  <rect width="1200" height="700" rx="16" fill="#e9e5dc"/>
+
+  <!-- ===== 1: clientes ===== -->
+  <text x="30" y="34" class="ttl">1 · Sidebar mostra os clientes (como hoje)</text>
+  <rect x="30" y="48" width="220" height="440" rx="14" fill="#fbfaf7" stroke="#d8d3c8"/>
+  <text x="46" y="76" class="h">TaskNexus</text>
+  <text x="46" y="106" class="b">💬 Chat</text>
+  <text x="46" y="130" class="b">▦ Board</text>
+  <text x="46" y="154" class="b">✓ Tarefas</text>
+  <text x="46" y="178" class="b">◧ Artefatos</text>
+  <text x="46" y="202" class="b">◈ Configuração</text>
+  <line x1="42" y1="216" x2="238" y2="216" stroke="#e2ddd3"/>
+  <text x="46" y="236" class="cap">CLIENTES</text>
+  <rect x="38" y="246" width="204" height="30" rx="8" fill="#efece5"/>
+  <text x="48" y="266" class="b" style="font-weight:600">Todos</text>
+  <rect x="38" y="280" width="204" height="30" rx="8" fill="#ffffff" stroke="#3f8f7c"/>
+  <text x="48" y="300" class="b">podesubir</text>
+  <text x="206" y="300" class="b" style="fill:#8a8378">›</text>
+  <text x="48" y="334" class="b">cliente-acme</text>
+  <text x="206" y="334" class="b" style="fill:#8a8378">›</text>
+  <text x="48" y="364" class="b">interno</text>
+  <text x="206" y="364" class="b" style="fill:#8a8378">›</text>
+  <text x="46" y="470" class="s">toque em "podesubir"</text>
+  <line x1="254" y1="296" x2="318" y2="296" stroke="#b4531f" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- ===== 2: projetos ===== -->
+  <text x="330" y="34" class="ttl">2 · A mesma área vira a lista de projetos</text>
+  <rect x="330" y="48" width="220" height="440" rx="14" fill="#fbfaf7" stroke="#d8d3c8"/>
+  <text x="346" y="76" class="h">TaskNexus</text>
+  <text x="346" y="106" class="b">💬 Chat</text>
+  <text x="346" y="130" class="b">▦ Board</text>
+  <text x="346" y="154" class="b">✓ Tarefas</text>
+  <text x="346" y="178" class="b">◧ Artefatos</text>
+  <text x="346" y="202" class="b">◈ Configuração</text>
+  <line x1="342" y1="216" x2="538" y2="216" stroke="#e2ddd3"/>
+  <rect x="338" y="224" width="204" height="34" rx="8" fill="none" stroke="#d8d3c8"/>
+  <text x="348" y="246" class="b" style="font-weight:700">← Clientes</text>
+  <text x="346" y="276" class="cap">PODESUBIR · PROJETOS</text>
+  <rect x="338" y="286" width="204" height="30" rx="8" fill="#efece5"/>
+  <text x="348" y="306" class="b" style="font-weight:600">Todos os projetos</text>
+  <rect x="338" y="320" width="204" height="30" rx="8" fill="#e6f2ee"/>
+  <text x="348" y="340" class="b" style="font-weight:700;fill:#2f7564">site-institucional</text>
+  <text x="348" y="374" class="b">api-pagamentos</text>
+  <text x="506" y="374" class="b" style="fill:#8a8378">›</text>
+  <text x="348" y="404" class="b">app-mobile</text>
+  <text x="346" y="440" class="s">› = tem subprojetos (entra mais um nível)</text>
+  <text x="346" y="456" class="s">Selecionar filtra Chat, Board, Tarefas e</text>
+  <text x="346" y="470" class="s">Artefatos (a barra do Board continua).</text>
+  <text x="440" y="246" class="ann">voltar</text>
+
+  <!-- ===== 3: viewer docked ===== -->
+  <text x="630" y="34" class="ttl">3 · Visualizador aberto: sobra o lado direito</text>
+  <rect x="630" y="48" width="540" height="440" rx="14" fill="#f7f5f0" stroke="#d8d3c8"/>
+  <!-- rail 1 -->
+  <rect x="630" y="48" width="40" height="440" rx="14" fill="#fbfaf7"/>
+  <line x1="670" y1="48" x2="670" y2="488" stroke="#e2ddd3"/>
+  <text x="643" y="84" class="b">💬</text><text x="643" y="110" class="b">▦</text><text x="643" y="136" class="b">✓</text><text x="643" y="162" class="b">◧</text>
+  <text x="642" y="200" class="b" style="font-weight:700">←</text>
+  <circle cx="650" cy="226" r="11" fill="#e6f2ee"/><text x="643" y="230" class="s" style="fill:#2f7564;font-weight:700">SI</text>
+  <circle cx="650" cy="254" r="11" fill="#eeeae2"/><text x="643" y="258" class="s" style="font-weight:700">AP</text>
+  <!-- rail 2 -->
+  <rect x="670" y="48" width="40" height="440" fill="#fbfaf7"/>
+  <line x1="710" y1="48" x2="710" y2="488" stroke="#e2ddd3"/>
+  <circle cx="690" cy="84" r="12" fill="#cfe6de"/><text x="682" y="88" class="s" style="fill:#2f7564;font-weight:700">CL</text>
+  <circle cx="690" cy="114" r="12" fill="#dfe3f5"/><text x="682" y="118" class="s" style="fill:#44579f;font-weight:700">CX</text>
+  <!-- terminal -->
+  <rect x="716" y="58" width="200" height="420" rx="8" fill="#26282e"/>
+  <text x="726" y="82" class="m" style="font-size:9.5px;fill:#9fd9c5">⏺ abrir_no_visualizador</text>
+  <text x="726" y="98" class="m" style="font-size:9.5px;fill:#b9b4ab">  ⎿ Aberto no visualizador</text>
+  <text x="726" y="460" class="m" style="font-size:9.5px;fill:#9fd9c5">❯ █</text>
+  <!-- viewer panel -->
+  <rect x="922" y="48" width="248" height="440" fill="#ffffff"/>
+  <line x1="922" y1="48" x2="922" y2="488" stroke="#d8d3c8"/>
+  <rect x="930" y="58" width="86" height="24" rx="7" fill="#e6f2ee"/>
+  <text x="938" y="74" class="s" style="fill:#2f7564;font-weight:700">plano.md</text>
+  <rect x="1020" y="58" width="80" height="24" rx="7" fill="#f3f1ec"/>
+  <text x="1028" y="74" class="s" style="fill:#3b3530">relatorio.html</text>
+  <text x="1110" y="75" class="b" style="font-weight:700">⤢ ✕</text>
+  <line x1="922" y1="90" x2="1170" y2="90" stroke="#ece8df"/>
+  <text x="934" y="120" style="font-size:15px;font-weight:700">Plano de release</text>
+  <text x="934" y="142" class="b">Objetivo: liberar o modo</text>
+  <text x="934" y="158" class="b">chat até sexta.</text>
+  <text x="934" y="186" class="h">Checklist</text>
+  <text x="934" y="206" class="b">☑ Migrar ws de chat</text>
+  <text x="934" y="224" class="b">☐ Testar no iPad</text>
+  <rect x="934" y="240" width="224" height="56" rx="7" fill="#26282e"/>
+  <text x="944" y="262" class="m" style="font-size:9.5px;fill:#e6e3dd">npm test</text>
+  <text x="944" y="280" class="m" style="font-size:9.5px;fill:#e6e3dd">pytest -q</text>
+  <text x="934" y="470" class="s">painel do visualizador (lado direito)</text>
+
+  <!-- space table -->
+  <rect x="30" y="510" width="1140" height="170" rx="12" fill="#ffffff" stroke="#d8d3c8"/>
+  <text x="50" y="538" class="h">Quanto espaço sobra (largura da janela · colunas da esquerda · terminal · visualizador)</text>
+  <text x="50" y="566" class="b" style="font-weight:700">Largura</text>
+  <text x="200" y="566" class="b" style="font-weight:700">Hoje, sem visualizador</text>
+  <text x="440" y="566" class="b" style="font-weight:700">Hoje, se abrisse ao lado</text>
+  <text x="720" y="566" class="b" style="font-weight:700">Proposta (trilhos de 68 px + painel)</text>
+  <line x1="50" y1="576" x2="1150" y2="576" stroke="#ece8df"/>
+  <text x="50" y="598" class="b">iPad deitado 1180 px</text>
+  <text x="200" y="598" class="b">240 + 280 · terminal 660</text>
+  <text x="440" y="598" class="b">terminal 200 · painel 460 (apertado)</text>
+  <text x="720" y="598" class="b">68 + 68 · terminal 524 · painel 520</text>
+  <text x="50" y="624" class="b">iPad Pro 13" 1366 px</text>
+  <text x="200" y="624" class="b">240 + 280 · terminal 846</text>
+  <text x="440" y="624" class="b">terminal 346 · painel 500</text>
+  <text x="720" y="624" class="b">68 + 68 · terminal 610 · painel 620</text>
+  <text x="50" y="650" class="b">Desktop 1920 px</text>
+  <text x="200" y="650" class="b">240 + 280 · terminal 1400</text>
+  <text x="440" y="650" class="b">terminal 680 · painel 720</text>
+  <text x="720" y="650" class="b">68 + 68 · terminal 1004 · painel 780</text>
+  <text x="50" y="672" class="s">Abaixo de 1100 px (iPad em pé) o painel abre por cima (overlay). No celular, tela cheia. Ao fechar o painel, as colunas voltam como estavam.</text>
+</svg>

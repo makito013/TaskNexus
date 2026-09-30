@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" role="img" aria-label="Navegação responsiva: três painéis no iPad horizontal, dois painéis mais painel deslizante no iPad vertical, pilha com barra de abas inferior no celular">
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .h{font-size:13px;font-weight:700}
+    .s{font-size:11px;fill:#6b645c}
+    .t{font-size:15px;font-weight:700}
+    .p{fill:#ffffff;stroke:#d8d3c8}
+    .a{fill:#e6f2ee;stroke:#3f8f7c}
+    .c{fill:#eef0fa;stroke:#5b6fbf}
+  </style>
+  <rect width="1000" height="470" rx="14" fill="#f7f5f0"/>
+
+  <!-- landscape -->
+  <text x="24" y="34" class="t">iPad horizontal · ≥ 1100 px</text>
+  <rect x="24" y="48" width="440" height="300" rx="16" fill="#1f2024"/>
+  <rect x="34" y="58" width="420" height="280" rx="9" fill="#f7f5f0"/>
+  <rect x="40" y="64" width="110" height="268" rx="6" class="p"/>
+  <text x="50" y="84" class="h">Conversas</text>
+  <text x="50" y="102" class="s">lista + busca</text>
+  <rect x="156" y="64" width="186" height="268" rx="6" class="a"/>
+  <text x="166" y="84" class="h">Conversa</text>
+  <text x="166" y="102" class="s">bolhas + composer</text>
+  <rect x="348" y="64" width="100" height="268" rx="6" class="c"/>
+  <text x="356" y="84" class="h">Contexto</text>
+  <text x="356" y="102" class="s">arquivo aberto,</text>
+  <text x="356" y="116" class="s">card, tarefas</text>
+  <text x="356" y="130" class="s">(recolhível)</text>
+  <text x="24" y="372" class="s">Split View do iPadOS (½ tela) cai para o layout vertical.</text>
+
+  <!-- portrait -->
+  <text x="500" y="34" class="t">iPad vertical · 641–1099 px</text>
+  <rect x="500" y="48" width="220" height="300" rx="16" fill="#1f2024"/>
+  <rect x="508" y="56" width="204" height="284" rx="9" fill="#f7f5f0"/>
+  <rect x="514" y="62" width="62" height="272" rx="6" class="p"/>
+  <text x="520" y="82" class="h">Lista</text>
+  <text x="520" y="98" class="s">avatares</text>
+  <text x="520" y="112" class="s">(estreita)</text>
+  <rect x="582" y="62" width="124" height="272" rx="6" class="a"/>
+  <text x="590" y="82" class="h">Conversa</text>
+  <rect x="640" y="130" width="72" height="170" rx="6" class="c" opacity=".95"/>
+  <text x="646" y="150" class="h">Arquivo</text>
+  <text x="646" y="166" class="s">slide-over</text>
+  <text x="646" y="180" class="s">por cima</text>
+  <text x="500" y="372" class="s">Lista vira trilho de avatares.</text>
+  <text x="500" y="388" class="s">Contexto abre por cima e fecha</text>
+  <text x="500" y="404" class="s">com gesto para a direita.</text>
+
+  <!-- phone -->
+  <text x="760" y="34" class="t">Celular · ≤ 640 px</text>
+  <rect x="760" y="48" width="100" height="200" rx="16" fill="#1f2024"/>
+  <rect x="766" y="56" width="88" height="184" rx="10" fill="#f7f5f0"/>
+  <rect x="770" y="62" width="80" height="140" rx="5" class="a"/>
+  <text x="776" y="80" class="h">Conversa</text>
+  <text x="776" y="96" class="s">tela cheia</text>
+  <rect x="770" y="208" width="80" height="26" rx="5" class="p"/>
+  <text x="776" y="225" class="s">abas</text>
+  <rect x="876" y="48" width="100" height="200" rx="16" fill="#1f2024"/>
+  <rect x="882" y="56" width="88" height="184" rx="10" fill="#f7f5f0"/>
+  <rect x="886" y="62" width="80" height="172" rx="5" class="c"/>
+  <text x="892" y="80" class="h">Arquivo</text>
+  <text x="892" y="96" class="s">empurra</text>
+  <text x="892" y="110" class="s">como tela</text>
+  <text x="892" y="124" class="s">nova (voltar)</text>
+  <text x="760" y="276" class="s">Pilha de telas com</text>
+  <text x="760" y="292" class="s">barra de abas inferior</text>
+  <text x="760" y="308" class="s">(Chats, Board, Arquivos,</text>
+  <text x="760" y="324" class="s">Tarefas, Mais).</text>
+
+  <rect x="24" y="420" width="952" height="34" rx="8" fill="#ffffff" stroke="#d8d3c8"/>
+  <text x="40" y="442" class="s">Breakpoints alinhados aos existentes: MOBILE_VIEWPORT_QUERY (640 px) continua; entra um novo WIDE_VIEWPORT_QUERY (min-width 1100 px) em utils/viewport.js.</text>
+</svg>
