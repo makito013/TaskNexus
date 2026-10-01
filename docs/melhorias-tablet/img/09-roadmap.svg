@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" role="img" aria-label="Roteiro em oito fases: FN (sidebar cliente para projeto), FV (agente abre arquivos) e FA (aba Artefatos) no layout atual; depois fundações, navegador de arquivos, chat, layout v3 e codex com extras">
+  <style>text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}.h{font-size:13px;font-weight:700}.s{font-size:11px}.d{font-size:11px;fill:#8a8378}.t{font-size:15px;font-weight:700}</style>
+  <rect width="1000" height="540" rx="14" fill="#f7f5f0"/>
+  <text x="24" y="34" class="t">Ordem sugerida de entrega (cada fase gera um PR que funciona sozinho)</text>
+  <line x1="200" y1="60" x2="976" y2="60" stroke="#c9c3b7"/>
+  <text x="200" y="54" class="d">semana 1</text>
+  <text x="355" y="54" class="d">semana 2</text>
+  <line x1="355" y1="60" x2="355" y2="480" stroke="#e2ddd3"/>
+  <text x="510" y="54" class="d">semana 3</text>
+  <line x1="510" y1="60" x2="510" y2="480" stroke="#e2ddd3"/>
+  <text x="665" y="54" class="d">semana 4</text>
+  <line x1="665" y1="60" x2="665" y2="480" stroke="#e2ddd3"/>
+  <text x="820" y="54" class="d">semana 5</text>
+  <line x1="820" y1="60" x2="820" y2="480" stroke="#e2ddd3"/>
+  <text x="24" y="98" class="h">FN Cliente → projeto</text>
+  <rect x="210" y="80" width="120" height="30" rx="8" fill="#1f5e50"/>
+  <text x="218" y="99" class="s" style="fill:#ffffff">drill-down · espaço</text>
+  <text x="24" y="148" class="h">FV Agente abre arquivo</text>
+  <rect x="300" y="130" width="150" height="30" rx="8" fill="#2f7564"/>
+  <text x="308" y="149" class="s" style="fill:#ffffff">tool · painel à direita</text>
+  <text x="24" y="198" class="h">FA Artefatos</text>
+  <rect x="440" y="180" width="120" height="30" rx="8" fill="#3f8f7c"/>
+  <text x="448" y="199" class="s" style="fill:#ffffff">aba · cliente/projeto</text>
+  <text x="24" y="248" class="h">F0 Fundações</text>
+  <rect x="550" y="230" width="110" height="30" rx="8" fill="#d8d3c8"/>
+  <text x="558" y="249" class="s" style="fill:#4b453e">auth · routers</text>
+  <text x="24" y="298" class="h">F1 Navegador</text>
+  <rect x="660" y="280" width="150" height="30" rx="8" fill="#9fd0c1"/>
+  <text x="668" y="299" class="s" style="fill:#4b453e">árvore · busca · diff</text>
+  <text x="24" y="348" class="h">F2 Chat claude</text>
+  <rect x="660" y="330" width="290" height="30" rx="8" fill="#5b9c8a"/>
+  <text x="668" y="349" class="s" style="fill:#ffffff">ws/chat + ChatView + aprovações</text>
+  <text x="24" y="398" class="h">F3 Layout v3</text>
+  <rect x="820" y="380" width="150" height="30" rx="8" fill="#b9c3ea"/>
+  <text x="828" y="399" class="s" style="fill:#4b453e">lista WhatsApp · painéis</text>
+  <text x="24" y="448" class="h">F4 Codex + extras</text>
+  <rect x="866" y="430" width="116" height="30" rx="8" fill="#e5c77f"/>
+  <text x="874" y="449" class="s" style="fill:#4b453e">codex · busca · custos</text>
+  <text x="24" y="500" class="d">Largura das barras = esforço relativo estimado para um agente com revisão humana, não prazo fechado.</text>
+  <text x="24" y="518" class="d">FN, FV e FA rodam no layout atual. F1 e F2 dependem de F0; F3 (mudança maior de layout) fica por último.</text>
+</svg>

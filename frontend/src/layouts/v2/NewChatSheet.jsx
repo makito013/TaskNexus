@@ -39,6 +39,15 @@
 // isolada na CASCA (qual wrapper, header com botão × ou não): o bloco de
 // campos é um render ÚNICO, compartilhado pelos 2 branches — ver
 // `fieldsContent` abaixo.
+//
+// Fase N (escopo global cliente → projeto): `initialProjetoId` (opcional) é o
+// projeto escolhido na sidebar. A cada ABERTURA o formulário já nasce com a
+// cascata apontando para ele — "Projeto principal" = o filho direto do cliente
+// no caminho até o projeto, "Subprojeto" = o próprio projeto quando ele é um
+// descendente elegível —, para "+ Novo chat" dentro de um projeto não pedir
+// de novo o que a sidebar já disse. "Raiz" (o próprio cliente) e "Todos os
+// projetos" (null) deixam a cascata no padrão "Raiz de {cliente}", como antes.
+// Nada é anunciado na região live por isso: a pré-seleção não é interação.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BottomSheet } from './BottomSheet.jsx';
 import { CenteredModal } from './CenteredModal.jsx';
@@ -269,12 +278,29 @@ const styles = {
   },
 };
 
+// Fase N: onde a cascata deve abrir para um projeto escolhido na sidebar.
+// Devolve ids '' (o "nada escolhido" dos <select>s) sempre que o projeto não
+// cabe na cascata — fora do cliente, a própria raiz, um primário que não está
+// em `projects` —, e o formulário abre no padrão de sempre. Um projeto fundo
+// que não é elegível (pasta agrupadora) não pode ser o Subprojeto (o nível 2
+// só lista elegíveis), então só o primário vem preenchido.
+function resolvePreselection(clientId, projetoId, projects) {
+  const none = { primaryId: '', subprojectId: '' };
+  if (!clientId || !projetoId || !projetoId.startsWith(`${clientId}/`)) return none;
+  const primaryId = projetoId.split('/').slice(0, clientId.split('/').length + 1).join('/');
+  if (!listPrimaryProjectsForClient(clientId, projects).some((p) => p.id === primaryId)) return none;
+  if (primaryId === projetoId) return { primaryId, subprojectId: '' };
+  const isSub = listSubProjectsForPrimary(primaryId, projects).some((p) => p.id === projetoId);
+  return { primaryId, subprojectId: isSub ? projetoId : '' };
+}
+
 export function NewChatSheet({
   open,
   onClose,
   cliente,
   clientes,
   projects = [],
+  initialProjetoId = null,
   onSubmit,
   onRetryProjects,
   presentation = 'sheet',
@@ -292,6 +318,21 @@ export function NewChatSheet({
   // already on screen must stay silent; the retry button's aria-describedby
   // provides the context when focus lands on it).
   const [liveMessage, setLiveMessage] = useState('');
+
+  // Fase N: pré-seleção a partir da sidebar, aplicada na transição fechado →
+  // aberto. Ajuste de estado DURANTE o render (padrão do React para estado
+  // derivado de prop), não num efeito: o CenteredModal lê o foco inicial no
+  // efeito dele, e um efeito aqui rodaria depois — o primeiro quadro do modal
+  // mostraria "Raiz de {cliente}" e trocaria logo em seguida.
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && cliente && initialProjetoId) {
+      const pre = resolvePreselection(cliente.id, initialProjetoId, projects);
+      setSelectedPrimaryId(pre.primaryId);
+      setSelectedSubprojectId(pre.subprojectId);
+    }
+  }
 
   const clientSelectRef = useRef(null);
   const primarySelectRef = useRef(null);

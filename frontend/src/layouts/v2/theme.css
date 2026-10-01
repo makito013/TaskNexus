@@ -310,6 +310,34 @@
   animation: v2-cascade-field-enter 140ms ease-out;
 }
 
+/* Fase N (drill-down Clientes → Projetos em ClienteList.jsx): a lista da seção
+ * troca de nível deslizando alguns px — da direita ao ENTRAR num nível, da
+ * esquerda ao VOLTAR —, para o movimento dizer em que direção da árvore o
+ * usuário foi. A lista é remontada por `key` a cada troca de nível, e é o
+ * remount que re-dispara a animação.
+ *
+ * Mesmo racional de `transform` dos blocos acima: a invariante
+ * (fixedPositioningInvariant.test.js) remove blocos `@keyframes` inteiros antes
+ * de varrer, e a lista nem é ancestral do FAB. As classes carregam SÓ
+ * `animation`; "Reduzir movimento" zera a duração no bloco final do arquivo. */
+@keyframes v2-nav-level-enter-forward {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes v2-nav-level-enter-back {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.v2-nav-level-enter-forward {
+  animation: v2-nav-level-enter-forward 160ms ease-out;
+}
+
+.v2-nav-level-enter-back {
+  animation: v2-nav-level-enter-back 160ms ease-out;
+}
+
 /* Foco visível do painel do CenteredModal (WCAG 2.4.7 / 1.4.11) — style={}
  * inline não suporta :focus-visible, por isso é uma classe CSS dedicada.
  * Ver CenteredModal.reference.jsx / style-guide.md seção 1. */
@@ -345,4 +373,6 @@
   .v2-fab-panel-enter { animation-duration: 0ms; }
   .v2-card-modal-enter { animation-duration: 0ms; }
   .v2-cascade-field-enter { animation-duration: 0ms; }
+  .v2-nav-level-enter-forward,
+  .v2-nav-level-enter-back { animation-duration: 0ms; }
 }

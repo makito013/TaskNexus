@@ -8,6 +8,10 @@
 //
 // Renderiza por cima do conteúdo (`content`, que fica sempre montado por
 // baixo — AppV2.jsx) como um overlay `position:fixed; inset:0`.
+//
+// Fase N: repassa ao ClienteList (variant="mobile") o mesmo escopo de
+// navegação que a SidebarV2 recebe, então o celular ganha o mesmo drill-down
+// Clientes → Projetos, com linhas de 54px.
 
 import { AppearanceSwitch } from '../../components/AppearanceSwitch.jsx';
 import { NavTabs } from './NavTabs.jsx';
@@ -57,8 +61,16 @@ export function MobileMenuScreen({
   activeScreen,
   onSelectScreen,
   clientes = [],
+  projects = [],
   selectedClienteId,
+  selectedProjetoId = null,
+  navLevel = 'clientes',
+  navParentId = null,
   onSelectCliente,
+  onEnterCliente,
+  onSelectProjeto,
+  onEnterProjeto,
+  onBack,
   initialAppearance,
 }) {
   return (
@@ -77,8 +89,16 @@ export function MobileMenuScreen({
         <ClienteList
           variant="mobile"
           clientes={clientes}
+          projects={projects}
           selectedClienteId={selectedClienteId}
+          selectedProjetoId={selectedProjetoId}
+          level={navLevel}
+          parentId={navParentId}
           onSelectCliente={onSelectCliente}
+          onEnterCliente={onEnterCliente}
+          onSelectProjeto={onSelectProjeto}
+          onEnterProjeto={onEnterProjeto}
+          onBack={onBack}
         />
       </div>
 

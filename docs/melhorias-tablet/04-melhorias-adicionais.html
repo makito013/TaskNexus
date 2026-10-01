@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Melhorias adicionais</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a class="on" href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a class="on" href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#resumo-e-prioridade">Resumo e prioridade</a></li><li><a href="#41-autenticação-por-token-de-acesso-obrigatória">4.1 Autenticação por token de acesso (obrigatória)</a></li><li><a href="#42-quick-wins-no-terminal-antes-do-chat-ficar-pronto">4.2 Quick wins no terminal (antes do chat ficar pronto)</a></li><li><a href="#43-quebrar-o-mainpy-em-routers">4.3 Quebrar o main.py em routers</a></li><li><a href="#44-revisão-das-mudanças-do-agente">4.4 Revisão das mudanças do agente</a></li><li><a href="#45-notificações-ricas">4.5 Notificações ricas</a></li><li><a href="#46-mandar-coisas-do-ipad-para-o-tasknexus">4.6 Mandar coisas do iPad para o TaskNexus</a></li><li><a href="#47-busca-global">4.7 Busca global</a></li><li><a href="#48-chat-board">4.8 Chat ↔ Board</a></li><li><a href="#49-custo-e-uso">4.9 Custo e uso</a></li><li><a href="#410-prompts-salvos-e-modelos-de-conversa">4.10 Prompts salvos e modelos de conversa</a></li><li><a href="#411-exportar-conversa">4.11 Exportar conversa</a></li><li><a href="#412-página-de-saúde">4.12 Página de saúde</a></li><li><a href="#413-testes-ponta-a-ponta-e-ci">4.13 Testes ponta a ponta e CI</a></li><li><a href="#414-fila-de-mensagens-offline">4.14 Fila de mensagens offline</a></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 4 de 8</p><h1 id="parte-4-melhorias-adicionais-o-que-a-equipe-encontrou">Parte 4 — Melhorias adicionais (o que a equipe encontrou)</h1>
+<blockquote>
+<p>Cada item traz: <strong>o que é</strong>, <strong>por que importa</strong>, <strong>como fazer</strong> (com
+arquivos e passos), <strong>esforço</strong> (P = até meio dia, M = 1–2 dias, G = 3+ dias
+para um agente com revisão) e <strong>prioridade</strong>.</p>
+</blockquote>
+<h2 id="resumo-e-prioridade">Resumo e prioridade</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Id</th>
+<th>Melhoria</th>
+<th>Esforço</th>
+<th>Prioridade</th>
+<th>Depende de</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.1</td>
+<td>Autenticação por token + cookie</td>
+<td>M</td>
+<td><strong>Obrigatória</strong> (antes da Parte 1)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4.2</td>
+<td>Quick wins no terminal: links clicáveis (<strong>entra na Fase V</strong>), modo "selecionar texto", fonte na rotação</td>
+<td>P</td>
+<td>Alta (alívio imediato)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4.3</td>
+<td>Quebrar o <code>main.py</code> em routers</td>
+<td>M</td>
+<td>Alta (antes de crescer mais)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4.4</td>
+<td>Revisão das mudanças do agente (git: diff, commit, descartar)</td>
+<td>M</td>
+<td>Alta</td>
+<td>Parte 1</td>
+</tr>
+<tr>
+<td>4.5</td>
+<td>Notificações ricas (prévia, aprovação pendente, link direto)</td>
+<td>P</td>
+<td>Alta</td>
+<td>Parte 2</td>
+</tr>
+<tr>
+<td>4.6</td>
+<td>Mandar coisas do iPad para o TaskNexus (Atalhos do iOS)</td>
+<td>P</td>
+<td>Média</td>
+<td>4.1</td>
+</tr>
+<tr>
+<td>4.7</td>
+<td>Busca global (conversas, arquivos, cards, tarefas)</td>
+<td>M</td>
+<td>Média</td>
+<td>Partes 1 e 2</td>
+</tr>
+<tr>
+<td>4.8</td>
+<td>Chat ↔ Board: cards citados viram cartões clicáveis, "criar card desta mensagem"</td>
+<td>P</td>
+<td>Média</td>
+<td>Parte 2</td>
+</tr>
+<tr>
+<td>4.9</td>
+<td>Custo e uso por conversa e por projeto</td>
+<td>P</td>
+<td>Média</td>
+<td>Parte 2</td>
+</tr>
+<tr>
+<td>4.10</td>
+<td>Prompts salvos (snippets) e modelos de conversa</td>
+<td>P</td>
+<td>Média</td>
+<td>Parte 2</td>
+</tr>
+<tr>
+<td>4.11</td>
+<td>Exportar conversa em Markdown/HTML</td>
+<td>P</td>
+<td>Média</td>
+<td>Parte 2</td>
+</tr>
+<tr>
+<td>4.12</td>
+<td>Página de saúde do sistema</td>
+<td>P</td>
+<td>Baixa</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4.13</td>
+<td>Testes ponta a ponta em viewport de iPad + CI</td>
+<td>M</td>
+<td>Alta (protege tudo acima)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4.14</td>
+<td>Fila de mensagens offline</td>
+<td>P</td>
+<td>Baixa</td>
+<td>Parte 2</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="41-autenticação-por-token-de-acesso-obrigatória">4.1 Autenticação por token de acesso (obrigatória)</h2>
+<p><strong>O que é:</strong> uma tela de entrada que pede um token longo, gerado pelo próprio
+TaskNexus, e depois mantém você logado por cookie.</p>
+<p><strong>Por que importa:</strong> hoje nenhuma rota exige login (o próprio código diz
+"personal tailnet install"). Isso já permite que qualquer aparelho na sua rede
+escreva no terminal dos agentes (<code>/api/sessions/.../paste</code>). Com a API de
+arquivos, passaria a permitir <strong>baixar arquivos do seu PC</strong>. A Tailscale reduz
+o risco, mas uma rede de hotel com o <code>deploy.ps1 -NoTls</code>, um aparelho
+comprometido na LAN ou um HTML malicioso aberto no preview bastariam.</p>
+<p><strong>Como fazer:</strong></p>
+<ol>
+<li><strong>Segredo:</strong> no primeiro boot, gerar <code>secrets.token_urlsafe(32)</code> e salvar
+   em <code>backend/.tasknexus_secret</code> (permissão 600; já coberto por <code>.gitignore</code>?
+   adicionar). É a mesma ideia do <code>vapid_keys.py</code>, que gera e guarda as chaves de push.</li>
+<li><strong>Token de acesso:</strong> mostrar no console do <code>deploy.sh</code>/<code>deploy.ps1</code>
+   ("Token de acesso: …") e na tela de Configuração (quando já logado). Opção
+   de gerar <strong>QR code</strong> na Configuração para abrir no iPad já autenticado
+   (<code>https://&lt;host&gt;.ts.net/login#token=…</code>, o fragmento não vai para logs).</li>
+<li><strong>Login:</strong> <code>POST /api/auth/login {token}</code> → compara com
+   <code>hmac.compare_digest</code> → cria cookie <code>tn_session</code> assinado
+   (HMAC com o segredo, com <code>device_id</code> e expiração de 90 dias), <code>HttpOnly</code>,
+   <code>Secure</code> quando HTTPS, <code>SameSite=Lax</code>, <code>Path=/</code>.</li>
+<li><strong>Middleware:</strong> exige cookie válido em <code>/api/*</code> e <code>/ws/*</code>, <strong>exceto</strong>:
+   <code>/api/auth/*</code>, <code>/api/status</code>, rotas de hooks chamadas por loopback
+   (<code>/api/hooks/*</code> só aceitam <code>request.client.host</code> em <code>127.0.0.1</code>/<code>::1</code>),
+   arquivos estáticos do frontend, <code>manifest.webmanifest</code>, <code>sw.js</code> e a rota de
+   preview assinada da Parte 1 (<code>/api/fs/pv/…</code>).</li>
+<li><strong>WebSocket:</strong> o navegador envia o cookie no handshake; validar em
+   <code>pty_endpoint</code> e no <code>/ws/chat</code> antes do <code>accept()</code> (fechar com 4401).</li>
+<li><strong>CORS:</strong> trocar <code>allow_origins=["*"]</code> pela(s) origem(ns) do próprio app.</li>
+<li><strong>Frontend:</strong> <code>api.js</code> trata 401 redirecionando para <code>/login</code>; tela de
+   login simples com campo de token, botão Entrar e "cole o token ou escaneie o QR".</li>
+<li><strong>Dispositivos:</strong> lista na Configuração ("iPad · último acesso ontem") com
+   botão <strong>Revogar</strong> (guarda <code>device_id</code> revogados numa tabela).</li>
+<li><strong>Opcional:</strong> variável <code>TASKNEXUS_AUTH=off</code> para quem roda só em
+   <code>localhost</code>, com aviso vermelho na Configuração.</li>
+</ol>
+<p><strong>Testes:</strong> rota protegida sem cookie → 401; com cookie adulterado → 401;
+hook vindo de IP não-loopback → 403; WebSocket sem cookie → fecha com 4401;
+login com token errado → 401 e atraso fixo (sem vazar tempo).</p>
+<hr />
+<h2 id="42-quick-wins-no-terminal-antes-do-chat-ficar-pronto">4.2 Quick wins no terminal (antes do chat ficar pronto)</h2>
+<p><strong>O que é:</strong> três melhorias pequenas no <code>TerminalPanel.jsx</code> que aliviam o
+uso no tablet já na primeira semana, e continuam úteis no modo Terminal depois.</p>
+<p><strong>Como fazer:</strong></p>
+<ol>
+<li><strong>Links clicáveis:</strong> instalar <code>@xterm/addon-web-links</code> e carregar no mount:
+   <div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">WebLinksAddon</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">'@xterm/addon-web-links'</span><span class="p">;</span>
+<span class="nx">term</span><span class="p">.</span><span class="nx">loadAddon</span><span class="p">(</span><span class="ow">new</span><span class="w"> </span><span class="nx">WebLinksAddon</span><span class="p">((</span><span class="nx">event</span><span class="p">,</span><span class="w"> </span><span class="nx">uri</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nb">window</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="nx">uri</span><span class="p">,</span><span class="w"> </span><span class="s1">'_blank'</span><span class="p">,</span><span class="w"> </span><span class="s1">'noopener'</span><span class="p">)));</span>
+</code></pre></div>
+   E registrar um <strong>link provider</strong> para caminhos de arquivo
+   (<code>term.registerLinkProvider</code>) usando a mesma regex de <code>fileLinks.js</code> (Parte 1),
+   que abre o visualizador. <strong>Este item foi puxado para a Fase V</strong>
+   (<a href="06-planejamento-fase-v.html">Parte 6</a>, seção 6.5.6): o caminho clicado vira
+   uma aba nova do visualizador via <code>POST /api/sessions/{sk}/viewer</code>.</li>
+<li><strong>Modo "Selecionar texto":</strong> botão no cabeçalho (e no FAB de atalhos) que
+   abre uma folha com o <strong>conteúdo do buffer do terminal como texto real</strong>:
+   <div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">buf</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">term</span><span class="p">.</span><span class="nx">buffer</span><span class="p">.</span><span class="nx">active</span><span class="p">;</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">lines</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[];</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">let</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nx">buf</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="nx">lines</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span><span class="nx">buf</span><span class="p">.</span><span class="nx">getLine</span><span class="p">(</span><span class="nx">i</span><span class="p">)</span><span class="o">?</span><span class="p">.</span><span class="nx">translateToString</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="s1">''</span><span class="p">);</span>
+</code></pre></div>
+   Renderizar num <code>&lt;pre&gt;</code> com <code>user-select: text</code>, rolado até o fim, com botões
+   <strong>Copiar tudo</strong> e <strong>Copiar últimas 50 linhas</strong>. Resolve "não consigo copiar"
+   no terminal sem brigar com o xterm.</li>
+<li><strong>Fonte na rotação:</strong> hoje o tamanho da fonte é decidido uma vez no mount
+   (documentado no próprio <code>TerminalPanel</code>). Ouvir
+   <code>matchMedia('(orientation: portrait)')</code> e ajustar <code>term.options.fontSize</code> +
+   <code>fit()</code> ao girar.</li>
+</ol>
+<p><strong>Esforço:</strong> P · <strong>Arquivos:</strong> <code>TerminalPanel.jsx</code>, <code>TerminalShortcutsPanel.jsx</code>, <code>package.json</code>.</p>
+<hr />
+<h2 id="43-quebrar-o-mainpy-em-routers">4.3 Quebrar o <code>main.py</code> em routers</h2>
+<p><strong>Por que:</strong> o arquivo tem ~2.950 linhas misturando boot, PTY, board,
+tarefas, push, anexos e hooks. Adicionar arquivos, chat e auth nele aumenta o
+risco de conflito e regressão.</p>
+<p><strong>Como:</strong> mover por domínio, sem mudar comportamento, um commit por domínio,
+rodando a suíte a cada passo:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/routers/
+  settings.py   push.py   projects.py   agents.py   sessions.py
+  tasks.py      cards.py  board.py      hooks.py    pty_ws.py    static.py
+backend/app/state.py      # stores e caches compartilhados (hoje globais do main.py)
+</code></pre></div>
+<p><code>main.py</code> fica com o <code>lifespan</code>, middlewares e <code>include_router</code>. Os testes
+existentes (que importam <code>app.main</code>) devem continuar passando sem alteração;
+se algum teste faz monkeypatch em um global do <code>main</code>, manter um re-export.</p>
+<hr />
+<h2 id="44-revisão-das-mudanças-do-agente">4.4 Revisão das mudanças do agente</h2>
+<p><strong>O que é:</strong> uma aba "Alterações" por conversa/projeto mostrando o <code>git
+status</code> + diff de cada arquivo, com ações <strong>Descartar arquivo</strong> e
+<strong>Commitar selecionados</strong> (mensagem sugerida pelo agente).</p>
+<p><strong>Por que:</strong> no tablet, revisar o que o agente fez é a tarefa mais comum
+depois de conversar. Hoje exige abrir um terminal.</p>
+<p><strong>Como:</strong> reaproveita <code>git_info.py</code> e o <code>DiffRenderer</code> da Parte 1. Ações de
+escrita (<code>git restore</code>, <code>git add</code> + <code>git commit</code>) em rotas <code>POST</code> separadas,
+com confirmação em duas etapas na interface (mesmo padrão de "2 toques" do
+<code>AttachmentsMenu</code>). Nunca <code>push</code> pela interface nesta fase. Botão "Pedir ao
+agente para commitar" manda a mensagem pronta no chat, como alternativa.</p>
+<hr />
+<h2 id="45-notificações-ricas">4.5 Notificações ricas</h2>
+<p><strong>O que é:</strong> o push de fim de turno passa a trazer o começo da resposta
+("claude · tasknexus: Rodei a suíte: 58 passaram, 2 falharam…") e um push
+novo para <strong>aprovação pendente</strong>. Tocar abre a URL exata da conversa (3.4).</p>
+<p><strong>Como:</strong> <code>push_payload.py</code> já monta o payload; incluir <code>body</code> com
+<code>last_preview</code> (cortado em 120 caracteres) e <code>url: /chats/&lt;sk&gt;</code>. Disparar
+também em <code>permission_request</code> quando nenhum cliente estiver conectado
+àquela sessão, respeitando o horário de silêncio. <strong>Limitação do iPadOS:</strong>
+botões de ação dentro da notificação ("Permitir") não são suportados em PWA
+no iOS/iPadOS; a aprovação é feita tocando na notificação.</p>
+<hr />
+<h2 id="46-mandar-coisas-do-ipad-para-o-tasknexus">4.6 Mandar coisas do iPad para o TaskNexus</h2>
+<p><strong>Por que:</strong> "compartilhar para o TaskNexus" (um print, um PDF, um link) é
+natural no tablet. Porém o <strong>Web Share Target não é suportado pelo Safari no
+iPadOS</strong>, então um PWA não aparece na folha de compartilhamento.</p>
+<p><strong>Como (funciona hoje):</strong> um <strong>Atalho</strong> do app Atalhos da Apple:</p>
+<ol>
+<li>Criar rota <code>POST /api/inbox</code> (autenticada por um <strong>token de API</strong> separado,
+   revogável, gerado na Configuração) que aceita arquivo ou texto e um
+   <code>project_id</code> opcional; salva como anexo do projeto e cria uma notificação
+   "Recebido do iPad".</li>
+<li>Documentar na Configuração um passo a passo para o Atalho: "Receber
+   entrada da folha de compartilhamento → Obter conteúdo de URL (POST, cabeçalho
+   <code>Authorization: Bearer &lt;token&gt;</code>, corpo multipart)".</li>
+<li>No chat, anexos recentes da inbox aparecem no menu ＋ como "Recebidos".</li>
+</ol>
+<hr />
+<h2 id="47-busca-global">4.7 Busca global</h2>
+<p>Uma rota <code>GET /api/search?q=</code> que junta: conversas (nome e mensagens em
+<code>chat_events</code>), arquivos (Parte 1), cards e tarefas (LIKE nos stores
+existentes). Resultado agrupado por tipo na paleta ⌘K (3.7). Começar com
+<code>LIKE</code>; migrar para SQLite FTS5 só se ficar lento.</p>
+<hr />
+<h2 id="48-chat-board">4.8 Chat ↔ Board</h2>
+<ul>
+<li>Referências <code>#184</code> no texto do agente viram link para o card (abre no
+  painel de contexto com título, coluna, prazo).</li>
+<li>Quando o agente usa a ferramenta MCP de criar/mover card, o cartão de
+  ferramenta mostra o card real ("Criou #184 · A fazer") e é clicável.</li>
+<li>Ação "Criar card desta mensagem" no menu da mensagem (2.2.6), com título
+  sugerido (primeira linha) e descrição = mensagem em markdown.</li>
+</ul>
+<hr />
+<h2 id="49-custo-e-uso">4.9 Custo e uso</h2>
+<p>O evento <code>result</code> do claude traz <code>total_cost_usd</code>, duração e tokens. Guardar
+no <code>turn_end</code> e mostrar: rodapé da resposta, total da conversa no cabeçalho
+(toque para detalhes) e um quadro simples na Configuração com os últimos 30
+dias por projeto (barras horizontais, sem biblioteca de gráfico).</p>
+<hr />
+<h2 id="410-prompts-salvos-e-modelos-de-conversa">4.10 Prompts salvos e modelos de conversa</h2>
+<ul>
+<li><strong>Snippets:</strong> textos reutilizáveis ("Revise o diff e rode os testes",
+  "Escreva o changelog") acessíveis no menu <strong>/</strong> do composer, com
+  variáveis simples (<code>{arquivo}</code>, <code>{card}</code>). Guardados no SQLite, editáveis na Configuração.</li>
+<li><strong>Modelos de conversa:</strong> "Nova conversa de revisão" já abre com agente,
+  projeto, modo de aprovação e primeira mensagem definidos.</li>
+</ul>
+<hr />
+<h2 id="411-exportar-conversa">4.11 Exportar conversa</h2>
+<p>Botão "Exportar" no menu da conversa: gera <code>.md</code> (mensagens, blocos de código,
+resumo das ferramentas) ou <code>.html</code> autocontido com o mesmo visual do chat, e
+entrega pelo mesmo mecanismo de download/compartilhar da Parte 1. Útil para
+mandar a um cliente ou guardar no repositório.</p>
+<hr />
+<h2 id="412-página-de-saúde">4.12 Página de saúde</h2>
+<p>Em Configuração › Sistema: versões de <code>claude</code>, <code>codex</code>, <code>agy</code> no PATH do
+backend; processos de agente vivos (PTY e chat) com botão encerrar; tamanho do
+<code>sessions.db</code> e dos anexos; últimas 50 linhas de log; status do push (chaves
+VAPID, dispositivos inscritos); aviso se o acesso é sem HTTPS. Ajuda a
+diagnosticar do tablet sem abrir o PC.</p>
+<hr />
+<h2 id="413-testes-ponta-a-ponta-e-ci">4.13 Testes ponta a ponta e CI</h2>
+<ul>
+<li><strong>Playwright</strong> com projetos de viewport: iPad Pro 11 deitado (1194×834),
+  iPad em pé (834×1194) e iPhone 13 (390×844), com <code>hasTouch: true</code>.
+  Rodar em Chromium e, na máquina de desenvolvimento, também em <strong>WebKit</strong>
+  (mais próximo do Safari).</li>
+<li>Cenários: enviar mensagem com adapter fake, aprovar, abrir arquivo por link,
+  baixar, trocar Chat/Terminal, rotação (mudar viewport), sem rolagem horizontal
+  (<code>document.documentElement.scrollWidth &lt;= innerWidth</code>), alvos ≥ 44 px.</li>
+<li>Backend com <code>TASKNEXUS_FAKE_AGENT=1</code> usando o adapter fake da Parte 2, para
+  os testes não dependerem do CLI real.</li>
+<li><strong>GitHub Actions:</strong> <code>pytest</code> + <code>vitest</code> + Playwright (Chromium) em todo PR.</li>
+</ul>
+<hr />
+<h2 id="414-fila-de-mensagens-offline">4.14 Fila de mensagens offline</h2>
+<p>Se a conexão cair (iPad saiu da rede), mensagens enviadas ficam com ⏱ numa
+fila local (<code>localStorage</code>, com <code>client_id</code>) e são enviadas no <code>hello</code> da
+reconexão. O backend ignora <code>client_id</code> repetido (idempotência), então nada é
+enviado duas vezes.</p><div class="pager"><a href="03-layout-amigavel.html"><small>Anterior</small>3 · Layout amigável</a><a class="next" href="05-plano-de-execucao-e-prompts.html"><small>Próxima</small>5 · Plano e prompts</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

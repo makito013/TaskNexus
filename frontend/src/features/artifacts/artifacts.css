@@ -1,0 +1,540 @@
+/* frontend/src/features/artifacts/artifacts.css
+ *
+ * Fase A (07-planejamento-artefatos.md, 7.2): estilos da tela Artefatos. Só
+ * tokens --v2-* (theme.css), na mesma linguagem do Board (cartão claro, borda
+ * fina, raio 12px) e do painel do visualizador (viewer.css).
+ *
+ * Arquivo CSS (e não style={}) pelo mesmo motivo do viewer.css: hover, foco
+ * visível, line-clamp e a grade por largura não cabem em estilo inline.
+ *
+ * Nada aqui usa transform/filter/will-change/contain: os portais (menu,
+ * modais) e o casco `position: fixed` dependem disso
+ * (layouts/v2/fixedPositioningInvariant.test.js). Animação só de opacidade.
+ */
+
+.af-screen {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.af-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Barra de filtro (dentro da ClienteProjetoFilterBar) ------------------ */
+
+.af-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.af-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--v2-surface-3);
+  color: var(--v2-text-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.af-chip:hover { color: var(--v2-text); }
+.af-chip[aria-pressed='true'] {
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+}
+.af-chip:focus-visible,
+.af-search:focus-visible,
+.af-order:focus-visible,
+.af-import:focus-visible,
+.af-card-more:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 1px;
+}
+
+.af-search {
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 280px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.af-search::placeholder { color: var(--v2-text-faint); }
+
+/* Mesmo visual dos selects da ClienteProjetoFilterBar. */
+.af-order {
+  font: inherit;
+  font-size: 12px;
+  color: var(--v2-text-dim);
+  background: var(--v2-surface-3);
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  cursor: pointer;
+}
+
+/* ---- Lista ---------------------------------------------------------------- */
+
+.af-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 20px 32px;
+}
+
+.af-group + .af-group { margin-top: 22px; }
+
+.af-group-label {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* ---- Cartão --------------------------------------------------------------- */
+
+.af-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text);
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  /* Toque longo abre o menu do cartão: sem isto o iOS mostra a lupa/seleção
+     de texto e o menu de "Copiar" do sistema por cima. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.af-card:hover { border-color: var(--v2-text-faint); }
+.af-card:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+
+/* Aberto no painel agora. */
+.af-card--active {
+  border-color: var(--v2-accent);
+  box-shadow: inset 0 0 0 1px var(--v2-accent);
+}
+
+/* Arquivo apagado ou movido (7.2, "Estados"). */
+.af-card--missing {
+  border-style: dashed;
+  background: transparent;
+}
+.af-card--missing .af-card-title { color: var(--v2-text-dim); }
+
+.af-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding-right: 34px;
+}
+
+.af-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.af-badge--markdown { background: var(--v2-accent-soft); color: var(--v2-accent-strong); }
+.af-badge--html { background: var(--v2-accent-2-soft); color: var(--v2-accent-2); }
+.af-badge--pdf { background: var(--v2-danger-soft); color: var(--v2-danger); }
+
+.af-missing {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--v2-warn-soft);
+  color: var(--v2-warn);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.af-card-title {
+  margin-top: 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.af-card-path {
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--v2-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-card-excerpt {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--v2-text-dim);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.af-card-foot {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 11px;
+  color: var(--v2-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-card-more {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text-dim);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.af-card-more:hover { background: var(--v2-surface-3); color: var(--v2-text); }
+
+/* Esqueleto (carregando): blocos que pulsam só na opacidade. */
+.af-card--skeleton { cursor: default; }
+.af-card--skeleton span {
+  display: block;
+  border-radius: 6px;
+  background: var(--v2-surface-3);
+  animation: af-pulse 1.2s ease-in-out infinite;
+}
+.af-card--skeleton span:nth-child(1) { width: 42px; height: 20px; }
+.af-card--skeleton span:nth-child(2) { width: 80%; height: 14px; margin-top: 8px; }
+.af-card--skeleton span:nth-child(3) { width: 60%; height: 10px; }
+.af-card--skeleton span:nth-child(4) { width: 90%; height: 10px; margin-top: 6px; }
+.af-card--skeleton span:nth-child(5) { width: 50%; height: 10px; margin-top: auto; }
+
+@keyframes af-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .af-card--skeleton span { animation: none; }
+  .af-card { transition: none; }
+}
+
+/* ---- Estados e rodapé da lista ------------------------------------------- */
+
+.af-empty {
+  max-width: 460px;
+  margin: 40px auto;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--v2-text-dim);
+}
+
+.af-empty-title {
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--v2-text);
+}
+
+.af-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--v2-accent-strong);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.af-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.af-import,
+.af-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--v2-border);
+  background: transparent;
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.af-btn { border-style: solid; }
+.af-btn--primary {
+  background: var(--v2-accent);
+  border-color: var(--v2-accent);
+  color: var(--v2-surface);
+}
+.af-btn[disabled] { opacity: 0.5; cursor: default; }
+.af-import:hover,
+.af-btn:hover { background: var(--v2-surface-3); }
+.af-btn--primary:hover { background: var(--v2-accent-strong); }
+
+.af-hint {
+  font-size: 12px;
+  color: var(--v2-text-faint);
+}
+
+/* ---- Menu do cartão (portal) ---------------------------------------------- */
+
+.af-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: transparent;
+}
+
+.af-menu {
+  position: fixed;
+  z-index: 51;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  font-family: 'Figtree', -apple-system, sans-serif;
+  color: var(--v2-text);
+}
+
+.af-menu-title {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--v2-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--v2-border);
+  margin-bottom: 4px;
+}
+
+.af-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.af-menu-item:hover,
+.af-menu-item:focus-visible { background: var(--v2-surface-3); outline: none; }
+.af-menu-item[aria-disabled='true'] { color: var(--v2-text-faint); cursor: default; }
+.af-menu-item[aria-disabled='true']:hover { background: transparent; }
+.af-menu-icon { width: 18px; text-align: center; color: var(--v2-text-dim); flex-shrink: 0; }
+.af-menu-sub { display: block; font-size: 11px; color: var(--v2-text-faint); }
+.af-menu-item--danger { color: var(--v2-danger); }
+.af-menu-item--confirm { background: var(--v2-danger-soft); color: var(--v2-danger); font-weight: 700; }
+.af-menu-item--confirm:hover { background: var(--v2-danger-soft); }
+
+/* ---- Modais (dentro do CenteredModal) ------------------------------------- */
+
+/* O modal é portal para document.body, fora do casco do v2: a fonte e a cor
+   não vêm herdadas de lá (mesmo achado da V-2 na gaveta/tela cheia). */
+.af-modal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  font-family: 'Figtree', -apple-system, sans-serif;
+  color: var(--v2-text);
+}
+
+.af-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--v2-border);
+  flex-shrink: 0;
+}
+
+.af-modal-title { font-size: 15px; font-weight: 700; color: var(--v2-text); }
+
+.af-modal-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border);
+  background: transparent;
+  color: var(--v2-text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.af-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 18px;
+  color: var(--v2-text);
+  font-size: 13px;
+}
+
+.af-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--v2-border);
+  flex-shrink: 0;
+}
+
+.af-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-dim);
+}
+
+.af-input,
+.af-select {
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 15px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.af-candidates { display: flex; flex-direction: column; gap: 2px; }
+
+.af-candidate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.af-candidate:hover { background: var(--v2-surface-2); }
+.af-candidate input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--v2-accent); }
+.af-candidate-path {
+  flex: 1;
+  min-width: 0;
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.af-candidate-size { font-size: 11px; color: var(--v2-text-faint); flex-shrink: 0; }
+
+.af-error { color: var(--v2-danger); font-size: 12px; }
+
+@media (max-width: 640px) {
+  .af-scroll { padding: 12px 12px 28px; }
+  .af-grid { grid-template-columns: 1fr; }
+  /* iOS aumenta o zoom ao focar campo com fonte < 16px. */
+  .af-search { font-size: 16px; max-width: none; }
+  .af-input, .af-select { font-size: 16px; }
+}

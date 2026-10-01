@@ -2182,3 +2182,68 @@ describe('BoardV2 — erro 409 ao mover card (fase 3)', () => {
     expect(screen.queryByTestId('board-v2-move-error')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fase N (8.2.1 item 5 + aceite 2/2b): a barra CONTINUA no Board e parte da
+// sidebar. Com projeto na sidebar, o select de projeto já vem com ele.
+// ---------------------------------------------------------------------------
+describe('BoardV2 — barra de selects partindo do projeto da sidebar (Fase N)', () => {
+  it('projeto na sidebar: select de projeto preenchido, com os subprojetos dele, e busca pela subárvore', () => {
+    mockNoCards();
+    render(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj" />);
+
+    expect(screen.queryByLabelText('Filtrar por cliente')).toBeNull();
+    const projetoSelect = screen.getByLabelText('Filtrar por projeto');
+    expect(projetoSelect.value).toBe('clienteC/proj');
+    expect(within(projetoSelect).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Todos os projetos',
+      'Projeto C',
+      'proj / neto',
+    ]);
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj', 'clienteC/proj/neto']);
+  });
+
+  it('refinar na barra só muda esta tela; trocar o projeto na sidebar descarta o refinamento', () => {
+    mockNoCards();
+    const { rerender } = render(
+      <BoardV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj" />
+    );
+    fireEvent.change(screen.getByLabelText('Filtrar por projeto'), { target: { value: '' } });
+    expect(lastFetchedProjectIds()).toEqual([]);
+
+    rerender(<BoardV2 projects={deepProjects} selectedClienteId="clienteC" selectedProjetoId="clienteC/proj/neto" />);
+    expect(screen.getByLabelText('Filtrar por projeto').value).toBe('clienteC/proj/neto');
+    expect(lastFetchedProjectIds()).toEqual(['clienteC/proj/neto']);
+  });
+
+  it('Raiz na sidebar: opção "Raiz" selecionada e só os cards presos direto no cliente', () => {
+    mockUseCards.mockImplementation((ids) => ({
+      cards: [
+        fakeCard({ id: 1, titulo: 'Card da raiz', projeto_id: 'clienteB' }),
+        fakeCard({ id: 2, titulo: 'Card do sub1', projeto_id: 'clienteB/sub1' }),
+      ].filter((c) => ids.length === 0 || ids.includes(c.projeto_id)),
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    }));
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId="clienteB" selectedProjetoId="clienteB" />);
+
+    const projetoSelect = screen.getByLabelText('Filtrar por projeto');
+    expect(projetoSelect.value).toBe('clienteB');
+    expect(within(projetoSelect).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Todos os projetos',
+      'Raiz',
+      'Sub 1',
+      'Sub 2',
+    ]);
+    expect(lastFetchedProjectIds()).toEqual(['clienteB']);
+    expect(screen.getByText('Card da raiz')).toBeTruthy();
+    expect(screen.queryByText('Card do sub1')).toBeNull();
+  });
+
+  it('sidebar em "Todos": os dois selects continuam (cliente + projeto), como antes', () => {
+    mockNoCards();
+    render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} selectedProjetoId={null} />);
+    expect(screen.getByLabelText('Filtrar por cliente')).toBeTruthy();
+    expect(screen.getByLabelText('Filtrar por projeto')).toBeTruthy();
+  });
+});

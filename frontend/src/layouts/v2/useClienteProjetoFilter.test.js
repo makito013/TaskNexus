@@ -137,3 +137,108 @@ describe('resolveCardTags', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fase N (8.2.1 item 5): a barra parte do escopo da sidebar (cliente E
+// projeto), refina só localmente e descarta o refinamento quando a sidebar
+// muda.
+// ---------------------------------------------------------------------------
+describe('useClienteProjetoFilter — partindo do projeto da sidebar (Fase N)', () => {
+  const tree = [
+    { id: 'pode', nome: 'pode', sub_projetos: ['pode/api', 'pode/site'] },
+    { id: 'pode/api', nome: 'api', sub_projetos: ['pode/api/v1', 'pode/api/v2'] },
+    { id: 'pode/api/v1', nome: 'v1', sub_projetos: [] },
+    { id: 'pode/api/v2', nome: 'v2', sub_projetos: ['pode/api/v2/x'] },
+    { id: 'pode/api/v2/x', nome: 'x', sub_projetos: [] },
+    { id: 'pode/site', nome: 'site', sub_projetos: [] },
+    { id: 'outro', nome: 'outro', sub_projetos: [] },
+  ];
+  const renderFilter = (clienteId, projetoId) => renderHook(
+    ({ c, p }) => useClienteProjetoFilter(tree, c, p),
+    { initialProps: { c: clienteId, p: projetoId } }
+  );
+
+  it('sem projeto na sidebar: tudo como antes (Tier 2 vazio, opções = filhos diretos)', () => {
+    const { result } = renderFilter('pode', null);
+    expect(result.current.selectedProjetoId).toBeNull();
+    expect(result.current.subProjetoIds).toEqual(['pode/api', 'pode/site']);
+  });
+
+  it('com projeto: o Tier 2 já vem preenchido e o filtro é a subárvore dele', () => {
+    const { result } = renderFilter('pode', 'pode/api');
+    expect(result.current.selectedProjetoId).toBe('pode/api');
+    expect(result.current.selectedProjectIds).toEqual(['pode/api', 'pode/api/v1', 'pode/api/v2', 'pode/api/v2/x']);
+  });
+
+  it('com projeto: as opções trazem também os subprojetos dele (e os ancestrais), em ordem de árvore', () => {
+    const { result } = renderFilter('pode', 'pode/api/v2');
+    expect(result.current.subProjetoIds).toEqual([
+      'pode/api',
+      'pode/api/v2',
+      'pode/api/v2/x',
+      'pode/site',
+    ]);
+  });
+
+  it('Raiz: a opção do próprio cliente vem primeiro e o filtro é só a pasta do cliente', () => {
+    const { result } = renderFilter('pode', 'pode');
+    expect(result.current.selectedProjetoId).toBe('pode');
+    expect(result.current.subProjetoIds).toEqual(['pode', 'pode/api', 'pode/site']);
+    expect(result.current.selectedProjectIds).toEqual(['pode']);
+  });
+
+  it('o projeto da sidebar vira opção mesmo antes de a lista de projetos chegar', () => {
+    const { result } = renderHook(() => useClienteProjetoFilter([], 'pode', 'pode/api'));
+    expect(result.current.subProjetoIds).toEqual(['pode/api']);
+    expect(result.current.selectedProjectIds).toEqual(['pode']);
+  });
+
+  it('refinar na barra não muda o que veio da sidebar; mudar a sidebar descarta o refinamento', () => {
+    const { result, rerender } = renderFilter('pode', 'pode/api');
+    act(() => result.current.setSelectedProjetoId('pode/site'));
+    expect(result.current.selectedProjetoId).toBe('pode/site');
+
+    rerender({ c: 'pode', p: 'pode/api/v1' });
+    expect(result.current.selectedProjetoId).toBe('pode/api/v1');
+
+    act(() => result.current.setSelectedProjetoId(null));
+    rerender({ c: 'pode', p: null });
+    expect(result.current.selectedProjetoId).toBeNull();
+    expect(result.current.selectedProjectIds).toEqual(['pode', 'pode/api', 'pode/api/v1', 'pode/api/v2', 'pode/api/v2/x', 'pode/site']);
+  });
+
+  it('em "Todos", o cliente escolhido na barra não sobrevive a uma troca da sidebar', () => {
+    const { result, rerender } = renderFilter(null, null);
+    act(() => result.current.setLocalClienteId('outro'));
+    expect(result.current.effectiveClienteId).toBe('outro');
+
+    rerender({ c: 'pode', p: null });
+    rerender({ c: null, p: null });
+    expect(result.current.localClienteId).toBeNull();
+    expect(result.current.effectiveClienteId).toBeNull();
+  });
+
+  it('nenhum render filtra pelo refinamento velho depois de a sidebar mudar (o descarte é no mesmo render)', () => {
+    const seen = [];
+    const { result, rerender } = renderHook(
+      ({ p }) => {
+        const r = useClienteProjetoFilter(tree, 'pode', p);
+        seen.push(r.selectedProjectIds);
+        return r;
+      },
+      { initialProps: { p: 'pode/api' } }
+    );
+    act(() => result.current.setSelectedProjetoId('pode/site'));
+    const from = seen.length;
+    rerender({ p: 'pode/api/v1' });
+    const after = seen.slice(from);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((ids) => !ids.includes('pode/site'))).toBe(true);
+  });
+
+  it('um projeto na sidebar sem cliente é ignorado ("Todos" nunca tem projeto)', () => {
+    const { result } = renderFilter(null, 'pode/api');
+    expect(result.current.selectedProjetoId).toBeNull();
+    expect(result.current.selectedProjectIds).toEqual([]);
+  });
+});

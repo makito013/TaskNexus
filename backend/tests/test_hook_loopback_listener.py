@@ -375,6 +375,10 @@ def test_mcp_adapters_are_pointed_at_the_hook_channel():
     assert tasks_env["ESCRITORIO_HOOK_URL"] == "http://127.0.0.1:9123/api/hooks/task"
     assert cards_env["ESCRITORIO_HOOK_CREATE_URL"] == "http://127.0.0.1:9123/api/hooks/cards/create"
     assert cards_env["ESCRITORIO_HOOK_MOVE_URL"] == "http://127.0.0.1:9123/api/hooks/cards/move"
+    viewer_env = config["mcpServers"]["escritorio-visualizador"]["env"]
+    assert viewer_env["ESCRITORIO_HOOK_VIEWER_OPEN_URL"] == "http://127.0.0.1:9123/api/hooks/viewer/open"
+    assert viewer_env["ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL"] == "http://127.0.0.1:9123/api/hooks/artifacts/publish"
+    assert viewer_env["ESCRITORIO_CLAUDE_SESSION_ID"] == "session-abc"
     # The session id every adapter needs must survive the added keys.
     assert tasks_env["ESCRITORIO_CLAUDE_SESSION_ID"] == "session-abc"
     assert cards_env["ESCRITORIO_CLAUDE_SESSION_ID"] == "session-abc"

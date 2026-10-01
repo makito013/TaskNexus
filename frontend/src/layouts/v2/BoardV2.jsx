@@ -742,7 +742,11 @@ function resolveAvatarInitials(ultimaAtualizacaoPor) {
   return (agentId || '?').slice(0, 2).toUpperCase();
 }
 
-export function BoardV2({ projects = [], selectedClienteId = null }) {
+// Fase N: `selectedProjetoId` is the PROJECT chosen on the sidebar (useNavScope
+// in AppV2). The filter bar starts from it and refines locally — see
+// useClienteProjetoFilter.js for the table of what the bar does per sidebar
+// state (Bruno: the bar stays, "principalmente quando estiver em Todos").
+export function BoardV2({ projects = [], selectedClienteId = null, selectedProjetoId: sidebarProjetoId = null }) {
   // Cliente -> Projeto cascade (local state of this screen). `selectedProjectIds`
   // (plural) is the LISTING filter; `selectedProjetoId` (singular) is the
   // chosen Tier 2, which also becomes the create modal's default project.
@@ -756,7 +760,7 @@ export function BoardV2({ projects = [], selectedClienteId = null }) {
     selectedProjetoId,
     setSelectedProjetoId,
     selectedProjectIds,
-  } = useClienteProjetoFilter(projects, selectedClienteId);
+  } = useClienteProjetoFilter(projects, selectedClienteId, sidebarProjetoId);
 
   // Órfãos (decisão do Bruno, sessão "card/tarefa órfão"): com um cliente
   // fixo e o Tier 2 em "Todos os projetos", `selectedProjectIds` só lista nós

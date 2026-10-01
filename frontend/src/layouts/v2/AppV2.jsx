@@ -29,8 +29,10 @@ import {
   SHELL_BASE_RECT_STYLE,
 } from '../../hooks/useVisibleViewportShell.js';
 import { useTasks } from '../../hooks/useTasks.js';
+import { useNavScope } from '../../hooks/useNavScope.js';
 import { clienteIdFromProjetoId, isClienteId } from '../../utils/clientes.js';
-import { MOBILE_VIEWPORT_QUERY } from '../../utils/viewport.js';
+import { MOBILE_VIEWPORT_QUERY, WIDE_VIEWPORT_QUERY } from '../../utils/viewport.js';
+import { useViewerDockCollapse } from './useViewerDockCollapse.js';
 import { SidebarV2 } from './SidebarV2.jsx';
 import { ChatSidebarV2 } from './ChatSidebarV2.jsx';
 import { ChatV2 } from './ChatV2.jsx';
@@ -41,11 +43,30 @@ import { ResetLayoutButton } from './ResetLayoutButton.jsx';
 import { AttachmentsMenu } from './AttachmentsMenu.jsx';
 import { MobileMenuScreen } from './MobileMenuScreen.jsx';
 import { MobileChatSheet } from './MobileChatSheet.jsx';
+import {
+  SURFACE_CHAT,
+  ViewerProvider,
+  useViewer,
+  useViewerHost,
+} from '../../features/viewer/ViewerContext.jsx';
+import { sessionScope } from '../../features/viewer/viewerApi.js';
+import { ViewerButton } from '../../features/viewer/ViewerButton.jsx';
+import { ViewerDock } from '../../features/viewer/ViewerDock.jsx';
+import { ViewerDrawer } from '../../features/viewer/ViewerDrawer.jsx';
+import { ViewerFullscreen } from '../../features/viewer/ViewerFullscreen.jsx';
+import { ViewerMobileButton } from '../../features/viewer/ViewerMobileButton.jsx';
+import { ViewerToast } from '../../features/viewer/ViewerToast.jsx';
+import { ArtefatosV2 } from '../../features/artifacts/ArtefatosV2.jsx';
+import { SCOPE_ARTEFATOS } from '../../features/artifacts/artifactModel.js';
 
 const NAV_ITEMS = [
   { id: 'chat', label: 'Chat', icon: '💬' },
   { id: 'board', label: 'Board', icon: '▦' },
   { id: 'tarefas', label: 'Tarefas', icon: '✓' },
+  // Fase A (07-planejamento-artefatos.md, 7.5.2): só mais uma entrada — a
+  // sidebar, a topbar e a lista de clientes continuam iguais. O menu do
+  // celular (MobileMenuScreen) recebe esta mesma lista.
+  { id: 'artefatos', label: 'Artefatos', icon: '◧' },
   // `id` stays 'agentes' on purpose: it is the internal screen key wired to
   // `v2Screen`/`SCREEN_TITLES` and to the `agentes-v2-card-*` test ids. Only
   // the user-facing label became "Configuração" when the screen grew full
@@ -53,9 +74,29 @@ const NAV_ITEMS = [
   { id: 'agentes', label: 'Configuração', icon: '◈' },
 ];
 
-const SCREEN_TITLES = { chat: 'Chat', board: 'Board', tarefas: 'Tarefas', agentes: 'Configuração' };
+const SCREEN_TITLES = {
+  chat: 'Chat',
+  board: 'Board',
+  tarefas: 'Tarefas',
+  artefatos: 'Artefatos',
+  agentes: 'Configuração',
+};
 
-export function AppV2({ initialAppearance }) {
+// Fase V-2 (06-planejamento-fase-v.md, 6.5.2): o ViewerProvider envolve o
+// casco do v2 inteiro — e só ele. Fica AQUI (e não no App.jsx, junto do
+// TerminalProvider) porque tudo que lê o visualizador mora abaixo do AppV2: os
+// TerminalPanel (frame viewer_open), o botão da topbar, os painéis e, na Fase A,
+// a tela Artefatos. A rota /tarefas (TarefasGlobalView) não tem visualizador e
+// não paga nada. E os testes que montam o <AppV2> direto já recebem o Provider.
+export function AppV2(props) {
+  return (
+    <ViewerProvider>
+      <AppV2Shell {...props} />
+    </ViewerProvider>
+  );
+}
+
+function AppV2Shell({ initialAppearance }) {
   const {
     sessions,
     activeSessionKey,
@@ -114,6 +155,42 @@ export function AppV2({ initialAppearance }) {
   const isMobile = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const [mobileView, setMobileView] = useState('menu'); // 'menu' | 'chatModal' | 'content'
 
+  // Fase N (08-planejamento-navegacao-cliente-projeto.md, 8.2.4/8.3.3) —
+  // espaço à direita para o visualizador de arquivos.
+  //
+  // Fase V-2: `viewerOpen` deixou de ser um useState à espera da Fase V e
+  // passou a ser DERIVADO do ViewerContext — painel do chat aberto (inclusive
+  // em tela cheia, que é o mesmo painel ampliado) E a tela de chat à vista. Um
+  // `setViewerOpen` sincronizado por efeito daria um quadro com o painel aberto
+  // e as colunas ainda largas; derivado, o primeiro quadro encaixado já sai com
+  // os trilhos de 68px. Ir para o Board com o painel aberto devolve as colunas
+  // (o painel não aparece lá); voltar ao Chat recolhe de novo. Todo o resto —
+  // recolher, respeitar a expansão manual, devolver tudo ao fechar sem tocar na
+  // preferência salva e disparar o refit do terminal — continua em
+  // `useViewerDockCollapse`. No celular as colunas nem são montadas.
+  //
+  // Fase A: a tela Artefatos tem o PRÓPRIO painel (superfície `artefatos`),
+  // e ele recolhe as colunas do mesmo jeito enquanto aberto nela — na tela
+  // Artefatos não há lista de chats, então quem vira trilho é a sidebar. Cada
+  // painel só conta na própria tela: com os dois abertos, trocar de tela
+  // troca qual deles está encaixado.
+  const viewer = useViewer();
+  const chatViewer = viewer.getSurface(SURFACE_CHAT);
+  const artefatosViewer = viewer.getSurface(SCOPE_ARTEFATOS);
+  const chatViewerOpen = chatViewer.open && v2Screen === 'chat';
+  const artefatosViewerOpen = artefatosViewer.open && v2Screen === 'artefatos';
+  const viewerOpen = chatViewerOpen || artefatosViewerOpen;
+  const chatViewerScope = sessionScope(activeSessionKey);
+  const isWide = useMediaQuery(WIDE_VIEWPORT_QUERY);
+  const dock = useViewerDockCollapse({
+    viewerOpen: viewerOpen && !isMobile,
+    isWide,
+    sidebarCollapsed,
+    toggleSidebar,
+    chatSidebarCollapsed,
+    toggleChatSidebar,
+  });
+
   // Mobile phone-lock fix (Bruno, confirmed): a backgrounded (non-PWA) tab can
   // get fully discarded by the OS/browser and reload from scratch once the
   // phone is unlocked again. `activeSessionKey` is restored synchronously
@@ -171,11 +248,19 @@ export function AppV2({ initialAppearance }) {
   // subprojeto específico) — recebe `selectedClienteId` abaixo pra filtrar
   // pelo cliente da sidebar, exatamente como TarefasV2 já fazia. `null` =
   // "Todos" — mesmo sentinel que a cascata de filtro das telas v2 já usa.
-  // Lazy-init a partir do projeto atualmente selecionado, pra abrir já
-  // filtrado no cliente certo em vez de sempre cair em "Todos" no 1º render.
-  const [selectedClienteId, setSelectedClienteId] = useState(
-    () => (selectedProjectId ? clienteIdFromProjetoId(selectedProjectId) : null)
-  );
+  //
+  // Fase N (08-planejamento-navegacao-cliente-projeto.md, 8.3.2): o cliente
+  // ganhou um PROJETO opcional embaixo e o drill-down da sidebar (nível e pai),
+  // tudo no escopo global `useNavScope` — que também persiste em localStorage,
+  // então recarregar a página volta para o mesmo lugar. Quando não há nada
+  // salvo, parte do cliente do chat ativo, como o lazy-init do `useState`
+  // antigo fazia, pra abrir já filtrado no cliente certo em vez de sempre cair
+  // em "Todos" no 1º render.
+  const nav = useNavScope(projects, {
+    initialClienteId: selectedProjectId ? clienteIdFromProjetoId(selectedProjectId) : null,
+  });
+  const selectedClienteId = nav.clienteId;
+  const selectedProjetoId = nav.projetoId;
 
   // "Clientes" candidatos à sidebar: qualquer Project cujo id não tem "/"
   // (cliente-como-projeto e projeto-solto-na-raiz contam como cliente de si
@@ -189,8 +274,31 @@ export function AppV2({ initialAppearance }) {
   // exatamente onde estava. Selecionar um cliente de verdade, por outro lado,
   // mantém o painel principal em sincronia (mesmo comportamento de hoje).
   const handleSelectCliente = (clienteId) => {
-    setSelectedClienteId(clienteId);
+    nav.selectCliente(clienteId);
     if (clienteId != null) selectProject(clienteId);
+  };
+
+  // Fase N — drill-down. Entrar num cliente com subprojetos o seleciona
+  // inteiro (igual a `handleSelectCliente`) e troca a lista para os projetos
+  // dele. Escolher um projeto (ou entrar num projeto com filhos) também leva o
+  // painel de Chat junto via `selectProject`, pelo mesmo motivo de sempre: o
+  // chat ativo acompanha a seleção da sidebar. "Todos os projetos" (null)
+  // volta o chat para o cliente. `back` é só navegação — não seleciona nada,
+  // então não mexe no chat.
+  const handleEnterCliente = (clienteId) => {
+    nav.enterCliente(clienteId);
+    selectProject(clienteId);
+  };
+
+  const handleSelectProjeto = (projetoId) => {
+    nav.selectProjeto(projetoId);
+    const target = projetoId ?? selectedClienteId;
+    if (target != null) selectProject(target);
+  };
+
+  const handleEnterProjeto = (projetoId) => {
+    nav.enterProjeto(projetoId);
+    selectProject(projetoId);
   };
 
   /** Fase 4 (v1) reaproveitada aqui: pode vir de um projeto diferente do
@@ -216,6 +324,15 @@ export function AppV2({ initialAppearance }) {
     setMobileView(v2Screen === 'chat' ? 'chatModal' : 'content');
   };
 
+  // Fase N no celular: ENTRAR (cliente ou projeto com filhos) é só descer na
+  // lista — o menu continua na tela. ESCOLHER um projeto (folha, "Todos os
+  // projetos" ou "Raiz") é a decisão final, e segue o mesmo caminho do toque
+  // num cliente: modal de chats na aba Chat, conteúdo direto nas outras.
+  const handleMobileSelectProjeto = (projetoId) => {
+    handleSelectProjeto(projetoId);
+    setMobileView(v2Screen === 'chat' ? 'chatModal' : 'content');
+  };
+
   const handleMobileSelectChat = (chat) => {
     handleSelectChat(chat);
     setMobileView('content');
@@ -225,6 +342,32 @@ export function AppV2({ initialAppearance }) {
     startNewInstance(projetoId, agentId);
     setMobileView('content');
   };
+
+  // Fase V-2: o visualizador precisa saber se a conversa está NA TELA para
+  // decidir, quando o agente abre um arquivo, entre abrir o painel sozinho e só
+  // mostrar o contador + aviso (6.1). No celular "na tela" é também estar no
+  // conteúdo (não no menu nem no sheet de chats).
+  const chatVisible = v2Screen === 'chat' && (!isMobile || mobileView === 'content');
+  // "Ver" do aviso "claude abriu X": leva à tela de chat e à conversa certa. A
+  // sessão vem de `sessions` (o frame só chega por um TerminalPanel montado);
+  // o split da session_key é só a rede de proteção.
+  const handleShowViewerSession = (sessionKey) => {
+    const mounted = sessions.find((s) => s.sessionKey === sessionKey);
+    const [projectId, agentId] = sessionKey.split('::');
+    handleSelectChat({
+      sessionKey,
+      projectId: mounted?.projectId || projectId,
+      agentId: mounted?.agentId || agentId,
+    });
+    setV2Screen('chat');
+    if (isMobile) setMobileView('content');
+  };
+  useViewerHost({
+    activeSessionKey,
+    chatVisible,
+    isMobile,
+    onShowSession: handleShowViewerSession,
+  });
 
   return (
     /*
@@ -299,11 +442,21 @@ export function AppV2({ initialAppearance }) {
       >
         {!isMobile && (
           <SidebarV2
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={toggleSidebar}
+            // Valores EFETIVOS (preferência salva, ou recolhida enquanto o
+            // visualizador estiver encaixado) — ver useViewerDockCollapse.
+            collapsed={dock.sidebarCollapsed}
+            onToggleCollapsed={dock.onToggleSidebar}
             clientes={clientes}
+            projects={projects}
             selectedClienteId={selectedClienteId}
+            selectedProjetoId={selectedProjetoId}
+            navLevel={nav.level}
+            navParentId={nav.parentId}
             onSelectCliente={handleSelectCliente}
+            onEnterCliente={handleEnterCliente}
+            onSelectProjeto={handleSelectProjeto}
+            onEnterProjeto={handleEnterProjeto}
+            onBack={nav.back}
             navItems={NAV_ITEMS}
             activeScreen={v2Screen}
             onSelectScreen={setV2Screen}
@@ -342,6 +495,10 @@ export function AppV2({ initialAppearance }) {
             // topbar continuar distribuindo só 2 itens (título vs. este grupo),
             // não 3 itens soltos.
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Fase V-2: Visualizador à esquerda de Anexos — é o controle
+                  que o agente aciona sozinho (selo de não vistos), então fica
+                  na ponta mais visível do grupo. */}
+              <ViewerButton scope={chatViewerScope} disabled={!activeSessionKey} />
               <AttachmentsMenu activeSessionKey={activeSessionKey} />
               <ResetLayoutButton activePanelRef={activePanelRef} disabled={!activeSessionKey} />
             </div>
@@ -370,6 +527,7 @@ export function AppV2({ initialAppearance }) {
                 activeSessions={activeSessions}
                 persistedSessions={persistedSessions}
                 selectedClienteId={selectedClienteId}
+                selectedProjetoId={selectedProjetoId}
                 onSelectChat={handleSelectChat}
                 onRenameChat={renameSession}
                 onCloseChat={handleCloseChat}
@@ -379,8 +537,8 @@ export function AppV2({ initialAppearance }) {
                 // only way out when /api/projetos came back empty, since
                 // useProjects fetches once on mount.
                 onRetryProjects={refreshProjects}
-                collapsed={chatSidebarCollapsed}
-                onToggleCollapsed={toggleChatSidebar}
+                collapsed={dock.chatSidebarCollapsed}
+                onToggleCollapsed={dock.onToggleChatSidebar}
                 onNewChatOpenChange={setNewChatOpen}
               />
             )}
@@ -391,15 +549,40 @@ export function AppV2({ initialAppearance }) {
               onCreateTask={createTask}
               activePanelRef={activePanelRef}
             />
+            {/* Fase V-2 + Fase N (8.3.4): painel ENCAIXADO à direita do chat,
+                irmão flex do ChatV2 (o terminal encolhe). Só existe quando o
+                hook diz que está encaixado (≥ 1100px e painel aberto). */}
+            {dock.viewerDocked && chatViewerOpen && (
+              <ViewerDock scope={chatViewerScope} hidden={chatViewer.fullscreen} />
+            )}
           </div>
           {v2Screen === 'board' && (
             <BoardV2
               projects={projects}
               selectedClienteId={selectedClienteId}
+              selectedProjetoId={selectedProjetoId}
             />
           )}
           {v2Screen === 'tarefas' && (
-            <TarefasV2 projects={projects} selectedClienteId={selectedClienteId} />
+            <TarefasV2
+              projects={projects}
+              selectedClienteId={selectedClienteId}
+              selectedProjetoId={selectedProjetoId}
+            />
+          )}
+          {v2Screen === 'artefatos' && (
+            <ArtefatosV2
+              projects={projects}
+              selectedClienteId={selectedClienteId}
+              selectedProjetoId={selectedProjetoId}
+              activeSessionKey={activeSessionKey}
+              isMobile={isMobile}
+              isWide={isWide}
+              viewerDocked={dock.viewerDocked && artefatosViewerOpen}
+              // Celular: com o menu por cima, a tela cheia do visualizador
+              // não pode ficar aberta sobre ele (mesma regra do chat).
+              contentVisible={!isMobile || mobileView === 'content'}
+            />
           )}
           {v2Screen === 'agentes' && <ConfiguracaoV2 onAgentsChanged={refreshProjects} />}
         </div>
@@ -449,11 +632,45 @@ export function AppV2({ initialAppearance }) {
           activeScreen={v2Screen}
           onSelectScreen={setV2Screen}
           clientes={clientes}
+          projects={projects}
           selectedClienteId={selectedClienteId}
+          selectedProjetoId={selectedProjetoId}
+          navLevel={nav.level}
+          navParentId={nav.parentId}
           onSelectCliente={handleMobileSelectCliente}
+          onEnterCliente={handleEnterCliente}
+          onSelectProjeto={handleMobileSelectProjeto}
+          onEnterProjeto={handleEnterProjeto}
+          onBack={nav.back}
           initialAppearance={initialAppearance}
         />
       )}
+
+      {/* Fase V-2: 641–1099px o mesmo painel abre POR CIMA (8.2.2); nada
+          recolhe. Portalizado (ver ViewerDrawer.jsx). */}
+      {!isMobile && !isWide && (
+        <ViewerDrawer
+          scope={chatViewerScope}
+          open={chatViewerOpen && !chatViewer.fullscreen}
+        />
+      )}
+
+      {/* Fase V-2 (6.5.3): TELA CHEIA, o mesmo painel ampliado num portal. No
+          iPad/PC "✕ Fechar" volta ao painel à direita; no celular (onde não
+          há painel) fecha o visualizador. Só com a conversa à vista: com o
+          celular no menu, a abertura do agente vira aviso, não modal. */}
+      <ViewerFullscreen
+        scope={chatViewerScope}
+        open={chatViewer.fullscreen && chatVisible}
+        closeEverything={isMobile}
+      />
+
+      {/* Celular: o botão flutuante do visualizador, na faixa do "☰ Menu". */}
+      {isMobile && mobileView === 'content' && v2Screen === 'chat' && activeSessionKey && (
+        <ViewerMobileButton scope={chatViewerScope} />
+      )}
+
+      <ViewerToast />
 
       {isMobile && (
         <MobileChatSheet
@@ -464,6 +681,7 @@ export function AppV2({ initialAppearance }) {
           activeSessions={activeSessions}
           persistedSessions={persistedSessions}
           selectedClienteId={selectedClienteId}
+          selectedProjetoId={selectedProjetoId}
           onSelectChat={handleMobileSelectChat}
           onRenameChat={renameSession}
           onCloseChat={handleCloseChat}

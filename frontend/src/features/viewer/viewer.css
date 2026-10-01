@@ -1,0 +1,546 @@
+/* frontend/src/features/viewer/viewer.css
+ *
+ * Fase V-2 (06-planejamento-fase-v.md, 6.5): estilos do visualizador de
+ * arquivos. Mesma divisão do resto do v2: geometria simples fica inline no JSX;
+ * aqui só o que inline não expressa — pseudo-classes (:hover, :focus-visible),
+ * keyframes, seletores descendentes do HTML do markdown (que não é React) e a
+ * media query de "Reduzir movimento". Só tokens --v2-*: o tema escuro vem de
+ * graça.
+ *
+ * Nenhuma regra aqui usa transform/filter/will-change/contain fora de um
+ * @keyframes: o painel encaixado é irmão do terminal dentro do casco do v2, e
+ * a invariante de fixedPositioningInvariant.test.js vale como hábito também
+ * fora dos arquivos que ela varre.
+ */
+
+.vw-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--v2-surface);
+  color: var(--v2-text);
+  /* A gaveta e a tela cheia são portais para o <body>, fora do casco do v2
+   * (que define a fonte inline) — sem isto herdariam a fonte do v1. */
+  font-family: 'Figtree', -apple-system, sans-serif;
+}
+
+.vw-panel:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: -2px;
+}
+
+/* ---- Cabeçalho: abas + ações do contêiner -------------------------------- */
+
+.vw-header {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 6px 0 4px;
+  border-bottom: 1px solid var(--v2-border);
+  background: var(--v2-surface-2);
+  flex-shrink: 0;
+}
+
+.vw-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Alvo de toque de 44px com aparência de 36px (6.2, "Teclado e toque"): a
+ * aba ocupa a altura inteira do cabeçalho; o "cartão" visível é o ::before. */
+.vw-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  max-width: 220px;
+  min-height: 44px;
+  padding: 0 2px 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.vw-tab::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.vw-tab:hover::before { background: var(--v2-surface-3); }
+
+.vw-tab--active { color: var(--v2-text); font-weight: 600; }
+.vw-tab--active::before {
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+}
+
+.vw-tab-label {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.vw-tab-close {
+  position: relative;
+  width: 28px;
+  min-width: 28px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.vw-tab-close:hover { color: var(--v2-text); }
+
+.vw-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ---- Botões ---------------------------------------------------------------- */
+
+.vw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border);
+  background: transparent;
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.vw-btn:hover { background: var(--v2-surface-3); }
+.vw-btn:focus-visible,
+.vw-tab-label:focus-visible,
+.vw-tab-close:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 1px;
+}
+.vw-btn[disabled] { opacity: 0.45; cursor: default; }
+.vw-btn--icon { padding: 0; width: 36px; font-size: 15px; }
+.vw-btn--quiet { border-color: transparent; }
+.vw-btn--primary {
+  background: var(--v2-accent);
+  border-color: var(--v2-accent);
+  color: var(--v2-surface);
+}
+.vw-btn--primary:hover { background: var(--v2-accent-strong); }
+.vw-btn--active { background: var(--v2-accent-soft); border-color: var(--v2-accent); }
+
+/* ---- Barra do arquivo ---------------------------------------------------- */
+
+.vw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--v2-border);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.vw-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--v2-text-faint);
+}
+
+.vw-meta strong { color: var(--v2-text-dim); font-weight: 600; }
+
+.vw-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.vw-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.vw-menu button {
+  min-height: 44px;
+  text-align: left;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.vw-menu button:hover { background: var(--v2-surface-3); }
+.vw-menu button.vw-danger { color: var(--v2-danger); }
+
+/* ---- Corpo ----------------------------------------------------------------- */
+
+.vw-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--v2-surface);
+}
+
+.vw-body--flush { overflow: hidden; display: flex; flex-direction: column; }
+
+.vw-state {
+  margin: auto;
+  max-width: 340px;
+  padding: 32px 24px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--v2-text-dim);
+}
+
+.vw-state-title { font-size: 15px; font-weight: 600; color: var(--v2-text); margin-bottom: 6px; }
+.vw-state-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+.vw-state em { font-style: normal; color: var(--v2-text); font-weight: 600; }
+
+.vw-center { display: flex; min-height: 100%; }
+
+/* Esqueleto do "Carregando" (6.2): barras cinza pulsando por opacidade. */
+.vw-skeleton { padding: 20px 20px 0; }
+.vw-skeleton span {
+  display: block;
+  height: 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: var(--v2-surface-3);
+  animation: vw-pulse 1.1s ease-in-out infinite;
+}
+.vw-skeleton span:nth-child(1) { width: 45%; height: 18px; margin-bottom: 20px; }
+.vw-skeleton span:nth-child(2) { width: 92%; }
+.vw-skeleton span:nth-child(3) { width: 85%; }
+.vw-skeleton span:nth-child(4) { width: 70%; }
+.vw-skeleton span:nth-child(5) { width: 88%; }
+
+@keyframes vw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.vw-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  background: var(--v2-warn-soft);
+  color: var(--v2-text);
+  border-bottom: 1px solid var(--v2-border);
+}
+
+/* ---- Markdown (como no GitHub) -------------------------------------------- */
+
+.vw-markdown {
+  padding: 18px 22px 40px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  max-width: 920px;
+  /* Na tela cheia o texto fica centralizado, com largura de leitura. */
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.vw-markdown > :first-child { margin-top: 0; }
+.vw-markdown h1, .vw-markdown h2, .vw-markdown h3,
+.vw-markdown h4, .vw-markdown h5, .vw-markdown h6 {
+  margin: 1.4em 0 0.6em;
+  line-height: 1.25;
+  font-weight: 600;
+  scroll-margin-top: 12px;
+}
+.vw-markdown h1 { font-size: 1.75em; padding-bottom: 0.3em; border-bottom: 1px solid var(--v2-border); }
+.vw-markdown h2 { font-size: 1.4em; padding-bottom: 0.3em; border-bottom: 1px solid var(--v2-border); }
+.vw-markdown h3 { font-size: 1.2em; }
+.vw-markdown p, .vw-markdown ul, .vw-markdown ol,
+.vw-markdown blockquote, .vw-markdown table, .vw-markdown pre { margin: 0 0 1em; }
+.vw-markdown ul, .vw-markdown ol { padding-left: 1.6em; }
+.vw-markdown li + li { margin-top: 0.25em; }
+.vw-markdown li:has(> input[type='checkbox']) { list-style: none; margin-left: -1.3em; }
+.vw-markdown input[type='checkbox'] { margin: 0 0.45em 0 0; vertical-align: middle; accent-color: var(--v2-accent); }
+.vw-markdown a { color: var(--v2-accent-2); text-decoration: underline; text-underline-offset: 2px; }
+.vw-markdown a[data-viewer-path]::after { content: ' ↗'; font-size: 0.8em; color: var(--v2-text-faint); }
+.vw-markdown blockquote {
+  padding: 0 1em;
+  color: var(--v2-text-dim);
+  border-left: 3px solid var(--v2-border);
+}
+.vw-markdown hr { border: none; border-top: 1px solid var(--v2-border); margin: 1.5em 0; }
+.vw-markdown img { max-width: 100%; height: auto; border-radius: 6px; }
+.vw-markdown :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  background: var(--v2-surface-2);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.88em;
+}
+
+/* Tabela larga rola dentro dela mesma, nunca a página (nada de rolagem
+ * horizontal no painel). */
+.vw-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+.vw-markdown th, .vw-markdown td { padding: 6px 12px; border: 1px solid var(--v2-border); text-align: left; }
+.vw-markdown th { background: var(--v2-surface-2); font-weight: 600; }
+.vw-markdown tr:nth-child(2n) td { background: color-mix(in oklch, var(--v2-surface-2) 45%, transparent); }
+
+/* Bloco de código com cabeçalho (linguagem + Copiar), montado pelo MarkdownView. */
+.vw-codeblock {
+  margin: 0 0 1em;
+  border: 1px solid var(--v2-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--v2-surface-2);
+}
+.vw-codeblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 4px 0 12px;
+  font-size: 11.5px;
+  color: var(--v2-text-faint);
+  border-bottom: 1px solid var(--v2-border);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+.vw-codeblock-copy {
+  min-height: 34px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-dim);
+  font: inherit;
+  font-family: 'Figtree', -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.vw-codeblock-copy:hover { color: var(--v2-text); background: var(--v2-surface-3); }
+.vw-codeblock pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.vw-codeblock pre code { font-family: inherit; }
+
+/* ---- Código (números de linha + destaque) -------------------------------- */
+
+.vw-code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 8px 0 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* inline-block com min-width 100%: as linhas têm a largura da MAIOR linha (o
+ * fundo da linha destacada cobre tudo ao rolar para o lado) e nunca menos que
+ * o painel. */
+.vw-code-lines { display: inline-block; min-width: 100%; vertical-align: top; }
+.vw-code--wrap .vw-code-lines { display: block; }
+
+.vw-line { display: flex; min-height: 1.6em; }
+.vw-line-no {
+  flex-shrink: 0;
+  width: 4.5ch;
+  padding: 0 12px 0 8px;
+  text-align: right;
+  color: var(--v2-text-faint);
+  /* Selecionar linhas com o dedo e colar no Notas não pode levar os números. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vw-line-text { flex: 1; padding-right: 16px; white-space: pre; }
+.vw-code--wrap .vw-line-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Destaque de 2 s da linha pedida pelo agente (6.5.4). */
+.vw-line--target { background: var(--v2-accent-soft); }
+.vw-line--flash { animation: vw-line-flash 2s ease-out; }
+@keyframes vw-line-flash {
+  0%, 60% { background: color-mix(in oklch, var(--v2-warn) 35%, transparent); }
+  100% { background: var(--v2-accent-soft); }
+}
+
+.vw-code-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 11.5px;
+  color: var(--v2-text-faint);
+  background: var(--v2-surface);
+  border-bottom: 1px solid var(--v2-border);
+}
+
+/* ---- HTML / imagem / PDF ---------------------------------------------------- */
+
+.vw-iframe { flex: 1; width: 100%; min-height: 0; border: none; background: #fff; }
+
+.vw-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--v2-surface-2);
+  border: 1px solid var(--v2-border);
+}
+.vw-segmented button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--v2-text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vw-segmented button[aria-pressed='true'] { background: var(--v2-surface); color: var(--v2-text); box-shadow: var(--v2-shadow); }
+
+.vw-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--v2-border);
+  font-size: 12px;
+  color: var(--v2-text-faint);
+  flex-shrink: 0;
+}
+
+.vw-image-wrap {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background:
+    repeating-conic-gradient(var(--v2-surface-2) 0 25%, var(--v2-surface) 0 50%) 0 0 / 20px 20px;
+}
+.vw-image-wrap img { max-width: 100%; height: auto; cursor: zoom-in; }
+.vw-image-wrap--actual { display: block; overflow: auto; }
+.vw-image-wrap--actual img { max-width: none; cursor: zoom-out; }
+
+/* ---- Contêineres: drawer e tela cheia -------------------------------------- */
+
+@keyframes vw-drawer-enter {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.vw-drawer-enter { animation: vw-drawer-enter 180ms ease-out; }
+
+@keyframes vw-fade-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.vw-fade-enter { animation: vw-fade-enter 140ms ease-out; }
+
+/* Aviso "claude abriu X · Ver". */
+.vw-toast {
+  font-family: 'Figtree', -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 4px 4px 4px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text);
+  box-shadow: var(--v2-shadow-lg);
+  font-size: 13px;
+  animation: vw-fade-enter 160ms ease-out;
+}
+.vw-toast--error { border-color: var(--v2-danger); }
+.vw-toast-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vw-drawer-enter,
+  .vw-fade-enter,
+  .vw-toast,
+  .vw-line--flash,
+  .vw-skeleton span { animation-duration: 0ms; }
+}

@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import asyncio
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from fastapi import WebSocketDisconnect
 
@@ -1991,12 +1992,14 @@ async def test_session_teardown_cannot_remove_a_lock_a_caller_is_using():
     still there and is still the SAME object, and B has to queue.
     """
     import app.main as main_mod
-    from app.main import (_ensure_pty, store, task_store, pty_manager,
+    from app.main import (_ensure_pty, store, task_store, viewer_store, pty_manager,
                           _session_locks, _session_lock_users)
     import uuid as uuid_mod
 
     await store.initialize()
     await task_store.initialize()
+    # terminate_session também fecha as abas do visualizador (Fase V).
+    await viewer_store.initialize()
     session_key = f"lock-teardown-{uuid_mod.uuid4().hex[:8]}"
     await store.set(session_key, "chat-ja-existente")
 
@@ -2060,6 +2063,7 @@ async def test_session_teardown_cannot_remove_a_lock_a_caller_is_using():
 
     await store.close()
     await task_store.close()
+    await viewer_store.close()
 
 
 @pytest.mark.asyncio
@@ -2279,6 +2283,7 @@ def test_build_codex_config_overrides_drops_whole_mcp_server_if_any_key_unencoda
     keys = [k for k, _ in _dash_c_pairs(m._build_codex_config_overrides("sid-1", None))]
     # tarefas survives, cards is dropped entirely (not just the bad key).
     assert any(k.startswith("mcp_servers.escritorio-tarefas.") for k in keys)
+    assert any(k.startswith("mcp_servers.escritorio-visualizador.") for k in keys)
     assert not any(k.startswith("mcp_servers.escritorio-cards.") for k in keys)
 
 
@@ -2305,7 +2310,9 @@ def test_build_codex_config_overrides_reuses_hook_url_suffixes():
         expected |= suffixes_from(server["env"])
     assert expected == {
         "task", "cards/create", "cards/move", "cards/update",
-        "cards/delete", "cards/get", "cards/list",
+        "cards/delete", "cards/get", "cards/list", "viewer/open",
+        # Fase A: `publicar_artefato` (mesmo servidor do visualizador).
+        "artifacts/publish",
     }
 
     pairs = _dash_c_pairs(m._build_codex_config_overrides("sid-1", None))
@@ -2473,21 +2480,34 @@ def test_codex_real_binary_registers_both_mcp_servers_from_dash_c_block():
     # stdout may carry a leading non-JSON warning line; slice from the first '['.
     payload = proc.stdout[proc.stdout.index("["):]
     servers = {s["name"]: s for s in json.loads(payload)}
-    assert {"escritorio-tarefas", "escritorio-cards"} <= set(servers)
+    assert {"escritorio-tarefas", "escritorio-cards", "escritorio-visualizador"} <= set(servers)
     cards = servers["escritorio-cards"]["transport"]
     assert cards["command"] == sys.executable
     assert len(cards["args"]) == 1 and cards["args"][0].endswith("mcp_card_adapter.py")
     assert cards["env"]["ESCRITORIO_CLAUDE_SESSION_ID"] == "sid-e2e-qa"
     assert cards["env"]["PYTHONUTF8"] == "1"
     assert cards["env"]["ESCRITORIO_HOOK_GET_URL"].endswith("/api/hooks/cards/get")
+    viewer = servers["escritorio-visualizador"]["transport"]
+    assert viewer["args"][0].endswith("mcp_viewer_adapter.py")
+    assert viewer["env"]["ESCRITORIO_HOOK_VIEWER_OPEN_URL"].endswith("/api/hooks/viewer/open")
+    assert viewer["env"]["ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL"].endswith("/api/hooks/artifacts/publish")
 
 
-def test_build_mcp_config_json_still_emits_both_servers():
+def test_build_mcp_config_json_emits_all_escritorio_servers():
     from app.main import _build_mcp_config_json
 
     config = json.loads(_build_mcp_config_json("sid-1"))
     servers = config["mcpServers"]
-    assert set(servers) == {"escritorio-tarefas", "escritorio-cards"}
+    assert set(servers) == {"escritorio-tarefas", "escritorio-cards", "escritorio-visualizador"}
+    viewer = servers["escritorio-visualizador"]
+    assert viewer["command"] == sys.executable
+    assert len(viewer["args"]) == 1 and viewer["args"][0].endswith("mcp_viewer_adapter.py")
+    assert os.path.isabs(viewer["args"][0]) and os.path.isfile(viewer["args"][0])
+    assert viewer["env"]["ESCRITORIO_CLAUDE_SESSION_ID"] == "sid-1"
+    assert viewer["env"]["ESCRITORIO_HOOK_VIEWER_OPEN_URL"].endswith("/api/hooks/viewer/open")
+    # Fase A: `publicar_artefato` mora no mesmo servidor e tem URL própria.
+    assert viewer["env"]["ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL"].endswith("/api/hooks/artifacts/publish")
+    assert viewer["env"]["PYTHONUTF8"] == "1"
     assert servers["escritorio-tarefas"]["env"]["ESCRITORIO_HOOK_URL"].endswith("/api/hooks/task")
     assert servers["escritorio-tarefas"]["env"]["ESCRITORIO_CLAUDE_SESSION_ID"] == "sid-1"
     cards_env = servers["escritorio-cards"]["env"]
@@ -2523,3 +2543,116 @@ def test_pty_websocket_codex_project_uses_build_codex_cmd_not_claude(client, tmp
 
     assert spy.called
     assert spy.call_args[0][3] == str(proj_dir)
+
+
+# -- Fase V: frame viewer_open (Parte 6, 6.4.4) --------------------------------
+
+
+def _next_text_frame(ws):
+    """Próximo frame de TEXTO do socket, pulando saída do PTY (bytes)."""
+    while True:
+        message = ws.receive()
+        if message.get("text") is not None:
+            return json.loads(message["text"])
+
+
+@contextmanager
+def _idle_pty(client, session_key, fixed_uuid=None):
+    """/ws/pty aberto com um processo que não imprime nada, para o único
+    frame de texto esperado ser o viewer_open. `fixed_uuid` fixa o
+    claude_session_id gravado (para chamar o hook do agente)."""
+    import app.main as main_mod
+    fake_cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
+    with ExitStack() as stack:
+        stack.enter_context(patch("app.main._build_pty_cmd", return_value=fake_cmd))
+        if fixed_uuid is not None:
+            stack.enter_context(patch("app.main.uuid.uuid4", return_value=fixed_uuid))
+        ws = stack.enter_context(client.websocket_connect(f"/ws/pty/{session_key}"))
+        ws.send_text(json.dumps({
+            "type": "init", "project_id": "meu-projeto", "agent_id": None,
+            "cols": 80, "rows": 24,
+        }))
+        assert _poll_until(lambda: session_key in main_mod.pty_manager.active_sessions())
+        yield ws
+
+
+def test_viewer_open_frame_is_sent_to_the_connected_terminal(client, tmp_path):
+    (tmp_path / "meu-projeto" / "README.md").write_text("# Oi\n", encoding="utf-8")
+    session_key = "meu-projeto::claude"
+    with _idle_pty(client, session_key) as ws:
+        r = client.post(f"/api/sessions/{session_key}/viewer", json={"caminho": "README.md"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["delivered"] is True
+
+        frame = _next_text_frame(ws)
+        assert frame == {
+            "type": "viewer_open",
+            "item": body["item"],
+            "reused": False,
+            "evicted": [],
+        }
+        assert frame["item"]["path"] == "README.md"
+
+        again = client.post(f"/api/sessions/{session_key}/viewer",
+                            json={"caminho": "README.md", "linha": 1}).json()
+        frame = _next_text_frame(ws)
+        assert frame["reused"] is True
+        assert frame["item"]["item_id"] == body["item"]["item_id"]
+        assert frame["item"] == again["item"]
+
+
+def test_viewer_open_frame_from_the_agent_hook(client, tmp_path, monkeypatch):
+    import uuid as uuid_mod
+    import app.viewer_api as viewer_api
+    monkeypatch.setattr(viewer_api, "_is_loopback_host", lambda host: True)
+    (tmp_path / "meu-projeto" / "plano.md").write_text("# Plano\n", encoding="utf-8")
+    session_key = "meu-projeto::claude"
+    fixed = uuid_mod.uuid4()
+    with _idle_pty(client, session_key, fixed_uuid=fixed) as ws:
+        r = client.post("/api/hooks/viewer/open", json={
+            "claude_session_id": str(fixed), "caminho": "plano.md", "titulo": "Plano",
+        })
+        assert r.json()["success"] is True
+        assert r.json()["delivered"] is True
+        frame = _next_text_frame(ws)
+        assert frame["type"] == "viewer_open"
+        assert frame["item"]["title"] == "Plano"
+        assert frame["item"]["opened_by"] == "agent"
+
+
+def test_viewer_open_without_connected_terminal_is_not_delivered(client, tmp_path):
+    (tmp_path / "meu-projeto" / "README.md").write_text("# Oi\n", encoding="utf-8")
+    r = client.post("/api/sessions/meu-projeto::claude/viewer", json={"caminho": "README.md"})
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+    assert r.json()["delivered"] is False
+    # A aba ficou gravada mesmo assim.
+    items = client.get("/api/sessions/meu-projeto::claude/viewer").json()["items"]
+    assert [i["path"] for i in items] == ["README.md"]
+
+
+@pytest.mark.asyncio
+async def test_notify_viewer_open_unit():
+    from app.main import notify_viewer_open, _active_connections
+
+    _active_connections.clear()
+    assert await notify_viewer_open("ninguem::claude", {"item_id": "vw_a"}, False) is False
+
+    ws = MockWebSocket([])
+    _active_connections["sk::claude"] = ws
+    try:
+        assert await notify_viewer_open("sk::claude", {"item_id": "vw_a"}, True, ["vw_b"]) is True
+        assert json.loads(ws.sent_text[0]) == {
+            "type": "viewer_open", "item": {"item_id": "vw_a"},
+            "reused": True, "evicted": ["vw_b"],
+        }
+        assert ws.sent_bytes == []
+
+        # Socket fechando no meio do envio: não propaga, só não entrega.
+        async def broken_send_text(data):
+            raise RuntimeError("Cannot call send once a close message has been sent.")
+        ws.send_text = broken_send_text
+        assert await notify_viewer_open("sk::claude", {"item_id": "vw_a"}, False) is False
+    finally:
+        _active_connections.clear()

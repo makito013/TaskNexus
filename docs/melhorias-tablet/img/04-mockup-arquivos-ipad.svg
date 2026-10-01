@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 1200 840" role="img" aria-label="Mockup do visualizador de arquivos no iPad: árvore de pastas à esquerda, markdown renderizado à direita com abas Preview, Código e Diff e botões de baixar e compartilhar">
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{white-space:pre;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .h{font-size:15px;font-weight:700}
+    .b{font-size:13px}
+    .s{font-size:11.5px;fill:#8a8378}
+    .w{fill:#ffffff}
+    .lk{fill:#3d56b0;text-decoration:underline}
+    .ann{font-size:12px;font-weight:700;fill:#b4531f}
+  </style>
+  <rect width="1200" height="840" rx="18" fill="#e9e5dc"/>
+  <rect x="30" y="24" width="1140" height="790" rx="34" fill="#1f2024"/>
+  <rect x="46" y="40" width="1108" height="758" rx="22" fill="#f7f5f0"/>
+
+  <!-- tree -->
+  <rect x="46" y="40" width="300" height="758" rx="22" fill="#fbfaf7"/>
+  <rect x="330" y="40" width="16" height="758" fill="#fbfaf7"/>
+  <line x1="346" y1="40" x2="346" y2="798" stroke="#e2ddd3"/>
+  <text x="66" y="80" class="h">Arquivos</text>
+  <text x="66" y="100" class="s">tasknexus ▾</text>
+  <rect x="66" y="112" width="260" height="32" rx="9" fill="#efece5"/>
+  <text x="80" y="133" class="b" style="fill:#8a8378">Buscar arquivo (⌘P)</text>
+  <rect x="66" y="154" width="124" height="26" rx="13" fill="#e6f2ee"/>
+  <text x="78" y="171" class="s" style="fill:#2f7564;font-weight:700">Alterados · 3</text>
+  <rect x="198" y="154" width="84" height="26" rx="13" fill="#efece5"/>
+  <text x="212" y="171" class="s" style="fill:#3b3530">Recentes</text>
+
+  <g class="b">
+    <text x="70" y="210">▾ 📁 backend</text>
+    <text x="90" y="236">▸ 📁 app</text>
+    <text x="90" y="262">▸ 📁 tests</text>
+    <text x="70" y="288">▾ 📁 docs</text>
+    <rect x="58" y="298" width="280" height="28" rx="7" fill="#e6f2ee"/>
+    <text x="90" y="317" style="font-weight:700">📄 plano-release.md</text>
+    <text x="310" y="317" class="s" style="fill:#c9962d;font-weight:700">M</text>
+    <text x="90" y="344">🌐 relatorio.html</text>
+    <text x="310" y="344" class="s" style="fill:#3f8f7c;font-weight:700">A</text>
+    <text x="90" y="370">🖼 arquitetura.png</text>
+    <text x="70" y="396">▸ 📁 frontend</text>
+    <text x="70" y="422">📄 README.md</text>
+    <text x="70" y="448">⚙ deploy.sh</text>
+  </g>
+  <text x="66" y="770" class="s">Ocultos: .git, node_modules, .env*, *.pem</text>
+
+  <!-- viewer header -->
+  <text x="370" y="68" class="s">docs / </text>
+  <text x="408" y="68" class="b" style="font-weight:700">plano-release.md</text>
+  <text x="370" y="90" class="s">12 KB · alterado há 3 min pelo claude</text>
+  <rect x="784" y="54" width="360" height="36" rx="9" fill="none"/>
+  <rect x="802" y="56" width="80" height="32" rx="9" fill="none" stroke="#d8d3c8"/>
+  <text x="818" y="77" class="b">⤓ Baixar</text>
+  <rect x="890" y="56" width="120" height="32" rx="9" fill="none" stroke="#d8d3c8"/>
+  <text x="904" y="77" class="b">⇪ Compartilhar</text>
+  <rect x="1018" y="56" width="120" height="32" rx="9" fill="#3f8f7c"/>
+  <text x="1030" y="77" class="b w" style="font-weight:700">Citar no chat</text>
+
+  <!-- tabs -->
+  <line x1="346" y1="104" x2="1154" y2="104" stroke="#e2ddd3"/>
+  <rect x="370" y="116" width="252" height="32" rx="9" fill="#efece5"/>
+  <rect x="373" y="119" width="80" height="26" rx="7" fill="#ffffff"/>
+  <text x="390" y="137" class="b" style="font-weight:700">Preview</text>
+  <text x="468" y="137" class="b" style="fill:#6b645c">Código</text>
+  <text x="540" y="137" class="b" style="fill:#6b645c">Diff (+18 −4)</text>
+  <text x="1000" y="137" class="s">Aa  ·  Índice  ·  ⌕</text>
+
+  <!-- rendered md -->
+  <rect x="370" y="162" width="768" height="614" rx="14" fill="#ffffff" stroke="#e2ddd3"/>
+  <text x="404" y="206" style="font-size:24px;font-weight:700">Plano de release 2.4</text>
+  <line x1="404" y1="220" x2="1104" y2="220" stroke="#ece8df"/>
+  <text x="404" y="250" class="b">Objetivo: liberar o modo chat para todos os agentes claude até sexta.</text>
+  <text x="404" y="272" class="b">Detalhes técnicos em <tspan class="lk">02-chat-conversacional.md</tspan> e no card <tspan class="lk">#184</tspan>.</text>
+  <text x="404" y="310" style="font-size:17px;font-weight:700">Checklist</text>
+  <text x="404" y="338" class="b">☑  Migrar ws de chat</text>
+  <text x="404" y="362" class="b">☐  Testar no iPad em retrato</text>
+  <text x="404" y="400" style="font-size:17px;font-weight:700">Tabela de riscos</text>
+  <rect x="404" y="414" width="560" height="96" rx="6" fill="none" stroke="#e2ddd3"/>
+  <rect x="404" y="414" width="560" height="30" rx="6" fill="#f3f1ec"/>
+  <text x="418" y="434" class="b" style="font-weight:700">Risco</text>
+  <text x="720" y="434" class="b" style="font-weight:700">Mitigação</text>
+  <line x1="404" y1="477" x2="964" y2="477" stroke="#ece8df"/>
+  <text x="418" y="466" class="b">Sessão aberta em dois modos</text>
+  <text x="720" y="466" class="b">lock por session_key</text>
+  <text x="418" y="499" class="b">HTML malicioso no preview</text>
+  <text x="720" y="499" class="b">iframe sandbox + CSP</text>
+  <rect x="404" y="530" width="700" height="112" rx="10" fill="#26282e"/>
+  <text x="420" y="556" class="s m" style="fill:#b9b4ab">bash                                                         Copiar</text>
+  <text x="420" y="584" class="m" style="font-size:12px;fill:#e6e3dd">cd backend &amp;&amp; .venv/bin/pytest -q</text>
+  <text x="420" y="606" class="m" style="font-size:12px;fill:#e6e3dd">cd frontend &amp;&amp; npm test</text>
+  <rect x="404" y="660" width="700" height="96" rx="10" fill="#f3f6fb" stroke="#d5dcef"/>
+  <text x="420" y="686" class="s" style="fill:#44579f;font-weight:700">diagrama mermaid renderizado</text>
+  <rect x="440" y="700" width="120" height="36" rx="8" fill="#ffffff" stroke="#5b6fbf"/>
+  <text x="468" y="723" class="b">Composer</text>
+  <line x1="560" y1="718" x2="640" y2="718" stroke="#5b6fbf" stroke-width="1.5"/>
+  <rect x="640" y="700" width="120" height="36" rx="8" fill="#ffffff" stroke="#5b6fbf"/>
+  <text x="664" y="723" class="b">/ws/chat</text>
+
+  <text x="1142" y="52" class="ann">A</text>
+  <text x="630" y="137" class="ann">B</text>
+  <text x="300" y="171" class="ann">C</text>
+  <text x="1112" y="556" class="ann">D</text>
+</svg>

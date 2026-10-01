@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Planejamento da Fase A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a class="on" href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a class="on" href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#71-requisitos">7.1 Requisitos</a><ul><li><a href="#interpretações-adotadas-confirmar">Interpretações adotadas (confirmar)</a></li></ul></li><li><a href="#72-experiência-de-uso-ux">7.2 Experiência de uso (UX)</a><ul><li><a href="#onde-fica">Onde fica</a></li><li><a href="#a-tela">A tela</a></li><li><a href="#estados">Estados</a></li><li><a href="#painel-lateral">Painel lateral</a></li></ul></li><li><a href="#73-arquitetura-tl">7.3 Arquitetura (TL)</a></li><li><a href="#74-backend-dev">7.4 Backend (Dev)</a><ul><li><a href="#741-arquivos">7.4.1 Arquivos</a></li><li><a href="#742-tabela">7.4.2 Tabela</a></li><li><a href="#743-rotas">7.4.3 Rotas</a></li><li><a href="#744-artifact_metapy-só-biblioteca-padrão">7.4.4 artifact_meta.py (só biblioteca padrão)</a></li><li><a href="#745-tool-mcp-publicar_artefato">7.4.5 Tool MCP publicar_artefato</a></li></ul></li><li><a href="#75-frontend-dev">7.5 Frontend (Dev)</a><ul><li><a href="#751-arquivos">7.5.1 Arquivos</a></li><li><a href="#752-integração-no-appv2-só-isto-muda-no-casco">7.5.2 Integração no AppV2 (só isto muda no casco)</a></li><li><a href="#753-filtro">7.5.3 Filtro</a></li><li><a href="#754-painel-lateral">7.5.4 Painel lateral</a></li><li><a href="#755-atualização-da-lista">7.5.5 Atualização da lista</a></li></ul></li><li><a href="#76-ordem-de-execução-um-commit-por-passo">7.6 Ordem de execução (um commit por passo)</a></li><li><a href="#77-testes-e-aceite">7.7 Testes e aceite</a><ul><li><a href="#backend">Backend</a></li><li><a href="#frontend">Frontend</a></li><li><a href="#aceite-manual-ipad">Aceite manual (iPad)</a></li></ul></li><li><a href="#78-riscos">7.8 Riscos</a></li><li><a href="#79-definição-de-pronto">7.9 Definição de pronto</a></li><li><a href="#710-como-ficou-implementado-backend">7.10 Como ficou implementado (backend)</a><ul><li><a href="#7101-arquivos">7.10.1 Arquivos</a></li><li><a href="#7102-divergências-e-decisões-tomadas-na-implementação">7.10.2 Divergências e decisões tomadas na implementação</a></li><li><a href="#7103-contratos-para-o-frontend-da-fase-a">7.10.3 Contratos para o frontend da Fase A</a></li><li><a href="#7104-teste-ponta-a-ponta-backend">7.10.4 Teste ponta a ponta (backend)</a></li><li><a href="#7105-pendências">7.10.5 Pendências</a></li></ul></li><li><a href="#711-como-ficou-implementado-frontend">7.11 Como ficou implementado (frontend)</a><ul><li><a href="#7111-arquivos">7.11.1 Arquivos</a></li><li><a href="#7112-divergências-e-decisões-tomadas-na-implementação">7.11.2 Divergências e decisões tomadas na implementação</a></li><li><a href="#7113-testes-e-tamanho">7.11.3 Testes e tamanho</a></li><li><a href="#7114-verificação-visual">7.11.4 Verificação visual</a></li><li><a href="#7115-pendências-verificar-no-aparelho">7.11.5 Pendências (verificar no aparelho)</a></li></ul></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 7 de 8</p><h1 id="parte-7-planejamento-da-fase-a-aba-artefatos-por-cliente-e-projeto">Parte 7 — Planejamento da Fase A: aba Artefatos por cliente e projeto</h1>
+<blockquote>
+<p><strong>O pedido:</strong> uma aba <strong>Artefatos</strong>, como a galeria de artefatos do Claude,
+organizada <strong>por cliente e projeto</strong>, listando os artefatos criados
+(<code>.md</code>, <code>.pdf</code>, <code>.html</code>). Ao tocar num artefato, ele abre no <strong>painel
+lateral de visualização de arquivo</strong>. <strong>Sem mexer no layout:</strong> tudo em cima
+do layout v2 atual.</p>
+<p><strong>Depende da Fase V</strong> (<a href="06-planejamento-fase-v.html">Parte 6</a>): reaproveita o
+<code>file_access.py</code>, os renderers (Markdown, HTML, código, PDF, binário), o
+<code>ViewerContext</code> e o <code>ViewerPanel</code>. Pode ser o PR seguinte ao da Fase V.</p>
+</blockquote>
+<figure><img src="img/12-mockup-artefatos.svg" alt="Tela Artefatos" loading="lazy"><figcaption>Tela Artefatos</figcaption></figure>
+<p>Legenda: <strong>A</strong> item novo <strong>Artefatos</strong> no menu que já existe (mesma lista
+<code>NAV_ITEMS</code> de Chat, Board, Tarefas e Configuração) · <strong>B</strong> painel lateral
+de visualização, por cima da tela e com abas, com os botões Baixar, Copiar,
+Abrir no navegador, <strong>Tela cheia</strong> e <strong>✕ Fechar</strong>.</p>
+<hr />
+<h2 id="71-requisitos">7.1 Requisitos</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Requisito</th>
+<th>Origem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>Nova aba <strong>Artefatos</strong> no menu do layout atual</td>
+<td>Bruno</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>Organizada por <strong>cliente</strong> e <strong>projeto</strong>, usando o mesmo filtro das telas Board e Tarefas</td>
+<td>Bruno</td>
+</tr>
+<tr>
+<td>A3</td>
+<td>Lista os artefatos criados: <strong><code>.md</code>, <code>.pdf</code>, <code>.html</code></strong></td>
+<td>Bruno</td>
+</tr>
+<tr>
+<td>A4</td>
+<td>Tocar num artefato abre o <strong>painel lateral de visualização</strong></td>
+<td>Bruno</td>
+</tr>
+<tr>
+<td>A5</td>
+<td><strong>Não mudar o layout</strong>: nada de redesenho, só uma tela nova no casco v2</td>
+<td>Bruno</td>
+</tr>
+<tr>
+<td>A6</td>
+<td>Artefato não some quando a conversa acaba: a lista é permanente por projeto</td>
+<td>Equipe (é o que faz a galeria ser útil)</td>
+</tr>
+<tr>
+<td>A7</td>
+<td>Remover da lista <strong>não apaga</strong> o arquivo do disco</td>
+<td>Equipe (segurança)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="interpretações-adotadas-confirmar">Interpretações adotadas (confirmar)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ponto</th>
+<th>Adotado</th>
+<th>Alternativa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O que vira artefato</td>
+<td>(1) O agente publica com a tool nova <code>publicar_artefato</code>. (2) Todo <code>.md</code>/<code>.html</code>/<code>.pdf</code> que o agente abre com <code>abrir_no_visualizador</code> entra <strong>automaticamente</strong>. (3) Você adiciona à mão ("Salvar em Artefatos" no visualizador ou "Importar do projeto")</td>
+<td>Só a publicação explícita (desligar o item 2 com um parâmetro)</td>
+</tr>
+<tr>
+<td>"Painel lateral"</td>
+<td>O <strong>mesmo painel à direita</strong> do chat (Fase V + Fase N): encaixado em telas ≥ 1100 px (a sidebar vira trilho enquanto ele está aberto), por cima em 641–1099 px, tela cheia no celular</td>
+<td>— (decidido com a Parte 8)</td>
+</tr>
+<tr>
+<td>Tela cheia no painel lateral</td>
+<td>Mantida: o botão ⤢ vira o mesmo modal de tela cheia da Fase V</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Celular</td>
+<td>Abre direto em tela cheia (não há largura para drawer)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Outros tipos (imagem, <code>.docx</code>, <code>.csv</code>)</td>
+<td>Fora por enquanto; a tabela aceita qualquer <code>kind</code>, então dá para ampliar depois</td>
+<td>Incluir imagens já</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="72-experiência-de-uso-ux">7.2 Experiência de uso (UX)</h2>
+<h3 id="onde-fica">Onde fica</h3>
+<ul>
+<li>Menu lateral (<code>SidebarV2</code>) e menu do celular (<code>MobileMenuScreen</code>) ganham
+  o item <strong>◧ Artefatos</strong>, entre Tarefas e Configuração. É só uma entrada a mais
+  em <code>NAV_ITEMS</code>; a sidebar, a topbar e a lista de clientes continuam iguais.</li>
+<li>Título da topbar: "Artefatos".</li>
+<li><strong>Cliente e projeto vêm da sidebar</strong> (Fase N, <a href="08-planejamento-navegacao-cliente-projeto.html">Parte 8</a>):
+  a lista de clientes vira a lista de projetos do cliente, com <strong>← Clientes</strong>
+  para voltar. A tela <strong>mantém a barra de selects</strong> (<code>ClienteProjetoFilterBar</code>,
+  igual ao Board e a Tarefas), partindo da seleção da sidebar e agindo só na
+  tela; ao lado dela ficam os chips de tipo e a busca (Parte 8, item 5 de 8.2.1).</li>
+</ul>
+<h3 id="a-tela">A tela</h3>
+<ol>
+<li><strong>Barra de filtro</strong> (mesma linha do filtro de cliente/projeto): chips de
+   tipo <strong>Todos · MD · HTML · PDF</strong>, campo <strong>Buscar</strong> (título, caminho e
+   descrição) e ordenação <strong>Recentes / Nome</strong>.</li>
+<li><strong>Lista agrupada:</strong> um grupo por projeto com o rótulo
+   <code>CLIENTE / PROJETO · N</code>. Com um projeto específico escolhido, os grupos somem
+   e fica só a grade.</li>
+<li><strong>Cartão do artefato</strong> (mesma linguagem visual do Board, tokens <code>--v2-*</code>):
+   - selo do tipo (MD verde, HTML índigo, PDF avermelhado);
+   - título (do agente, ou o primeiro <code># título</code> do <code>.md</code>, ou o <code>&lt;title&gt;</code> do
+     HTML, ou o nome do arquivo);
+   - caminho relativo ao projeto;
+   - trecho de até 2 linhas (1º parágrafo do <code>.md</code>, <code>meta description</code> do HTML,
+     "N páginas" do PDF quando der para ler, senão nada);
+   - rodapé: quem criou (claude, codex, você) · quando · tamanho.</li>
+<li><strong>Tocar no cartão</strong> abre o painel lateral com o artefato numa aba (ou foca
+   a aba, se já estiver aberto). Tocar em outro cartão abre <strong>outra aba</strong> no
+   mesmo painel.</li>
+<li><strong>Menu "⋯" do cartão</strong> (ou toque longo): Abrir · Baixar · Copiar caminho ·
+   <strong>Citar no chat</strong> (cola o caminho no terminal da conversa ativa, com o
+   mesmo <code>POST /api/sessions/{sk}/paste</code> do "Usar no chat" dos Anexos) ·
+   Renomear · <strong>Remover da lista</strong> (confirmação de 2 toques, como nos Anexos).</li>
+<li><strong>Importar do projeto…</strong> (fim da lista): abre um modal (<code>CenteredModal</code>)
+   com os <code>.md</code>/<code>.html</code>/<code>.pdf</code> encontrados no projeto escolhido que ainda não
+   são artefatos, com caixas de seleção. Serve para trazer o que já existe hoje.</li>
+</ol>
+<h3 id="estados">Estados</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Estado</th>
+<th>O que aparece</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nenhum artefato no filtro</td>
+<td>"Nenhum artefato aqui ainda. Quando um agente criar um relatório, documento ou PDF, ele aparece nesta tela. Você também pode <strong>Importar do projeto</strong>."</td>
+</tr>
+<tr>
+<td>Carregando</td>
+<td>6 cartões esqueleto</td>
+</tr>
+<tr>
+<td>Arquivo apagado ou movido</td>
+<td>Cartão com borda tracejada e selo "arquivo não encontrado"; abrir mostra o aviso; ações: Remover da lista</td>
+</tr>
+<tr>
+<td>Arquivo alterado depois de publicado</td>
+<td>Data "atualizado há X" (usa o <code>mtime</code> real)</td>
+</tr>
+<tr>
+<td>Erro ao carregar</td>
+<td>"Não consegui carregar os artefatos. Tentar de novo"</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="painel-lateral">Painel lateral</h3>
+<ul>
+<li>Painel à direita, igual ao do chat: <strong>encaixado</strong> em telas ≥ 1100 px (a
+  grade de cartões encolhe e a sidebar vira trilho enquanto ele está aberto),
+  <strong>por cima</strong> da lista em 641–1099 px, <strong>tela cheia</strong> no celular.</li>
+<li>Cabeçalho: abas dos artefatos abertos · <strong>✕ Fechar</strong>. Barra: caminho,
+  tamanho, ⤓ Baixar, ⧉ Copiar, ↗ Abrir no navegador, <strong>⤢ Tela cheia</strong>.</li>
+<li>Fecha com ✕, com Esc ou tocando na faixa escurecida. As abas continuam
+  guardadas para quando reabrir.</li>
+<li>Conteúdo: o mesmo <code>ViewerPanel</code> da Fase V (Markdown como no GitHub, HTML em
+  <code>iframe</code> sandbox, PDF, código).</li>
+</ul>
+<hr />
+<h2 id="73-arquitetura-tl">7.3 Arquitetura (TL)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Decisão</th>
+<th>Escolha</th>
+<th>Por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Onde guardar</td>
+<td>Tabela nova <code>artifacts</code> no <code>sessions.db</code>, <strong>um registro por (projeto, caminho)</strong></td>
+<td>A galeria é permanente e por projeto; não pode depender da sessão nem do limite de 15 abas do visualizador</td>
+</tr>
+<tr>
+<td>Como o agente publica</td>
+<td>Tool <code>publicar_artefato</code> no <strong>mesmo servidor MCP</strong> <code>escritorio-visualizador</code> da Fase V</td>
+<td>Um processo a menos, e a mesma rota de callback</td>
+</tr>
+<tr>
+<td>Publicação automática</td>
+<td><code>abrir_no_visualizador</code> de <code>.md</code>/<code>.html</code>/<code>.pdf</code> faz upsert em <code>artifacts</code></td>
+<td>É exatamente o que o agente mostra como entregável; evita depender do agente lembrar de duas tools</td>
+</tr>
+<tr>
+<td>Como servir o arquivo</td>
+<td>Rotas por <code>artifact_id</code> (<code>/api/artifacts/{id}/content</code> e <code>/f/{caminho}</code>) sobre um módulo comum <code>file_serving.py</code>, <strong>o mesmo</strong> usado pelas rotas <code>/api/viewer/{item_id}/…</code></td>
+<td>Uma única implementação de CSP, download, limite de 1 MB e denylist</td>
+</tr>
+<tr>
+<td>Visualizador no front</td>
+<td><code>ViewerContext</code> ganha <strong>escopos</strong>: <code>session:&lt;session_key&gt;</code> (chat, Fase V) e <code>artefatos</code> (esta tela). Cada item diz sua <strong>origem</strong> (<code>viewer</code> ou <code>artifact</code>), e o <code>viewerApi</code> monta a URL certa</td>
+<td>O <code>ViewerPanel</code> e os renderers ficam iguais; só muda de onde vem o arquivo</td>
+</tr>
+<tr>
+<td>Contêiner lateral</td>
+<td>Os mesmos <code>ViewerDock</code>/<code>ViewerDrawer</code>/<code>ViewerFullscreen</code> da Fase V, escolhidos pela largura</td>
+<td>Um único comportamento de visualizador no app inteiro</td>
+</tr>
+<tr>
+<td>Segurança</td>
+<td>Mesmas regras da Fase V: <code>resolve_safe_path</code>, denylist, <code>iframe</code> sem <code>allow-same-origin</code>, CSP <code>sandbox</code>, ids aleatórios</td>
+<td>A galeria não amplia o que pode ser lido: só arquivos registrados + vizinhos do mesmo projeto</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Ajuste na Fase V:</strong> as funções de servir conteúdo (<code>content</code> e <code>f/</code>) devem nascer num módulo
+<code>backend/app/file_serving.py</code> recebendo <code>(project_root, rel_path, download)</code>,
+para esta fase reaproveitar sem copiar. A Parte 6 foi atualizada com essa nota.</p>
+<hr />
+<h2 id="74-backend-dev">7.4 Backend (Dev)</h2>
+<h3 id="741-arquivos">7.4.1 Arquivos</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/artifact_store.py          # NOVO: ArtifactStore (tabela artifacts)
+backend/app/artifacts_api.py           # NOVO: APIRouter das rotas 7.4.3
+backend/app/artifact_meta.py           # NOVO: título, trecho e páginas (md/html/pdf), só stdlib
+backend/app/file_serving.py            # criado na Fase V; aqui só é reaproveitado
+backend/app/mcp_viewer_adapter.py      # ALTERAR: + tool publicar_artefato
+backend/app/viewer_api.py              # ALTERAR: abrir_no_visualizador faz upsert em artifacts (md/html/pdf)
+backend/app/main.py                    # ALTERAR: iniciar ArtifactStore no lifespan, include_router,
+                                       #          + env ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL no servidor MCP
+backend/tests/test_artifact_store.py
+backend/tests/test_artifacts_endpoints.py
+backend/tests/test_artifact_meta.py
+backend/tests/test_mcp_viewer_adapter.py   # ALTERAR: casos da tool nova
+</code></pre></div>
+<h3 id="742-tabela">7.4.2 Tabela</h3>
+<div class="code"><div class="code-head"><span>sql</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">artifacts</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">artifact_id</span><span class="w">  </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span><span class="w">          </span><span class="c1">-- "af_" + token_urlsafe(16)</span>
+<span class="w">  </span><span class="n">project_id</span><span class="w">   </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- ex.: "podesubir/site-institucional"</span>
+<span class="w">  </span><span class="n">cliente_id</span><span class="w">   </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- 1º segmento do project_id (mesma regra de agent_discovery)</span>
+<span class="w">  </span><span class="n">path</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- relativo à raiz do projeto, com "/"</span>
+<span class="w">  </span><span class="n">kind</span><span class="w">         </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- markdown | html | pdf</span>
+<span class="w">  </span><span class="n">title</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">description</span><span class="w">  </span><span class="nb">TEXT</span><span class="p">,</span>
+<span class="w">  </span><span class="n">excerpt</span><span class="w">      </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                      </span><span class="c1">-- até 200 caracteres</span>
+<span class="w">  </span><span class="k">size</span><span class="w">         </span><span class="nb">INTEGER</span><span class="p">,</span>
+<span class="w">  </span><span class="n">mtime</span><span class="w">        </span><span class="nb">REAL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">created_by</span><span class="w">   </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- 'agent' | 'user'</span>
+<span class="w">  </span><span class="n">agent_label</span><span class="w">  </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                      </span><span class="c1">-- "claude", "codex"… (do agente da sessão)</span>
+<span class="w">  </span><span class="n">session_key</span><span class="w">  </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                      </span><span class="c1">-- sessão que criou (pode ficar órfã; é só informativo)</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w">   </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w">   </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="k">UNIQUE</span><span class="p">(</span><span class="n">project_id</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">)</span>
+<span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">ix_artifacts_cliente</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">artifacts</span><span class="p">(</span><span class="n">cliente_id</span><span class="p">,</span><span class="w"> </span><span class="n">updated_at</span><span class="p">);</span>
+</code></pre></div>
+<p>Mesmo padrão de store dos outros: <code>aiosqlite</code>, WAL, <code>busy_timeout=5000</code>.
+<strong>Upsert</strong> por <code>(project_id, path)</code>: publicar de novo o mesmo arquivo atualiza
+título (se veio), descrição, trecho, tamanho, <code>mtime</code> e <code>updated_at</code>, e mantém o <code>artifact_id</code>.</p>
+<h3 id="743-rotas">7.4.3 Rotas</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Rota</th>
+<th>Uso</th>
+<th>Resposta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/artifacts?cliente_id=&amp;projeto_id=&amp;tipo=&amp;q=&amp;ordem=recentes</code></td>
+<td>lista da tela</td>
+<td><code>{"artifacts":[Artifact…]}</code>; <code>projeto_id</code> inclui a subárvore (prefixo <code>projeto_id/</code>, mesma regra do <code>collectSubtreeIds</code> do front); cada item traz <code>exists</code> e <code>mtime</code> atuais (checagem em lote com <code>os.stat</code> em thread)</td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}</code></td>
+<td>um artefato</td>
+<td><code>Artifact</code></td>
+</tr>
+<tr>
+<td><code>POST /api/artifacts</code></td>
+<td>você adiciona</td>
+<td>corpo <code>{"project_id","caminho","titulo"?,"descricao"?}</code> → <code>Artifact</code> (201) ou 400/403/404 com mensagem</td>
+</tr>
+<tr>
+<td><code>POST /api/artifacts/import</code></td>
+<td>"Importar do projeto"</td>
+<td>corpo <code>{"project_id","caminhos":[…]}</code> → <code>{"created":n,"artifacts":[…],"errors":[{caminho,erro}]}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/projects/{project_id:path}/artifact-candidates</code></td>
+<td>lista do modal de importação</td>
+<td><code>{"candidates":[{"path","kind","size","mtime"}],"truncated":bool}</code>: até 300 arquivos <code>.md</code>/<code>.html</code>/<code>.htm</code>/<code>.pdf</code>, ignorando as mesmas pastas da Parte 1 (<code>.git</code>, <code>node_modules</code>, <code>.venv*</code>, <code>dist</code>, <code>build</code>, <code>.escritorio</code>…) e os que já são artefatos</td>
+</tr>
+<tr>
+<td><code>PATCH /api/artifacts/{id}</code></td>
+<td>renomear / descrição</td>
+<td><code>{"titulo"?,"descricao"?}</code> → <code>Artifact</code></td>
+</tr>
+<tr>
+<td><code>DELETE /api/artifacts/{id}</code></td>
+<td>remover da lista</td>
+<td><code>{"status":"removed"}</code>; <strong>não</strong> apaga o arquivo</td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}/content</code></td>
+<td>conteúdo para o painel</td>
+<td>igual ao <code>/api/viewer/{item_id}/content</code> (via <code>file_serving</code>)</td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}/f/{file_path:path}[?download=1]</code></td>
+<td>HTML, PDF, assets relativos, download</td>
+<td>igual ao <code>/api/viewer/{item_id}/f/…</code> (via <code>file_serving</code>)</td>
+</tr>
+<tr>
+<td><code>POST /api/hooks/artifacts/publish</code></td>
+<td>só o adapter MCP (loopback)</td>
+<td>corpo <code>{"claude_session_id","caminho","titulo"?,"descricao"?,"abrir"?}</code> → <code>{"success":true,"artifact":{…},"opened":bool}</code> ou <code>{"success":false,"error":"…"}</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Formato de <code>Artifact</code>:</p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"artifact_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"af_Qm1Y0oHq3a1bXw5Jc2k0q8"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"project_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"podesubir/site-institucional"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"cliente_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"podesubir"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"docs/relatorio.html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Relatório de testes"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"excerpt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"58 passaram, 2 falharam…"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">18432</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mtime"</span><span class="p">:</span><span class="w"> </span><span class="mf">1727650000.1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"exists"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"agent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"agent_label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"claude"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1727650000.2</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"updated_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1727650000.2</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Regras:</p>
+<ul>
+<li>Tipos aceitos: <code>.md</code>, <code>.markdown</code>, <code>.html</code>, <code>.htm</code>, <code>.pdf</code>. Outro tipo → erro
+  legível ("Artefatos aceitam .md, .html e .pdf").</li>
+<li><code>caminho</code> passa por <code>resolve_safe_path</code> (Fase V) e pela denylist.</li>
+<li><code>publicar_artefato</code> com <code>abrir=true</code> (padrão) também cria/foca a aba no
+  visualizador da sessão, reaproveitando a lógica do <code>abrir_no_visualizador</code>
+  (inclui o frame <code>viewer_open</code>).</li>
+<li><code>agent_label</code>: do agente resolvido pela <code>session_key</code> (<code>agent.ia</code> ou nome
+  do cadastro); para <code>created_by='user'</code>, <code>null</code>.</li>
+</ul>
+<h3 id="744-artifact_metapy-só-biblioteca-padrão">7.4.4 <code>artifact_meta.py</code> (só biblioteca padrão)</h3>
+<ul>
+<li><strong>Markdown:</strong> título = primeira linha <code># …</code>; trecho = primeiro parágrafo
+  de texto (sem markdown básico: <code>*</code>, <code>_</code>, <code>`</code>, links <code>[x](y)</code> → <code>x</code>), até 200 caracteres.</li>
+<li><strong>HTML:</strong> título = conteúdo de <code>&lt;title&gt;</code>; trecho = <code>&lt;meta name="description"&gt;</code>
+  ou o texto do primeiro <code>&lt;p&gt;</code> (<code>html.parser</code> da stdlib), sem executar nada.</li>
+<li><strong>PDF:</strong> título = nome do arquivo; "N páginas" contando <code>/Type /Page</code> (não
+  <code>/Pages</code>) nos bytes, <strong>só se</strong> o arquivo tiver até 20 MB; senão, sem trecho.
+  É heurística: se falhar, fica sem trecho, nunca dá erro.</li>
+<li>Ler no máximo 256 KB de cada arquivo para extrair metadados.</li>
+</ul>
+<h3 id="745-tool-mcp-publicar_artefato">7.4.5 Tool MCP <code>publicar_artefato</code></h3>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"publicar_artefato"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Publica um arquivo como ARTEFATO do projeto na aba Artefatos do TaskNexus (organizada por cliente e projeto) e, por padrão, abre no visualizador do usuário. Use ao terminar um entregável que o usuário vai querer reencontrar depois: relatórios e páginas .html, documentos, planos e especificações .md, e arquivos .pdf. Se o arquivo já foi publicado, as informações são atualizadas. Arquivos .md, .html e .pdf abertos com abrir_no_visualizador também são publicados automaticamente."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"inputSchema"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"object"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"properties"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"caminho"</span><span class="p">:</span><span class="w">   </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Caminho do arquivo .md, .html ou .pdf, relativo à raiz do projeto ou absoluto dentro dele."</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"titulo"</span><span class="p">:</span><span class="w">    </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Opcional. Título do artefato. Padrão: título do documento ou nome do arquivo."</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"descricao"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Opcional. Uma frase dizendo o que é o artefato."</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"abrir"</span><span class="p">:</span><span class="w">     </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"boolean"</span><span class="p">,</span><span class="w"> </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Opcional. Abre no visualizador do usuário. Padrão: true."</span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"required"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"caminho"</span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Respostas em texto para o agente: <code>Artefato publicado em Artefatos › podesubir / site-institucional: "Relatório de testes" (docs/relatorio.html).</code>,
+<code>… (já existia, foi atualizado).</code> ou a mensagem de erro do backend.</p>
+<hr />
+<h2 id="75-frontend-dev">7.5 Frontend (Dev)</h2>
+<h3 id="751-arquivos">7.5.1 Arquivos</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/features/artifacts/
+  ArtefatosV2.jsx          # a tela: filtro cliente/projeto + chips + busca + grade/grupos + importar
+  ArtifactCard.jsx         # cartão (selo de tipo, título, caminho, trecho, rodapé, menu ⋯)
+  ArtifactActionsMenu.jsx  # Abrir, Baixar, Copiar caminho, Citar no chat, Renomear, Remover (2 toques)
+  ImportArtifactsModal.jsx # CenteredModal com a lista de candidatos e caixas de seleção
+  useArtifacts.js          # busca, filtros, recarga ao focar a tela e ao chegar viewer_open de md/html/pdf
+  artifactsApi.js
+frontend/src/features/viewer/
+  ViewerDock.jsx / ViewerDrawer.jsx   # já existem (Fase V); aqui só recebem scope="artefatos"
+  ViewerContext.jsx        # ALTERAR: escopos (session:&lt;sk&gt; e 'artefatos') e item.source ('viewer'|'artifact')
+  viewerApi.js             # ALTERAR: URLs por origem
+  ViewerToolbar.jsx        # ALTERAR: "☆ Salvar em Artefatos" quando o item veio do chat e ainda não é artefato
+frontend/src/layouts/v2/AppV2.jsx   # ALTERAR: NAV_ITEMS + SCREEN_TITLES + render de ArtefatosV2
+</code></pre></div>
+<h3 id="752-integração-no-appv2-só-isto-muda-no-casco">7.5.2 Integração no <code>AppV2</code> (só isto muda no casco)</h3>
+<div class="code"><div class="code-head"><span>js</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">NAV_ITEMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'chat'</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="s1">'Chat'</span><span class="p">,</span><span class="w"> </span><span class="nx">icon</span><span class="o">:</span><span class="w"> </span><span class="s1">'💬'</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'board'</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="s1">'Board'</span><span class="p">,</span><span class="w"> </span><span class="nx">icon</span><span class="o">:</span><span class="w"> </span><span class="s1">'▦'</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'tarefas'</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="s1">'Tarefas'</span><span class="p">,</span><span class="w"> </span><span class="nx">icon</span><span class="o">:</span><span class="w"> </span><span class="s1">'✓'</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'artefatos'</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="s1">'Artefatos'</span><span class="p">,</span><span class="w"> </span><span class="nx">icon</span><span class="o">:</span><span class="w"> </span><span class="s1">'◧'</span><span class="w"> </span><span class="p">},</span><span class="w">   </span><span class="c1">// novo</span>
+<span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">'agentes'</span><span class="p">,</span><span class="w"> </span><span class="nx">label</span><span class="o">:</span><span class="w"> </span><span class="s1">'Configuração'</span><span class="p">,</span><span class="w"> </span><span class="nx">icon</span><span class="o">:</span><span class="w"> </span><span class="s1">'◈'</span><span class="w"> </span><span class="p">},</span>
+<span class="p">];</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">SCREEN_TITLES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">chat</span><span class="o">:</span><span class="w"> </span><span class="s1">'Chat'</span><span class="p">,</span><span class="w"> </span><span class="nx">board</span><span class="o">:</span><span class="w"> </span><span class="s1">'Board'</span><span class="p">,</span><span class="w"> </span><span class="nx">tarefas</span><span class="o">:</span><span class="w"> </span><span class="s1">'Tarefas'</span><span class="p">,</span><span class="w"> </span><span class="nx">artefatos</span><span class="o">:</span><span class="w"> </span><span class="s1">'Artefatos'</span><span class="p">,</span><span class="w"> </span><span class="nx">agentes</span><span class="o">:</span><span class="w"> </span><span class="s1">'Configuração'</span><span class="w"> </span><span class="p">};</span>
+
+<span class="p">{</span><span class="nx">v2Screen</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">'artefatos'</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="o">&lt;</span><span class="nx">ArtefatosV2</span><span class="w"> </span><span class="nx">projects</span><span class="o">=</span><span class="p">{</span><span class="nx">projects</span><span class="p">}</span><span class="w"> </span><span class="nx">selectedClienteId</span><span class="o">=</span><span class="p">{</span><span class="nx">selectedClienteId</span><span class="p">}</span><span class="w"> </span><span class="nx">activeSessionKey</span><span class="o">=</span><span class="p">{</span><span class="nx">activeSessionKey</span><span class="p">}</span><span class="w"> </span><span class="o">/&gt;</span>
+<span class="p">)}</span>
+</code></pre></div>
+<p>Mesmas props que <code>BoardV2</code> e <code>TarefasV2</code> recebem. <code>MobileMenuScreen</code> já
+recebe <code>NAV_ITEMS</code>, então o item aparece no celular sem mudança extra.
+Conferir testes que contam itens de navegação (<code>AppV2.test.jsx</code>,
+<code>SidebarV2.test.jsx</code>, <code>MobileMenuScreen.test.jsx</code>, <code>NavTabs</code>) e atualizar.</p>
+<h3 id="753-filtro">7.5.3 Filtro</h3>
+<p>Usar <code>useClienteProjetoFilter(projects, selectedClienteId, selectedProjetoId)</code> e
+<code>ClienteProjetoFilterBar</code> exatamente como <code>BoardV2</code>/<code>TarefasV2</code> depois da Fase N. A filtragem
+por subárvore do projeto pode ser feita no backend (<code>projeto_id</code>) ou no front
+com <code>collectSubtreeIds</code>; escolher <strong>uma</strong> e testar o caso de 3 níveis
+(<code>cliente/projeto/sub</code>), que já quebrou no Board.</p>
+<h3 id="754-painel-lateral">7.5.4 Painel lateral</h3>
+<ul>
+<li>Mesmo painel da Fase V, escolhido pela largura: <code>ViewerDock</code> (≥ 1100 px,
+  com recolhimento forçado da sidebar, Parte 8), <code>ViewerDrawer</code> (641–1099 px)
+  ou <code>ViewerFullscreen</code> (celular), sempre com <code>scope="artefatos"</code>.</li>
+<li><strong>⤢ Tela cheia</strong> usa o <code>ViewerFullscreen</code>; <strong>✕ Fechar</strong> e Esc fecham o painel.</li>
+<li>Tocar num cartão: <code>openArtifact(artifact)</code> → adiciona/foca a aba no escopo
+  <code>artefatos</code> e abre o painel.</li>
+<li>As abas do escopo <code>artefatos</code> ficam <strong>só no front</strong> (não precisam de
+  tabela): até 15, guardadas em <code>sessionStorage</code> para sobreviver a recarregar
+  a página.</li>
+</ul>
+<h3 id="755-atualização-da-lista">7.5.5 Atualização da lista</h3>
+<ul>
+<li>Ao entrar na tela e ao voltar o foco para a aba do navegador.</li>
+<li>Quando chegar um frame <code>viewer_open</code> de <code>.md</code>/<code>.html</code>/<code>.pdf</code> (qualquer
+  sessão): marca a lista como "desatualizada" e recarrega se a tela estiver aberta.</li>
+<li>Sem polling contínuo.</li>
+</ul>
+<hr />
+<h2 id="76-ordem-de-execução-um-commit-por-passo">7.6 Ordem de execução (um commit por passo)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Passo</th>
+<th>Entrega</th>
+<th>Verificação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>artifact_meta.py</code> + testes</td>
+<td><code>pytest tests/test_artifact_meta.py</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ArtifactStore</code> + rotas de lista, criação, edição, remoção, conteúdo e arquivo (via <code>file_serving</code>)</td>
+<td><code>pytest tests/test_artifact_store.py tests/test_artifacts_endpoints.py</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Candidatos + importação</td>
+<td>testes de endpoint</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Tool <code>publicar_artefato</code> + publicação automática no <code>abrir_no_visualizador</code></td>
+<td><code>pytest tests/test_mcp_viewer_adapter.py tests/test_viewer_endpoints.py</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>ViewerContext</code> com escopos; painel com <code>scope="artefatos"</code></td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>ArtefatosV2</code> + cartão + filtros + estados + item de menu</td>
+<td>vitest + testes de navegação atualizados</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Menu do cartão (baixar, copiar, citar no chat, renomear, remover) e "Salvar em Artefatos" no visualizador</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Modal "Importar do projeto"</td>
+<td>vitest</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Aceite manual no iPad e atualização da doc</td>
+<td>checklist 7.7</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="77-testes-e-aceite">7.7 Testes e aceite</h2>
+<h3 id="backend">Backend</h3>
+<ul>
+<li>Upsert por <code>(project_id, path)</code> mantém o <code>artifact_id</code> e atualiza os campos.</li>
+<li>Filtros: <code>cliente_id</code>; <code>projeto_id</code> com subárvore de 3 níveis; <code>tipo</code>; <code>q</code>
+  em título, caminho e descrição; ordem.</li>
+<li><code>exists:false</code> quando o arquivo some; <code>DELETE</code> não apaga o arquivo.</li>
+<li>Tipos não aceitos, caminho fora do projeto e denylist → erro legível.</li>
+<li>Candidatos ignoram <code>node_modules</code>/<code>.git</code>/etc., os já publicados, e cortam em 300.</li>
+<li><code>publicar_artefato</code> via hook: sessão inexistente, sucesso com <code>abrir=true</code>
+  (gera frame <code>viewer_open</code>) e <code>abrir=false</code>.</li>
+<li><code>abrir_no_visualizador</code> de <code>.md</code> cria artefato; de <code>.py</code> não cria.</li>
+<li><code>artifact_meta</code>: título e trecho de <code>.md</code> e <code>.html</code>; PDF com e sem contagem de páginas.</li>
+</ul>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li><code>ArtefatosV2</code>: agrupa por projeto com "Todos os projetos"; mostra grade
+  simples com projeto escolhido; chips de tipo filtram; busca filtra; estado vazio.</li>
+<li>Cartão com <code>exists:false</code> mostra o selo e a borda tracejada.</li>
+<li>Tocar no cartão abre o painel à direita com a aba; tocar em outro abre a segunda aba.</li>
+<li>Remover exige 2 toques e chama <code>DELETE</code>.</li>
+<li>Item "Artefatos" aparece na sidebar e no menu do celular.</li>
+</ul>
+<h3 id="aceite-manual-ipad">Aceite manual (iPad)</h3>
+<ol>
+<li>Pedir ao claude: "gere um relatório HTML dos testes e publique como artefato".
+   Ele aparece em Artefatos › cliente › projeto e abre no visualizador.</li>
+<li>Escolher outro cliente na sidebar: a lista muda. Entrar no cliente e escolher
+   um projeto na sidebar: só aquele projeto (e subprojetos).</li>
+<li>Tocar em dois cartões: painel lateral com duas abas; ⤢ Tela cheia e ✕ Fechar funcionam.</li>
+<li>Abrir um PDF: aparece no painel (ou, se o Safari do iPad não renderizar
+   bem dentro do painel, o botão ↗ abre no leitor nativo e ⤓ baixa. Registrar o resultado no PR).</li>
+<li>"Importar do projeto…" traz um <code>.md</code> antigo.</li>
+<li>Apagar o arquivo no disco: o cartão mostra "arquivo não encontrado".</li>
+<li>"Citar no chat" cola o caminho no terminal da conversa ativa sem enviar.</li>
+<li>No celular: item no menu, lista em uma coluna, abrir vai para tela cheia.</li>
+</ol>
+<hr />
+<h2 id="78-riscos">7.8 Riscos</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risco</th>
+<th>Mitigação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lista poluída por arquivos que o agente só abriu para mostrar (ex.: <code>README.md</code>)</td>
+<td>"Remover da lista" com 2 toques; se incomodar, desligar a publicação automática e deixar só <code>publicar_artefato</code></td>
+</tr>
+<tr>
+<td>PDF dentro de <code>iframe</code> no Safari do iPad às vezes mostra só a primeira página</td>
+<td>Botões ↗ (leitor nativo) e ⤓ sempre visíveis; se necessário, usar pdf.js numa fase futura</td>
+</tr>
+<tr>
+<td>Muitos artefatos (centenas)</td>
+<td>Paginação simples no endpoint (<code>limit</code>/<code>offset</code>, 100 por página) se passar de 300</td>
+</tr>
+<tr>
+<td>Sem autenticação ainda</td>
+<td>Mesma superfície da Fase V (arquivos registrados + vizinhos do projeto, com denylist); a F0 fecha o resto</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="79-definição-de-pronto">7.9 Definição de pronto</h2>
+<ul>
+<li><input type="checkbox" disabled> <code>pytest</code> e <code>npm test</code> verdes, com os testes novos.</li>
+<li><input type="checkbox" disabled> Nenhuma mudança visual fora da tela nova, do item de menu e do painel lateral.</li>
+<li><input type="checkbox" disabled> Aceite manual 7.7 conferido (itens de aparelho marcados como "verificar" se o agente não tiver iPad).</li>
+<li><input type="checkbox" disabled> README do projeto com uma seção curta "Artefatos".</li>
+<li><input type="checkbox" disabled> Documentação atualizada se a implementação divergir.</li>
+</ul>
+<hr />
+<h2 id="710-como-ficou-implementado-backend">7.10 Como ficou implementado (backend)</h2>
+<p>A Fase A foi dividida como a V: <strong>backend</strong> (passos 1 a 4 da tabela 7.6, esta
+seção) e <strong>frontend</strong> (passos 5 a 9). Onde o código diverge do que está acima,
+<strong>vale o código</strong>.</p>
+<h3 id="7101-arquivos">7.10.1 Arquivos</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arquivo</th>
+<th>O que faz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/app/artifact_meta.py</code></td>
+<td><code>artifact_kind_for</code>, <code>extract_meta</code> (título e trecho de md/html, "N páginas" de PDF), <code>markdown_meta</code>, <code>html_meta</code>, <code>pdf_page_count</code>. Só stdlib, nunca levanta</td>
+</tr>
+<tr>
+<td><code>backend/app/artifact_store.py</code></td>
+<td><code>ArtifactStore</code> (tabela <code>artifacts</code>, upsert por projeto + caminho, filtros, edição, remoção)</td>
+</tr>
+<tr>
+<td><code>backend/app/artifacts_api.py</code></td>
+<td><code>ArtifactService</code> (publicar, listar com estado atual do disco, candidatos, importação, publicação automática) e <code>create_artifacts_router(service)</code> com todas as rotas de 7.4.3</td>
+</tr>
+<tr>
+<td><code>backend/app/viewer_api.py</code></td>
+<td><code>create_viewer_router(service, on_agent_open=None)</code>: callback chamado só quando o <strong>agente</strong> abre um arquivo pelo hook</td>
+</tr>
+<tr>
+<td><code>backend/app/mcp_viewer_adapter.py</code></td>
+<td>+ tool <code>publicar_artefato</code> (nome, descrição e schema idênticos a 7.4.5)</td>
+</tr>
+<tr>
+<td><code>backend/app/main.py</code></td>
+<td><code>artifact_store</code> no <code>lifespan</code>, <code>_agent_label_for_session</code>, <code>artifact_service</code>, <code>include_router</code>, env <code>ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL</code> no servidor <code>escritorio-visualizador</code></td>
+</tr>
+<tr>
+<td><code>backend/tests/test_artifact_meta.py</code>, <code>test_artifact_store.py</code>, <code>test_artifacts_endpoints.py</code></td>
+<td>Novos</td>
+</tr>
+<tr>
+<td><code>backend/tests/test_mcp_viewer_adapter.py</code>, <code>test_websocket.py</code>, <code>test_hook_loopback_listener.py</code></td>
+<td>Tool nova e a URL nova nos testes de contrato do spawn (<code>claude</code> e <code>codex</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7102-divergências-e-decisões-tomadas-na-implementação">7.10.2 Divergências e decisões tomadas na implementação</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Ponto</th>
+<th>Especificação</th>
+<th>Como ficou</th>
+<th>Por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Coluna <code>title_custom</code></td>
+<td>Não existia</td>
+<td>Coluna interna (<code>INTEGER</code>, fora da resposta). <code>1</code> quando o título veio de alguém (agente com <code>titulo</code>, usuário no PATCH). Com <code>0</code>, cada nova publicação troca o título pelo do documento; com <code>1</code>, título automático nunca sobrescreve</td>
+<td>O agente reescreve o <code># título</code> do <code>.md</code> e a galeria acompanha; um nome escolhido não some quando o agente reabre o arquivo</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Upsert</td>
+<td>"atualiza título (se veio), descrição, trecho, tamanho, mtime e updated_at"</td>
+<td>Igual, e <code>kind</code> também. <code>created_by</code>, <code>agent_label</code>, <code>session_key</code> e <code>created_at</code> ficam os de quem <strong>criou</strong></td>
+<td>O cartão continua dizendo "você" se o usuário importou e o agente só reabriu</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>POST /api/artifacts</code></td>
+<td><code>201</code></td>
+<td><code>201</code> quando nasce, <code>200</code> quando já era artefato (atualizado, mesmo <code>artifact_id</code>)</td>
+<td>A tela sabe se foi "salvo" ou "já estava"</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Formato <code>Artifact</code></td>
+<td>Com <code>exists</code> e <code>mtime</code> atuais</td>
+<td>Igual, sem <code>session_key</code> (é só informativo). <code>size</code> também é o atual. Arquivo sumido: <code>exists:false</code> e <code>mtime</code>/<code>size</code> da última publicação. Toda resposta que devolve <code>Artifact</code> (lista, GET, POST, PATCH, import, hook) traz o estado atual</td>
+<td>Um formato só para a tela</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Checagem de existência</td>
+<td><code>os.stat</code> em lote</td>
+<td>Em lote numa thread, mas por <code>resolve_safe_path</code>: um arquivo trocado por link para fora do projeto (ou que caiu na denylist) aparece como <code>exists:false</code>, igual ao que <code>f/</code> responderia</td>
+<td>Coerência com a rota que serve o arquivo</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Erros das rotas JSON</td>
+<td>"400/403/404 com mensagem"</td>
+<td><code>{"success": false, "error": "…"}</code> com o status HTTP (400/403/404), como a rota do usuário do visualizador (6.10.2, item 8). <code>content</code> e <code>f/</code> respondem <code>{"detail": "…"}</code>, iguais às do visualizador. <code>caminho</code> vazio é <strong>400</strong> (no visualizador vira 403)</td>
+<td>A tela trata <code>content</code>/<code>f/</code> de aba e de artefato com o mesmo código</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>?tipo=</code></td>
+<td><code>tipo</code></td>
+<td>Aceita <code>md</code>/<code>markdown</code>, <code>html</code>/<code>htm</code>, <code>pdf</code>, vazio ou <code>todos</code> (sem filtro); outro valor → <code>400 "Tipo inválido. Use md, html ou pdf."</code></td>
+<td>Os chips dizem MD/HTML/PDF, o <code>kind</code> gravado é <code>markdown</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>?ordem=</code></td>
+<td><code>recentes</code></td>
+<td><code>recentes</code> (padrão) ordena pelo <strong>maior entre <code>updated_at</code> e o <code>mtime</code> atual</strong>, decrescente; <code>nome</code> ordena pelo título sem acento e sem caixa; outro valor → <code>400 "Ordem inválida. Use recentes ou nome."</code></td>
+<td>Arquivo alterado depois de publicado sobe na lista, coerente com "atualizado há X" (7.2)</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>?q=</code></td>
+<td>"em título, caminho e descrição"</td>
+<td>Igual, <strong>sem acento e sem caixa</strong> ("relatorio" acha "Relatório"), filtrado em Python</td>
+<td>O <code>LIKE</code> do SQLite só ignora caixa em ASCII; no iPad digitar acento é lento</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>?projeto_id=</code></td>
+<td>Subárvore por prefixo</td>
+<td><code>project_id = X OR project_id LIKE 'X/%'</code> com <code>_</code> e <code>%</code> escapados</td>
+<td><code>cliente_projeto_1</code> tem <code>_</code>, que é curinga no LIKE</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Candidatos</td>
+<td>Ignorar <code>.git</code>, <code>node_modules</code>, <code>.venv*</code>, <code>dist</code>, <code>build</code>, <code>.escritorio</code>…</td>
+<td>Ignora <strong>toda pasta oculta</strong> (<code>.git</code>, <code>.claude</code>, <code>.escritorio</code>, <code>.venv*</code>, <code>.next</code>…) e <code>node_modules</code>, <code>__pycache__</code>, <code>dist</code>, <code>build</code>, <code>venv</code>, <code>site-packages</code>, <code>coverage</code>, <code>htmlcov</code>; também <strong>subpastas que são projetos</strong> (têm <code>.claude/</code>, <code>.gemini/</code> ou <code>.codex/</code>), arquivos da denylist, arquivos ocultos e links para fora. Ordem alfabética estável; corta em 300 com <code>truncated:true</code></td>
+<td>No cliente-como-projeto (<code>podesubir</code> com <code>podesubir/site</code> dentro), o README do site é candidato de <code>podesubir/site</code>; sem isso o mesmo arquivo viraria dois artefatos</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Importação</td>
+<td><code>{"created","artifacts","errors"}</code></td>
+<td><code>created</code> conta só os novos; <code>artifacts</code> traz <strong>todos</strong> os que deram certo (novos e atualizados); máximo 300 caminhos por pedido (<code>400</code>); um caminho ruim não derruba os outros</td>
+<td>—</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Tipo aceito</td>
+<td>Pela extensão</td>
+<td>Checado duas vezes: no nome pedido (um <code>app.py</code> recebe "Artefatos aceitam .md, .html e .pdf" mesmo se não existir) e no arquivo real depois do <code>resolve_safe_path</code> (link <code>notas.md</code> → <code>x.py</code> é recusado)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Resposta do hook</td>
+<td><code>{"success","artifact","opened"}</code></td>
+<td>Mais <code>"created"</code> (o adaptador escreve "já existia, foi atualizado") e <code>"delivered"</code> (a tela recebeu o <code>viewer_open</code>). <code>abrir</code> aceita <code>"false"</code>/<code>"0"</code>/<code>"não"</code> em texto</td>
+<td>Alguns modelos mandam booleano como texto</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Hook fora do loopback</td>
+<td>—</td>
+<td><code>403 {"success":false,"error":"O hook de artefatos só aceita chamadas da própria máquina."}</code>, mesma regra do visualizador (<code>hook_request_allowed</code>, liberado com <code>HOOK_CALLBACK_BASE_URL</code>)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>abrir=true</code></td>
+<td>"reaproveitando a lógica do <code>abrir_no_visualizador</code>"</td>
+<td>Chama o mesmo <code>ViewerService.open_path</code> (aba gravada, reaproveitada pelo caminho, limite de 15, frame <code>viewer_open</code>). Se a abertura falhar, a publicação vale e <code>opened:false</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Publicação automática</td>
+<td>"<code>abrir_no_visualizador</code> faz upsert"</td>
+<td>Callback <code>on_agent_open</code> no <strong>hook</strong> <code>/api/hooks/viewer/open</code>, depois da aba gravada. O <code>titulo</code> do <code>abrir_no_visualizador</code> <strong>não</strong> vira título do artefato (é o rótulo curto da aba); vale o título do documento. Falha aqui nunca vira erro para o agente (só log). Abertura pelo usuário e a abertura feita pelo próprio <code>publicar_artefato</code> não passam pelo hook, então não publicam (nem duplicam)</td>
+<td>Mantém o <code>ViewerService</code> sem saber de artefatos</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>agent_label</code></td>
+<td>"<code>agent.ia</code> ou nome do cadastro"</td>
+<td><code>ia</code> do agente do cadastro global escolhido como em <code>_resolve_agent</code> (o <code>agent_id</code> da <code>session_key</code>, senão o padrão, senão o primeiro), lido do cache em memória; sem agente resolvido, o próprio <code>agent_id</code> da chave (ex.: <code>claude</code>); <code>null</code> para <code>created_by='user'</code></td>
+<td>Não varrer <code>PROJECTS_ROOT</code> a cada publicação</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Leitura de metadados</td>
+<td>"no máximo 256 KB"</td>
+<td>256 KB para <code>.md</code>/<code>.html</code>; PDF lê o arquivo inteiro <strong>só até 20 MB</strong> (a contagem precisa dos objetos de página espalhados)</td>
+<td>Regra de 7.4.4 para PDF</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Metadados de Markdown/HTML</td>
+<td>Básico</td>
+<td>Markdown pula front matter YAML, blocos de código, tabelas, réguas e comentários; aceita título setext (<code>Título\n===</code>); <code>_</code> só sai na borda de palavra (<code>meu_modulo.py</code> fica). HTML aceita também <code>og:description</code> e ignora <code>&lt;script&gt;</code>/<code>&lt;style&gt;</code>/<code>&lt;template&gt;</code></td>
+<td>Trechos legíveis em docs reais</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>PATCH</code></td>
+<td><code>{"titulo"?,"descricao"?}</code></td>
+<td><code>titulo</code> vazio → <code>400 "O título não pode ficar vazio."</code>; <code>descricao</code> <code>null</code> ou <code>""</code> apaga a descrição; renomear marca o título como explícito (item 1)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Paginação</td>
+<td>Se passar de 300 (7.8)</td>
+<td><strong>Não</strong> implementada: a lista devolve tudo</td>
+<td>Sem necessidade medida ainda</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ficaram <strong>como especificado</strong>: tabela e índice de 7.4.2 (mais a coluna do
+item 1); ids <code>af_</code> + <code>token_urlsafe(16)</code>; <code>UNIQUE(project_id, path)</code>; mesmo
+padrão de store (aiosqlite, WAL, <code>busy_timeout=5000</code>, <code>asyncio.Lock</code> criado
+no <code>initialize()</code>); <code>cliente_id</code> pela regra de <code>cliente_id_from_projeto_id</code>;
+<code>DELETE</code> não apaga o arquivo; <code>content</code> e <code>f/</code> pelo <code>file_serving</code> sem cópia
+(CSP, nosniff, <code>no-store</code>, download, denylist, limite de 1 MB); artefatos
+<strong>sobrevivem</strong> ao <code>terminate</code> da sessão; tool <code>publicar_artefato</code> no servidor
+<code>escritorio-visualizador</code> com nome, descrição e schema de 7.4.5 e os textos de
+resposta; env <code>ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL</code> registrada em
+<code>_escritorio_mcp_servers</code> (vale para <code>claude</code> e <code>codex</code>); todo acesso a disco
+em <code>asyncio.to_thread</code>.</p>
+<h3 id="7103-contratos-para-o-frontend-da-fase-a">7.10.3 Contratos para o frontend da Fase A</h3>
+<p><strong>Artifact</strong> (resposta real do teste ponta a ponta):</p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"artifact_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"af_uCL93UtU8HSXSsMfmzTMFw"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"project_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cliente-x/site"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"cliente_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cliente-x"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"docs/relatorio.html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"html"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Relatório E2E"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Relatório do E2E"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"excerpt"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tudo passou."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">125</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mtime"</span><span class="p">:</span><span class="w"> </span><span class="mf">1790825033.0571904</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"agent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"agent_label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"claude"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1790825100.2932432</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"updated_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1790825100.2932432</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"exists"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>kind</code>: <code>markdown | html | pdf</code>. <code>created_by</code>: <code>agent | user</code>.</li>
+<li><code>excerpt</code>: até 200 caracteres ou <code>null</code>; PDF: <code>"1 página"</code> / <code>"N páginas"</code> ou <code>null</code>.</li>
+<li><code>mtime</code>/<code>size</code>: do disco agora (se <code>exists</code>), senão da última publicação.</li>
+</ul>
+<p><strong>Rotas</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Rota</th>
+<th>Sucesso</th>
+<th>Erros</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/artifacts?cliente_id=&amp;projeto_id=&amp;tipo=&amp;q=&amp;ordem=</code></td>
+<td><code>200 {"artifacts":[Artifact…]}</code></td>
+<td><code>400</code> tipo/ordem inválidos</td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}</code></td>
+<td><code>200 Artifact</code></td>
+<td><code>404 {"success":false,"error":"Artefato não encontrado"}</code></td>
+</tr>
+<tr>
+<td><code>POST /api/artifacts</code> <code>{"project_id","caminho","titulo"?,"descricao"?}</code></td>
+<td><code>201 Artifact</code> (novo) ou <code>200 Artifact</code> (já existia)</td>
+<td><code>400</code> corpo/caminho/tipo, <code>403</code> fora do projeto/protegido, <code>404</code> projeto ou arquivo</td>
+</tr>
+<tr>
+<td><code>POST /api/artifacts/import</code> <code>{"project_id","caminhos":[…]}</code></td>
+<td><code>200 {"created":n,"artifacts":[Artifact…],"errors":[{"caminho","erro"}]}</code></td>
+<td><code>400</code> lista vazia/&gt; 300, <code>404</code> projeto</td>
+</tr>
+<tr>
+<td><code>GET /api/projects/{project_id}/artifact-candidates</code></td>
+<td><code>200 {"candidates":[{"path","kind","size","mtime"}],"truncated":bool}</code></td>
+<td><code>404</code> projeto</td>
+</tr>
+<tr>
+<td><code>PATCH /api/artifacts/{id}</code> <code>{"titulo"?,"descricao"?}</code></td>
+<td><code>200 Artifact</code></td>
+<td><code>400</code> título vazio, <code>404</code></td>
+</tr>
+<tr>
+<td><code>DELETE /api/artifacts/{id}</code></td>
+<td><code>200 {"status":"removed"}</code></td>
+<td><code>404</code> (tratar como "já removido")</td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}/content</code></td>
+<td>igual a <code>/api/viewer/{item_id}/content</code>, com <code>artifact_id</code> no lugar de <code>item_id</code></td>
+<td><code>404 {"detail"}</code> artefato/arquivo/projeto, <code>403 {"detail"}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/artifacts/{id}/f/{caminho}[?download=1]</code></td>
+<td>igual a <code>/api/viewer/{item_id}/f/…</code></td>
+<td><code>403</code>, <code>404</code>, <code>400</code> (pasta) com <code>{"detail"}</code></td>
+</tr>
+<tr>
+<td><code>POST /api/hooks/artifacts/publish</code> (só o adaptador)</td>
+<td><code>200 {"success":true,"artifact","created","opened","delivered"}</code></td>
+<td><code>200 {"success":false,"error"}</code>; <code>403</code> fora do loopback</td>
+</tr>
+</tbody>
+</table></div>
+<p>Mensagens de erro: <code>Artefatos aceitam .md, .html e .pdf</code>, <code>Caminho fora do
+projeto</code>, <code>Arquivo protegido (segredos não são exibidos)</code>, <code>Arquivo não
+encontrado: &lt;caminho&gt;</code>, <code>É uma pasta, não um arquivo: &lt;caminho&gt;</code>, <code>Informe o
+caminho do arquivo.</code>, <code>Informe o projeto (project_id).</code>, <code>Projeto não
+encontrado: &lt;id&gt;</code>, <code>Artefato não encontrado</code>, <code>Corpo da requisição inválido.</code>,
+<code>O título não pode ficar vazio.</code>, <code>Tipo inválido. Use md, html ou pdf.</code>,
+<code>Ordem inválida. Use recentes ou nome.</code>, <code>Informe a lista de caminhos
+(caminhos).</code>, <code>Importe no máximo 300 arquivos por vez.</code></p>
+<p><strong>Para a lista se atualizar sozinha (7.5.5):</strong> quando o agente abre um
+<code>.md</code>/<code>.html</code>/<code>.pdf</code>, o artefato é gravado <strong>antes</strong> da resposta do hook, e o
+frame <code>viewer_open</code> (com <code>opened_by: "agent"</code>) chega no WebSocket do terminal.
+O frame não diz se virou artefato: a tela recarrega a lista quando o <code>path</code>
+do item termina em <code>.md</code>/<code>.markdown</code>/<code>.html</code>/<code>.htm</code>/<code>.pdf</code>.</p>
+<p><strong>Textos que o agente lê</strong> (<code>publicar_artefato</code>):
+<code>Artefato publicado em Artefatos › cliente-x / site: "Relatório E2E" (docs/relatorio.html).</code>,
+<code>… (README.md) (já existia, foi atualizado).</code> ou a mensagem de erro do backend.</p>
+<h3 id="7104-teste-ponta-a-ponta-backend">7.10.4 Teste ponta a ponta (backend)</h3>
+<p>Backend real (<code>uvicorn</code>, <code>HOOK_LOOPBACK_PORT</code> ligado) com <code>PROJECTS_ROOT</code> numa
+pasta temporária e o projeto <code>cliente-x/site</code> (com <code>.claude/</code>):</p>
+<ol>
+<li>WebSocket em <code>/ws/pty/cliente-x/site::claude</code>; o <code>--mcp-config</code> do <code>claude</code>
+   no PTY (lido do <code>/proc</code>) trazia <code>ESCRITORIO_HOOK_ARTIFACT_PUBLISH_URL =
+   http://127.0.0.1:8766/api/hooks/artifacts/publish</code>.</li>
+<li>Adaptador rodando com esse env: <code>publicar_artefato</code> de
+   <code>docs/relatorio.html</code> e <code>README.md</code> → textos de 7.4.5 e três frames
+   <code>viewer_open</code> (o segundo README com <code>reused: true</code>); <code>app.py</code> → "Artefatos
+   aceitam .md, .html e .pdf"; <code>.env.md</code> → "Arquivo protegido…".</li>
+<li>Lista por <code>cliente_id=cliente-x</code> (2 artefatos), por <code>projeto_id</code> + <code>tipo=md</code>
+   e por <code>cliente_id=outro</code> (vazia).</li>
+<li>Candidatos: <code>docs/antigo.md</code> e <code>docs/plano.md</code> (sem <code>node_modules</code>, sem os
+   já publicados); importação de <code>docs/antigo.md</code> + <code>app.py</code> → 1 criado e 1 erro.</li>
+<li><code>abrir_no_visualizador</code> (pelo adaptador) de <code>docs/plano.md</code> criou artefato
+   <code>agent/claude</code>; de <code>app.py</code>, não. Abertura pelo usuário de um <code>.md</code> novo não criou.</li>
+<li>Apagar <code>docs/plano.md</code> → <code>exists:false</code>; <code>content</code> dele → <code>404</code>.</li>
+<li><code>f/…?download=1</code> com <code>attachment</code>, CSP <code>sandbox</code>; <code>DELETE</code> → <code>removed</code> e o arquivo continuou no disco.</li>
+<li>Hook pelo IP da rede → <code>403</code>.</li>
+<li><strong><code>claude</code> real</strong> (2.1.x, <code>claude -p</code> com o <code>--mcp-config</code> gerado pelo
+   backend): pedindo "publique o README.md como artefato do TaskNexus (aba
+   Artefatos), usando a tool publicar_artefato", o agente chamou a tool e
+   respondeu que o README foi publicado em cliente-x / site (já existia,
+   atualizado). Na primeira tentativa, com o pedido curto "publique o
+   README.md como artefato", o <code>claude</code> <strong>deste ambiente</strong> escolheu a tool de
+   artefatos do próprio claude.ai, que existe aqui e não no PC do Bruno — ver
+   pendências.</li>
+</ol>
+<h3 id="7105-pendências">7.10.5 Pendências</h3>
+<ul>
+<li><strong>Frontend da Fase A</strong> (passos 5 a 9 da tabela 7.6), contra os contratos de 7.10.3.</li>
+<li><strong>README do projeto</strong> com a seção "Artefatos": junto com a tela.</li>
+<li><strong>Paginação</strong> (<code>limit</code>/<code>offset</code>) só se a lista passar de algumas centenas (7.8).</li>
+<li><strong>Permissão da tool no <code>claude</code> interativo:</strong> como <code>abrir_no_visualizador</code>,
+  <code>mcp__escritorio-visualizador__publicar_artefato</code> pode pedir aprovação na
+  primeira chamada (avaliar <code>--allowedTools</code> no spawn, fora desta fase).</li>
+<li><strong>Ambiguidade da palavra "artefato":</strong> num <code>claude</code> que também tenha tools de
+  artefato do claude.ai, um pedido curto pode ir para a tool errada. No CLI
+  local isso não deve acontecer; se acontecer, citar "do TaskNexus" ou o nome da tool.</li>
+<li>Aceite com o <code>codex</code> real: coberto pelos testes de contrato do
+  <code>-c mcp_servers.*</code>; falta rodar com o binário.</li>
+<li>Regenerar os HTML (<code>build_html.py</code>) e atualizar o <code>CONTEXTO-PARA-AGENTE.md</code>:
+  fica para o integrador.</li>
+</ul>
+<hr />
+<h2 id="711-como-ficou-implementado-frontend">7.11 Como ficou implementado (frontend)</h2>
+<p>O frontend da Fase A entregou os passos 5 a 9 da tabela 7.6 (um commit por
+passo), contra os contratos reais da 7.10.3. Onde o código diverge do texto
+acima, <strong>vale o código</strong>. Backend: <strong>nenhuma mudança</strong> (não apareceu bug real
+na integração).</p>
+<h3 id="7111-arquivos">7.11.1 Arquivos</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arquivo</th>
+<th>O que faz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>frontend/src/features/artifacts/ArtefatosV2.jsx</code></td>
+<td>A tela: barra de filtro (selects + chips + busca + ordem), grupos/grade, estados, painel (Dock/Drawer/Fullscreen com <code>scope="artefatos"</code>), links relativos, menu, renomear, importar</td>
+</tr>
+<tr>
+<td><code>features/artifacts/ArtifactCard.jsx</code></td>
+<td>Cartão (selo, título, caminho, trecho, rodapé, "arquivo não encontrado", ⋯, toque longo, botão direito) e o esqueleto</td>
+</tr>
+<tr>
+<td><code>features/artifacts/ArtifactActionsMenu.jsx</code></td>
+<td>Menu em portal: Abrir, Baixar, Copiar caminho, Citar no chat, Renomear, Remover (2 toques); <code>placeMenu</code> (embaixo/em cima, dentro da janela)</td>
+</tr>
+<tr>
+<td><code>features/artifacts/RenameArtifactDialog.jsx</code></td>
+<td><code>CenteredModal</code> + <code>PATCH</code></td>
+</tr>
+<tr>
+<td><code>features/artifacts/ImportArtifactsModal.jsx</code></td>
+<td><code>CenteredModal</code> com projeto, candidatos, "Selecionar todos" e importação</td>
+</tr>
+<tr>
+<td><code>features/artifacts/useArtifacts.js</code></td>
+<td>Lista do cliente e quando recarregar (entrar, foco/visibilidade, <code>artifactsSignal</code>)</td>
+</tr>
+<tr>
+<td><code>features/artifacts/useArtifactTabsStorage.js</code></td>
+<td>Abas do escopo <code>artefatos</code> em <code>sessionStorage</code> (até 15, try/catch)</td>
+</tr>
+<tr>
+<td><code>features/artifacts/useSaveToArtifacts.js</code></td>
+<td>Regra e consulta do "☆ Salvar" no visualizador do chat</td>
+</tr>
+<tr>
+<td><code>features/artifacts/artifactModel.js</code></td>
+<td>Regras puras: recorte, busca, ordem, grupos, textos do cartão, links, caminho absoluto</td>
+</tr>
+<tr>
+<td><code>features/artifacts/artifactsApi.js</code></td>
+<td>Rotas de 7.10.3 (lista, criar, renomear, remover, candidatos, importar)</td>
+</tr>
+<tr>
+<td><code>features/artifacts/artifacts.css</code></td>
+<td>Estilos da tela (só tokens <code>--v2-*</code>, sem transform/filter)</td>
+</tr>
+<tr>
+<td><code>features/viewer/ViewerContext.jsx</code></td>
+<td>+ <code>restoreItems</code>, <code>syncItems</code>, <code>artifactsSignal</code>, <code>isArtifactPath</code></td>
+</tr>
+<tr>
+<td><code>features/viewer/ViewerPanel.jsx</code>, <code>ViewerDock.jsx</code>, <code>ViewerDrawer.jsx</code>, <code>ViewerFullscreen.jsx</code></td>
+<td>+ prop <code>onOpenPath</code> (links relativos em escopo local)</td>
+</tr>
+<tr>
+<td><code>features/viewer/ViewerToolbar.jsx</code></td>
+<td>+ botão <strong>☆ Salvar</strong></td>
+</tr>
+<tr>
+<td><code>layouts/v2/AppV2.jsx</code></td>
+<td><code>NAV_ITEMS</code>/<code>SCREEN_TITLES</code> + <code>artefatos</code>; <code>viewerOpen</code> soma a superfície <code>artefatos</code>; render de <code>ArtefatosV2</code></td>
+</tr>
+<tr>
+<td><code>layouts/v2/ClienteProjetoFilterBar.jsx</code></td>
+<td>+ <code>children</code> (controles extras na mesma linha; Board/Tarefas sem mudança)</td>
+</tr>
+<tr>
+<td>Testes</td>
+<td><code>artifactModel.test.js</code>, <code>ArtefatosV2.test.jsx</code>, <code>ArtifactActions.test.jsx</code>, <code>ImportArtifactsModal.test.jsx</code>; ampliados <code>ViewerContext.test.jsx</code>, <code>ViewerPanel.test.jsx</code>, <code>AppV2.test.jsx</code>, <code>MobileMenuScreen.test.jsx</code></td>
+</tr>
+<tr>
+<td><code>README.md</code></td>
+<td>Seção "Artefatos" e o ☆ Salvar na seção do visualizador</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7112-divergências-e-decisões-tomadas-na-implementação">7.11.2 Divergências e decisões tomadas na implementação</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Ponto</th>
+<th>Especificação</th>
+<th>Como ficou</th>
+<th>Por quê</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Filtros</td>
+<td>"no backend (<code>projeto_id</code>) ou no front; escolher <strong>uma</strong>" (7.5.3)</td>
+<td>Busca <code>GET /api/artifacts?cliente_id=</code> (ou sem nada em "Todos") <strong>uma vez</strong>; projeto, tipo, busca e ordem são recortes <strong>no front</strong> (<code>artifactModel.js</code>), com as MESMAS regras do backend (busca sem acento/caixa, "recentes" pelo maior entre <code>updated_at</code> e <code>mtime</code>, "nome" sem acento). O projeto usa o <code>isInScope</code> da Fase N</td>
+<td>Chips e busca respondem na hora, sem uma requisição por letra no iPad. E o <code>projeto_id</code> do backend não distingue a "Raiz" (só o cliente), que o <code>isInScope</code> já trata. Testado o caso de 3 níveis</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Barra de filtro</td>
+<td>"mesma linha" dos selects</td>
+<td><code>ClienteProjetoFilterBar</code> ganhou <code>children</code>; quebra de linha natural (<code>flex-wrap</code>) quando não cabe (iPad em pé com painel, celular)</td>
+<td>Reaproveita a barra em vez de copiar; Board e Tarefas não passam <code>children</code> e ficam idênticos</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Recolhimento</td>
+<td><code>viewerOpen</code> soma a superfície da tela (6.11.6)</td>
+<td><code>viewerOpen = (chat aberto e tela Chat) || (artefatos aberto e tela Artefatos)</code>; o Dock do chat só é desenhado com o painel do chat aberto na tela Chat</td>
+<td>Cada painel só conta na própria tela. Com os dois abertos, trocar de tela troca qual está encaixado</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Versão da aba</td>
+<td>—</td>
+<td>A aba do artefato usa como <code>updated_at</code> a <strong>versão do arquivo</strong> (maior entre publicação e <code>mtime</code>); a publicação fica em <code>published_at</code></td>
+<td>É a chave do cache de conteúdo e o <code>?v=</code> do iframe/PDF: arquivo alterado no disco sem nova publicação refaz o conteúdo no painel</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Abas abertas × lista</td>
+<td>—</td>
+<td><code>syncItems</code>: quando a lista recarrega, as abas abertas recebem os dados novos (título renomeado, versão) sem abrir aba nem mexer no painel</td>
+<td>Renomear ou o agente regravar o arquivo reflete no painel</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Persistência das abas</td>
+<td><code>sessionStorage</code> (7.5.4)</td>
+<td><code>restoreItems</code> na 1ª montagem da tela na página (não abre o painel); grava a cada mudança; tudo em try/catch</td>
+<td>Recarregar a página não deve jogar o painel na cara de quem só voltou à tela</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Links relativos num artefato</td>
+<td>Decidir (6.11.6)</td>
+<td>Destino que é <strong>artefato já carregado</strong> (mesmo projeto e caminho) → outra aba; qualquer outro → <strong>aba do navegador</strong> com <code>fileUrl</code> do artefato atual (<code>/api/artifacts/{id}/f/&lt;caminho resolvido&gt;</code>); fora do projeto → aviso</td>
+<td><code>openByPath</code> precisa de sessão. A rota <code>f/</code> já serve os vizinhos do projeto com as mesmas regras de segurança. Um <code>.md</code> aberto assim aparece como texto puro no navegador; <code>#L10</code> não destaca linha</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Lista desatualizada (7.5.5)</td>
+<td>"observar <code>viewer.scopes</code> ou ouvinte"</td>
+<td>Contador <code>artifactsSignal</code> no contexto (sobe em <code>receiveOpen</code> quando o <code>path</code> termina em .md/.markdown/.html/.htm/.pdf); recarga com espera de 300 ms; foco/visibilidade com intervalo mínimo de 2 s</td>
+<td>Sem polling; vários arquivos abertos em sequência viram uma busca</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Citar no chat</td>
+<td>"cola o caminho"</td>
+<td>Cola o caminho <strong>absoluto</strong> (<code>path</code> do projeto em <code>/api/projects</code> + caminho; no Windows com <code>\</code>), sem <code>\r</code>; desabilitado ("Abra um chat para citar") sem conversa ativa</td>
+<td>O agente ativo pode estar em outro projeto; relativo apontaria para o lugar errado</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Copiar caminho</td>
+<td>—</td>
+<td>Copia o caminho <strong>relativo</strong> ao projeto</td>
+<td>Igual ao ⋯ › Copiar caminho do visualizador</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Menu de arquivo sumido</td>
+<td>"ações: Remover da lista"</td>
+<td>Abrir (mostra o aviso do painel), Copiar caminho, Renomear e Remover; sem Baixar nem Citar</td>
+<td>Baixar/Citar dariam 404</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Toque longo</td>
+<td>—</td>
+<td>500 ms parado (cancela com mais de 10 px de movimento — rolar a lista), via Pointer Events; o clique ao soltar é ignorado; botão direito também abre; <code>-webkit-touch-callout: none</code> no cartão</td>
+<td>Sem a lupa/seleção do iOS por cima do menu</td>
+</tr>
+<tr>
+<td>13</td>
+<td>"☆ Salvar em Artefatos"</td>
+<td>"quando o item veio do chat e ainda não é artefato"</td>
+<td>Botão <strong>☆ Salvar</strong> (rótulo acessível "Salvar em Artefatos") na barra, para abas <code>source: 'viewer'</code> de .md/.markdown/.html/.htm/.pdf; "ainda não é" = não está em <code>GET /api/artifacts?projeto_id=&lt;projeto da aba&gt;</code> (cache de 15 s por projeto, limpo ao salvar). Depois: "★ Salvo" por 1,2 s, aviso "Salvo em Artefatos" (ou "Já estava em Artefatos" no 200) e o botão some</td>
+<td>O que o agente abre desses tipos já vira artefato sozinho; o botão serve ao que você abriu (link, terminal) e ao que foi removido da lista. Rótulo curto porque a barra do painel encaixado tem 420 px</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Importar</td>
+<td>Candidatos "do projeto escolhido"</td>
+<td>O modal tem um select de projeto (os do escopo atual da tela; em "Todos", todos), pré-escolhido com o projeto do filtro (ou o cliente). Sucesso parcial deixa no modal só os que falharam, com o motivo</td>
+<td>Importar exige um projeto, e o Bruno pode estar olhando o cliente inteiro</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Renomear</td>
+<td>—</td>
+<td><code>CenteredModal</code> com o foco no campo de texto (o teclado sobe)</td>
+<td>Quem tocou em "Renomear" quer digitar (o contrato do <code>CenteredModal</code> evita isso só no "Novo chat")</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Datas do rodapé</td>
+<td>"quando"</td>
+<td>"agora", "há 5 min", "há 2 h", "ontem", "há 3 d" e, depois de uma semana, "24 set" (com o ano se não for o atual); "atualizado há X" quando o <code>mtime</code> passou da publicação em mais de 2 s</td>
+<td>7.2, "Arquivo alterado depois de publicado"</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Subprojeto na grade</td>
+<td>—</td>
+<td>Com um projeto escolhido que tem subprojetos, o caminho do cartão de um subprojeto vem prefixado ("v2 · README.md")</td>
+<td>Dois <code>README.md</code> não parecem o mesmo arquivo</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Celular</td>
+<td>"lista em uma coluna, abrir vai para tela cheia"</td>
+<td>Igual; a tela cheia só aparece com a tela à vista (não por cima do menu); a busca usa 16 px no celular (o iOS dá zoom em campo menor)</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="7113-testes-e-tamanho">7.11.3 Testes e tamanho</h3>
+<p><code>npm test</code>: <strong>94 arquivos, 1635 testes, todos passando</strong> (eram 90/1584).
+Cobrem os itens "Frontend" de 7.7: agrupa por projeto com "Todos os
+projetos"; grade com projeto escolhido (subárvore de 3 níveis e Raiz);
+chips, busca sem acento e ordem; estados vazio, carregando (6 esqueletos) e
+erro; cartão <code>exists:false</code> com selo e borda tracejada; tocar abre o painel
+com a aba e outro cartão abre a segunda; remover exige 2 toques e chama
+<code>DELETE</code>; item "Artefatos" na sidebar (entre Tarefas e Configuração) e no menu
+do celular; encaixe com a sidebar recolhida sem gravar a preferência, gaveta em
+641–1099 px; abas no <code>sessionStorage</code> (e storage bloqueado não quebra);
+links relativos; recarga no <code>viewer_open</code> de <code>.md</code> (e não de <code>.py</code>); menu,
+citar, renomear, importar e o ☆ Salvar. <code>fixedPositioningInvariant.test.js</code>
+continua passando.</p>
+<p><code>npm run build</code>: <code>index-*.js</code> 957,91 kB · gzip 274,00 kB (+8,5 kB gzip sobre a
+V-2); <code>index-*.css</code> 31,48 kB · gzip 7,33 kB (+1,4 kB).</p>
+<h3 id="7114-verificação-visual">7.11.4 Verificação visual</h3>
+<p>Backend real (<code>uvicorn</code>) com <code>PROJECTS_ROOT</code> temporário: <code>podesubir</code> (com
+<code>site-institucional</code>, <code>api-pagamentos</code> e <code>api-pagamentos/v2</code>) e <code>cliente-x</code>
+(com <code>site</code>), todos com <code>.claude/</code>; <code>.md</code>, <code>.html</code> com <code>style.css</code> e imagem
+vizinhos, um PDF de 4 páginas, um <code>node_modules/</code> (não aparece nos
+candidatos). Os artefatos foram criados por <code>POST /api/artifacts</code> e o
+<code>created_by</code>/<code>agent_label</code>/datas ajustados no banco para simular agentes
+(claude/codex) e idades diferentes; <code>docs/fluxo.html</code> foi apagado do disco
+depois de publicado. Frontend com <code>vite</code> e Playwright/Chromium em
+1180×820, 820×1180 e 390×844, em <code>capturas/fase-a/</code>:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tela</th>
+<th>1180×820 (encaixado)</th>
+<th>820×1180 (por cima)</th>
+<th>390×844 (tela cheia)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lista em "Todos" (grupos)</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--1-lista-todos.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--1-lista-todos.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--1-lista-todos.png">ver</a></td>
+</tr>
+<tr>
+<td>Projeto escolhido na sidebar (grade)</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--2-lista-projeto.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--2-lista-projeto.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--2-lista-projeto.png">ver</a></td>
+</tr>
+<tr>
+<td>Cartão "arquivo não encontrado"</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--3-arquivo-nao-encontrado.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--3-arquivo-nao-encontrado.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--3-arquivo-nao-encontrado.png">ver</a></td>
+</tr>
+<tr>
+<td>Painel com o markdown</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--4-painel-markdown.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--4-painel-markdown.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--4-painel-markdown.png">ver</a></td>
+</tr>
+<tr>
+<td>Painel com 2 abas (md + html)</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--5-painel-2-abas-html.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--5-painel-2-abas-html.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--5-painel-2-abas-html.png">ver</a></td>
+</tr>
+<tr>
+<td>PDF</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--6-pdf.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--6-pdf.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--6-pdf.png">ver</a></td>
+</tr>
+<tr>
+<td>Tela cheia</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--7-tela-cheia.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--7-tela-cheia.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--7-tela-cheia.png">ver</a></td>
+</tr>
+<tr>
+<td>Menu do cartão</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--8-menu-do-cartao.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--8-menu-do-cartao.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--8-menu-do-cartao.png">ver</a></td>
+</tr>
+<tr>
+<td>Importar do projeto</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--9-importar-do-projeto.png">ver</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--9-importar-do-projeto.png">ver</a></td>
+<td><a href="capturas/fase-a/celular-390x844--9-importar-do-projeto.png">ver</a></td>
+</tr>
+<tr>
+<td>☆ Salvar no visualizador do chat</td>
+<td><a href="capturas/fase-a/ipad-paisagem-1180x820--10-chat-salvar-em-artefatos.png">ver</a> · <a href="capturas/fase-a/ipad-paisagem-1180x820--11-chat-salvo-em-artefatos.png">salvo</a></td>
+<td><a href="capturas/fase-a/ipad-retrato-820x1180--10-chat-salvar-em-artefatos.png">ver</a> · <a href="capturas/fase-a/ipad-retrato-820x1180--11-chat-salvo-em-artefatos.png">salvo</a></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>Conferido no script (medido, não só olhado): <strong>nenhuma rolagem horizontal</strong>
+(<code>scrollWidth − clientWidth = 0</code> na página, na lista, na barra de filtro e no
+corpo do painel em todas as capturas). Em 1180×820 a sidebar virou trilho com
+o painel aberto e voltou ao fechar. O PDF aparece em branco nas capturas
+porque o Chromium sem interface não tem leitor de PDF (o mesmo da V-2); ↗ e ⤓
+ficam à vista. Na cena do chat, a conversa foi aberta por WebSocket e o
+arquivo <code>docs/notas.md</code> aberto por <code>POST /api/sessions/{sk}/viewer</code> (como um
+link tocado); a lista de chats aparece vazia porque o teste não criou a
+conversa pela tela.</p>
+<h3 id="7115-pendências-verificar-no-aparelho">7.11.5 Pendências (verificar no aparelho)</h3>
+<ul>
+<li>Toque longo no cartão no Safari do iPad (gesto e ausência da lupa/menu do sistema).</li>
+<li>Baixar pelo menu do cartão no Safari/PWA (Arquivos › Downloads).</li>
+<li>PDF no painel do Safari (só a 1ª página? — ↗ abre no leitor nativo).</li>
+<li>Link relativo de um artefato que não está na lista abre o arquivo cru numa
+  aba do navegador (um <code>.md</code> aparece como texto). Se incomodar, a evolução
+  natural é abrir pela conversa ativa (<code>openByPath</code>) quando houver uma no
+  mesmo projeto.</li>
+<li>Paginação da lista (7.8) continua não implementada no backend; a tela busca
+  a lista do cliente inteira.</li>
+<li>Regenerar os HTML (<code>build_html.py</code>) e atualizar o <code>CONTEXTO-PARA-AGENTE.md</code>:
+  fica para o integrador.</li>
+</ul><div class="pager"><a href="06-planejamento-fase-v.html"><small>Anterior</small>6 · Planejamento da Fase V</a><a class="next" href="08-planejamento-navegacao-cliente-projeto.html"><small>Próxima</small>8 · Planejamento da Fase N</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

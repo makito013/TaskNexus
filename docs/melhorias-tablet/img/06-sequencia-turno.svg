@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 760" role="img" aria-label="Sequência de um turno no modo chat: envio da mensagem, streaming de texto, pedido de permissão aprovado pelo usuário, resultado da ferramenta e fim do turno com notificação">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3b3530"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2f7564"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#b07a12"/></marker>
+  </defs>
+  <style>
+    text{font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;fill:#3b3530}
+    .m{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+    .h{font-size:13px;font-weight:700}
+    .s{font-size:11.5px}
+    .d{font-size:11px;fill:#8a8378}
+    .gt{fill:#2f7564}
+    .ot{fill:#8a5b05}
+  </style>
+  <rect width="1000" height="760" rx="14" fill="#f7f5f0"/>
+
+  <!-- lifelines -->
+  <g>
+    <rect x="30" y="20" width="150" height="40" rx="8" fill="#ffffff" stroke="#d8d3c8"/><text x="105" y="45" class="h" text-anchor="middle">Você (iPad)</text>
+    <rect x="270" y="20" width="150" height="40" rx="8" fill="#ffffff" stroke="#3f8f7c" stroke-width="1.5"/><text x="345" y="45" class="h" text-anchor="middle">ChatView</text>
+    <rect x="510" y="20" width="190" height="40" rx="8" fill="#ffffff" stroke="#3f8f7c" stroke-width="1.5"/><text x="605" y="45" class="h" text-anchor="middle">ChatSessionManager</text>
+    <rect x="790" y="20" width="180" height="40" rx="8" fill="#ffffff" stroke="#5b6fbf" stroke-width="1.5"/><text x="880" y="45" class="h" text-anchor="middle">claude -p (stream-json)</text>
+    <line x1="105" y1="60" x2="105" y2="740" stroke="#c9c3b7" stroke-dasharray="4 5"/>
+    <line x1="345" y1="60" x2="345" y2="740" stroke="#c9c3b7" stroke-dasharray="4 5"/>
+    <line x1="605" y1="60" x2="605" y2="740" stroke="#c9c3b7" stroke-dasharray="4 5"/>
+    <line x1="880" y1="60" x2="880" y2="740" stroke="#c9c3b7" stroke-dasharray="4 5"/>
+  </g>
+
+  <!-- 1 -->
+  <line x1="105" y1="95" x2="341" y2="95" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="115" y="88" class="s">digita e toca Enviar</text>
+  <line x1="345" y1="125" x2="601" y2="125" stroke="#2f7564" stroke-width="1.8" marker-end="url(#g)"/>
+  <text x="355" y="118" class="s m gt">{"type":"send","text":"…"}</text>
+  <rect x="611" y="136" width="260" height="40" rx="6" fill="#eef6f2" stroke="#3f8f7c"/>
+  <text x="621" y="153" class="d">grava user_message (seq 41)</text>
+  <text x="621" y="169" class="d">processo vivo? senão spawn --resume id</text>
+  <line x1="605" y1="195" x2="876" y2="195" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="615" y="188" class="s m">stdin: {"type":"user","message":…}</text>
+
+  <!-- 2 streaming -->
+  <line x1="880" y1="232" x2="609" y2="232" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="890" y="236" class="d">stream_event</text>
+  <text x="620" y="226" class="s m">content_block_delta (texto)</text>
+  <line x1="605" y1="262" x2="349" y2="262" stroke="#2f7564" stroke-width="1.8" marker-end="url(#g)"/>
+  <text x="360" y="256" class="s m gt">text_delta seq 42…57</text>
+  <line x1="345" y1="290" x2="109" y2="290" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="120" y="284" class="s">texto aparece aos poucos</text>
+
+  <!-- 3 tool -->
+  <line x1="880" y1="330" x2="609" y2="330" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="620" y="324" class="s m">assistant: tool_use Edit</text>
+  <line x1="880" y1="365" x2="609" y2="365" stroke="#b07a12" stroke-width="1.8" marker-end="url(#o)"/>
+  <text x="620" y="359" class="s m ot">MCP aprovar_ferramenta (via adapter)</text>
+  <line x1="605" y1="398" x2="349" y2="398" stroke="#b07a12" stroke-width="1.8" marker-end="url(#o)"/>
+  <text x="360" y="392" class="s m ot">permission_request {id, tool, input}</text>
+  <rect x="115" y="410" width="220" height="44" rx="8" fill="#fdf6e6" stroke="#e5c77f"/>
+  <text x="125" y="428" class="d ot">cartão amarelo + push se a aba</text>
+  <text x="125" y="444" class="d ot">estiver fechada</text>
+  <line x1="105" y1="475" x2="341" y2="475" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="115" y="468" class="s">toca "Permitir uma vez"</text>
+  <line x1="345" y1="505" x2="601" y2="505" stroke="#2f7564" stroke-width="1.8" marker-end="url(#g)"/>
+  <text x="355" y="498" class="s m gt">permission_response allow</text>
+  <line x1="605" y1="535" x2="876" y2="535" stroke="#b07a12" stroke-width="1.8" marker-end="url(#o)"/>
+  <text x="615" y="528" class="s m ot">resposta da tool {behavior:"allow"}</text>
+  <line x1="880" y1="570" x2="609" y2="570" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="620" y="564" class="s m">user: tool_result (ok)</text>
+  <line x1="605" y1="598" x2="349" y2="598" stroke="#2f7564" stroke-width="1.8" marker-end="url(#g)"/>
+  <text x="360" y="592" class="s m gt">tool_result · cartão vira ✓</text>
+
+  <!-- 4 end -->
+  <line x1="880" y1="640" x2="609" y2="640" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="620" y="634" class="s m">result {cost, duration, usage}</text>
+  <rect x="611" y="650" width="260" height="40" rx="6" fill="#eef6f2" stroke="#3f8f7c"/>
+  <text x="621" y="667" class="d">mark_needs_attention + push</text>
+  <text x="621" y="683" class="d">(mesmo caminho do hook Stop atual)</text>
+  <line x1="605" y1="712" x2="349" y2="712" stroke="#2f7564" stroke-width="1.8" marker-end="url(#g)"/>
+  <text x="360" y="706" class="s m gt">turn_end · status idle</text>
+  <line x1="345" y1="732" x2="109" y2="732" stroke="#3b3530" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="120" y="726" class="s">custo e tempo no rodapé</text>
+</svg>

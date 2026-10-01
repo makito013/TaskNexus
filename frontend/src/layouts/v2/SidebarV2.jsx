@@ -20,6 +20,10 @@
 // NavTabs.jsx/ClienteList.jsx (reaproveitados pelo menu mobile via
 // MobileMenuScreen.jsx) — nenhuma mudança de comportamento aqui, só troca de
 // onde o JSX vive fisicamente.
+//
+// Fase N (drill-down Clientes → Projetos): só REPASSA ao ClienteList o escopo
+// de navegação (`projects`, projeto selecionado, nível e pai) e os handlers do
+// drill-down, que vêm do useNavScope no AppV2. Nenhum estado novo aqui.
 
 import { AppearanceSwitch } from '../../components/AppearanceSwitch.jsx';
 import { NavTabs } from './NavTabs.jsx';
@@ -86,8 +90,16 @@ export function SidebarV2({
   collapsed,
   onToggleCollapsed,
   clientes = [],
+  projects = [],
   selectedClienteId,
+  selectedProjetoId = null,
+  navLevel = 'clientes',
+  navParentId = null,
   onSelectCliente,
+  onEnterCliente,
+  onSelectProjeto,
+  onEnterProjeto,
+  onBack,
   navItems = [],
   activeScreen,
   onSelectScreen,
@@ -122,8 +134,16 @@ export function SidebarV2({
 
         <ClienteList
           clientes={clientes}
+          projects={projects}
           selectedClienteId={selectedClienteId}
+          selectedProjetoId={selectedProjetoId}
+          level={navLevel}
+          parentId={navParentId}
           onSelectCliente={onSelectCliente}
+          onEnterCliente={onEnterCliente}
+          onSelectProjeto={onSelectProjeto}
+          onEnterProjeto={onEnterProjeto}
+          onBack={onBack}
           collapsed={collapsed}
         />
       </div>

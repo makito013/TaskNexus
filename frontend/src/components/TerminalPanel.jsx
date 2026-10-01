@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState, useImperativeHandle, forwardRef }
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '../services/api.js';
 import { resolveTerminalSkin } from './terminalSkin.js';
 import { MOBILE_VIEWPORT_QUERY } from '../utils/viewport.js';
 import { useKeyboardSuppressed } from '../hooks/useKeyboardSuppressed.js';
+import { useViewerActions } from '../features/viewer/ViewerContext.jsx';
+import { sessionScope } from '../features/viewer/viewerApi.js';
+import { createFilePathLinkProvider, openWebLink } from '../features/viewer/terminalLinks.js';
 
 // Bug 2 fix: recognized WS text-frame types sent by the backend as control
 // frames (as opposed to PTY output, which always travels as bytes/Blob — see
@@ -18,7 +22,11 @@ import { useKeyboardSuppressed } from '../hooks/useKeyboardSuppressed.js';
 // alias/function that isn't a real executable on PATH) — same "keep the
 // socket open, don't let onclose reconnect into the same failure forever"
 // shape as resume_failed.
-const CONTROL_FRAME_TYPES = new Set(['resume_failed', 'spawn_failed']);
+// 'viewer_open' (Fase V, docs/melhorias-tablet/06-planejamento-fase-v.md,
+// 6.4.4/6.10.3): o agente chamou a tool abrir_no_visualizador e o backend avisa
+// a tela pelo MESMO socket do terminal — `{type, item, reused, evicted}`. Vai
+// para o ViewerContext; nunca para o xterm.
+const CONTROL_FRAME_TYPES = new Set(['resume_failed', 'spawn_failed', 'viewer_open']);
 
 /** Pure/testable: returns the parsed control frame if `data` is a JSON string
  * whose `type` is in the allowlist above, otherwise null. `null` means "not a
@@ -180,6 +188,15 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
   const keyboardSuppressedRef = useRef(keyboardSuppressed);
   keyboardSuppressedRef.current = keyboardSuppressed;
 
+  // Fase V-2: o visualizador de arquivos. `null` fora do ViewerProvider (este
+  // componente é montado isolado em vários testes) — quem usa checa. Ref pelo
+  // mesmo motivo do `keyboardSuppressedRef`: o efeito grande abaixo recria o
+  // Terminal e o WebSocket; o contexto NÃO pode entrar nas dependências de lá.
+  // Só as ações (identidade estável): este painel não re-renderiza a cada aba.
+  const viewer = useViewerActions();
+  const viewerRef = useRef(viewer);
+  viewerRef.current = viewer;
+
   // Expose sendControlByte for the IpadToolbar via ref (TERM-03)
   useImperativeHandle(ref, () => ({
     sendControlByte(bytes) {
@@ -331,6 +348,34 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
       console.warn('WebGL addon unavailable, falling back to default renderer', e);
     }
 
+    // 3c. Fase V-2 (06-planejamento-fase-v.md, 6.5.6): links clicáveis — era o
+    // problema de origem ("não dá para clicar em links no terminal").
+    //  - URLs http(s) pelo addon oficial, abrindo numa aba do navegador sem
+    //    `opener` (openWebLink).
+    //  - Caminhos de arquivo (`docs/plano.md`, `src/app.py:42`) por um link
+    //    provider nosso, que abre no visualizador (POST da tela, 6.10.3). Só
+    //    sublinha quando há visualizador (fora do Provider, ex.: testes
+    //    isolados, não faz nada).
+    // No iPad o xterm ativa link por clique; o toque precisa ser conferido no
+    // aparelho (6.5.6). O caminho garantido continua sendo o agente chamar a
+    // tool abrir_no_visualizador. Os dublês de teste do xterm não têm
+    // registerLinkProvider — daí a checagem.
+    const linkDisposables = [];
+    try {
+      term.loadAddon(new WebLinksAddon(openWebLink));
+    } catch (e) {
+      console.warn('Web links addon unavailable', e);
+    }
+    if (typeof term.registerLinkProvider === 'function') {
+      linkDisposables.push(term.registerLinkProvider(createFilePathLinkProvider(
+        term,
+        (path, line) => {
+          viewerRef.current?.openByPath(sessionScope(sessionKey), path, { linha: line ?? undefined });
+        },
+        () => !!viewerRef.current,
+      )));
+    }
+
     // 4. Connect WebSocket (wrapped so onclose can reconnect without recreating the Terminal)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/pty/${sessionKey}`;
@@ -379,6 +424,16 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
                 setResumeFailed(true);
               } else if (controlFrame.type === 'spawn_failed') {
                 setSpawnFailedDetail(controlFrame.detail || 'Comando do agente não pôde ser iniciado.');
+              } else if (controlFrame.type === 'viewer_open') {
+                // A aba já está gravada no banco antes do frame sair; sem
+                // Provider (teste isolado) o frame é só descartado — nunca
+                // escrito no terminal como texto.
+                viewerRef.current?.receiveOpen(
+                  sessionKey,
+                  controlFrame.item,
+                  !!controlFrame.reused,
+                  Array.isArray(controlFrame.evicted) ? controlFrame.evicted : [],
+                );
               }
             } else {
               term.write(event.data);
@@ -722,6 +777,7 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
       }
       dataSub.dispose();
       resizeSub.dispose();
+      linkDisposables.forEach((d) => d?.dispose?.());
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

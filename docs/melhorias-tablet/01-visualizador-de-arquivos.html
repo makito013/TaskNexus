@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Visualizador de arquivos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a class="on" href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a class="on" href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#10-primeira-entrega-o-agente-abre-o-arquivo-na-tela-fase-v">1.0 Primeira entrega: o agente abre o arquivo na tela (Fase V)</a></li><li><a href="#11-histórias-de-uso-ux">1.1 Histórias de uso (UX)</a><ul><li><a href="#fluxos-principais">Fluxos principais</a></li><li><a href="#estados-que-precisam-existir">Estados que precisam existir</a></li></ul></li><li><a href="#12-design">1.2 Design</a></li><li><a href="#13-arquitetura-tl">1.3 Arquitetura (TL)</a><ul><li><a href="#131-por-que-um-token-de-projeto-na-url">1.3.1 Por que um &quot;token de projeto&quot; na URL</a></li><li><a href="#132-endpoints-novos">1.3.2 Endpoints novos</a></li><li><a href="#133-onde-colocar-o-código">1.3.3 Onde colocar o código</a></li></ul></li><li><a href="#14-segurança-tl-leia-com-atenção">1.4 Segurança (TL) — leia com atenção</a><ul><li><a href="#141-contenção-de-caminho">1.4.1 Contenção de caminho</a></li><li><a href="#142-denylist-nunca-exibir-nem-baixar">1.4.2 Denylist (nunca exibir nem baixar)</a></li><li><a href="#143-html-isolado">1.4.3 HTML isolado</a></li><li><a href="#144-limites">1.4.4 Limites</a></li></ul></li><li><a href="#15-frontend-dev">1.5 Frontend (Dev)</a><ul><li><a href="#151-dependências-novas">1.5.1 Dependências novas</a></li><li><a href="#152-componentes">1.5.2 Componentes</a></li><li><a href="#153-markdown-como-no-github">1.5.3 Markdown &quot;como no GitHub&quot;</a></li><li><a href="#154-baixar-e-compartilhar-no-ipad">1.5.4 Baixar e compartilhar no iPad</a></li><li><a href="#155-links-de-arquivo-no-texto-usado-também-pelo-chat">1.5.5 Links de arquivo no texto (usado também pelo chat)</a></li><li><a href="#156-rota-e-navegação">1.5.6 Rota e navegação</a></li></ul></li><li><a href="#16-testes-e-critérios-de-aceite">1.6 Testes e critérios de aceite</a><ul><li><a href="#backend-pytest">Backend (pytest)</a></li><li><a href="#frontend-vitest">Frontend (vitest)</a></li><li><a href="#aceite-manual-no-ipad-safari-e-pwa-instalado">Aceite manual no iPad (Safari e PWA instalado)</a></li></ul></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 1 de 8</p><h1 id="parte-1-visualizador-de-arquivos-ver-navegar-e-baixar-pelo-tablet">Parte 1 — Visualizador de arquivos (ver, navegar e baixar pelo tablet)</h1>
+<blockquote>
+<p><strong>Objetivo:</strong> com o TaskNexus rodando no PC, abrir no iPad qualquer arquivo
+dos projetos (<code>.md</code>, <code>.html</code>, código, imagens, PDF), ler com conforto,
+copiar trechos e <strong>baixar ou compartilhar</strong> o arquivo para o próprio tablet.</p>
+<p><strong>Pré-requisito obrigatório:</strong> autenticação (Parte 4, item 4.1). Sem ela,
+esta API expõe arquivos do seu PC para qualquer aparelho da rede.</p>
+<p><strong>Atualização:</strong> esta parte virou a <strong>segunda</strong> etapa do visualizador. A
+primeira é a <strong>Fase V</strong> (seção 1.0 e <a href="06-planejamento-fase-v.html">Parte 6</a>):
+o próprio agente abre o arquivo na tela, porque hoje não dá para clicar em
+links no terminal.</p>
+</blockquote>
+<figure><img src="img/04-mockup-arquivos-ipad.svg" alt="Mockup do visualizador no iPad" loading="lazy"><figcaption>Mockup do visualizador no iPad</figcaption></figure>
+<p>Legenda do mockup: <strong>A</strong> ações do arquivo (baixar, compartilhar, citar no
+chat) · <strong>B</strong> abas Preview / Código / Diff · <strong>C</strong> filtros "Alterados"
+(git) e "Recentes" · <strong>D</strong> bloco de código com botão Copiar.</p>
+<hr />
+<h2 id="10-primeira-entrega-o-agente-abre-o-arquivo-na-tela-fase-v">1.0 Primeira entrega: o agente abre o arquivo na tela (Fase V)</h2>
+<p>Hoje o chat é um terminal e os links não são clicáveis. Por isso, antes da
+árvore de pastas e da busca, vem uma entrega menor e mais urgente:</p>
+<ul>
+<li><strong>O agente mostra o arquivo:</strong> uma ferramenta MCP nova,
+  <code>abrir_no_visualizador(caminho, titulo?, linha?)</code>, registrada para o
+  <code>claude</code> e o <code>codex</code> do mesmo jeito que as ferramentas de card e tarefa. A
+  descrição da ferramenta orienta o agente a usá-la sempre que criar ou
+  alterar um arquivo que você deva ver.</li>
+<li><strong>Cada abertura é uma aba nova</strong> num <strong>visualizador em dropdown</strong>, que fica no
+  cabeçalho do chat, ao lado de "Anexos". O mesmo arquivo pedido de novo
+  reaproveita a aba e recarrega o conteúdo.</li>
+<li><strong>Botão Tela cheia:</strong> o dropdown vira um <strong>modal de tela cheia</strong> na página,
+  com as mesmas abas e um botão <strong>✕ Fechar</strong>. No celular abre sempre em tela cheia.</li>
+<li><strong>Aviso ao vivo</strong> pelo WebSocket do terminal que já está aberto (frame de
+  controle <code>viewer_open</code>). As abas ficam salvas no banco, então nada se perde
+  se a tela estiver fechada.</li>
+<li><strong>Baixar, copiar e abrir no navegador</strong> em cada aba. Markdown como no GitHub,
+  HTML isolado em <code>iframe</code> sandbox e código com destaque de sintaxe.</li>
+<li><strong>Bônus:</strong> links <code>https://</code> e caminhos de arquivo no terminal ficam
+  clicáveis (addon de links do xterm) e abrem no visualizador.</li>
+</ul>
+<figure><img src="img/10-mockup-visualizador-dropdown.svg" alt="Dropdown e tela cheia" loading="lazy"><figcaption>Dropdown e tela cheia</figcaption></figure>
+<p>O plano completo, com contratos, arquivos, testes e aceite, está na
+<a href="06-planejamento-fase-v.html">Parte 6 — Planejamento da Fase V</a>. O código dessa
+fase (<code>file_access.py</code>, renderers, <code>DiffRenderer</code> futuro) é reaproveitado pelo
+restante desta Parte 1.</p>
+<hr />
+<h2 id="11-histórias-de-uso-ux">1.1 Histórias de uso (UX)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Como…</th>
+<th>Quero…</th>
+<th>Para…</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H1</td>
+<td>usuário no iPad</td>
+<td>tocar num caminho de arquivo citado pelo agente no chat</td>
+<td>ver o arquivo sem sair da conversa</td>
+</tr>
+<tr>
+<td>H2</td>
+<td>usuário no iPad</td>
+<td>navegar pelas pastas do projeto e buscar por nome</td>
+<td>achar um arquivo que não foi citado</td>
+</tr>
+<tr>
+<td>H3</td>
+<td>usuário revisando o trabalho do agente</td>
+<td>ver só os arquivos alterados e o diff</td>
+<td>revisar o que mudou antes de aprovar</td>
+</tr>
+<tr>
+<td>H4</td>
+<td>usuário</td>
+<td>ver um <code>.md</code> renderizado como no GitHub (tabelas, checklists, código, mermaid)</td>
+<td>ler documentação e planos</td>
+</tr>
+<tr>
+<td>H5</td>
+<td>usuário</td>
+<td>ver um <code>.html</code> renderizado de verdade, com o CSS dele</td>
+<td>conferir relatórios e protótipos gerados pelo agente</td>
+</tr>
+<tr>
+<td>H6</td>
+<td>usuário</td>
+<td>baixar o arquivo ou mandar por AirDrop / WhatsApp / Arquivos</td>
+<td>usar o arquivo fora do TaskNexus</td>
+</tr>
+<tr>
+<td>H7</td>
+<td>usuário</td>
+<td>selecionar e copiar um trecho com o toque nativo</td>
+<td>colar em outro app</td>
+</tr>
+<tr>
+<td>H8</td>
+<td>usuário</td>
+<td>"citar no chat" um arquivo ou trecho</td>
+<td>pedir ao agente para mexer exatamente ali</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="fluxos-principais">Fluxos principais</h3>
+<ol>
+<li><strong>Do chat para o arquivo (H1):</strong> toque no link <code>backend/app/main.py:42</code> →
+   abre o painel de contexto (iPad deitado), um slide-over (iPad em pé) ou uma
+   tela nova (celular) → rola até a linha 42 e a destaca por 2 s → botão "voltar"
+   ou gesto de arrastar para a direita fecha.</li>
+<li><strong>Navegar (H2):</strong> aba <strong>Arquivos</strong> → escolhe o projeto (padrão: o projeto
+   da conversa ativa) → árvore carregada por pasta, sob demanda → toque no
+   arquivo abre o viewer.</li>
+<li><strong>Buscar (H2):</strong> <code>⌘P</code> no teclado físico, ou o campo de busca → busca
+   aproximada por nome (estilo VS Code) → Enter/toque abre.</li>
+<li><strong>Revisar (H3):</strong> chip "Alterados · N" → lista do <code>git status</code> → toque
+   abre direto na aba <strong>Diff</strong>.</li>
+<li><strong>Baixar (H6):</strong> botão <strong>Baixar</strong> → Safari mostra o aviso de download →
+   arquivo cai em Arquivos › Downloads. Botão <strong>Compartilhar</strong> → folha de
+   compartilhamento do iPadOS.</li>
+</ol>
+<h3 id="estados-que-precisam-existir">Estados que precisam existir</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Estado</th>
+<th>O que mostrar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Carregando</td>
+<td>esqueleto do documento (3–4 barras cinza), nunca spinner no meio da tela</td>
+</tr>
+<tr>
+<td>Arquivo grande (&gt; 1 MB)</td>
+<td>"Arquivo grande (4,3 MB). O preview foi desativado para não travar o tablet." + botões Baixar e "Mostrar as primeiras 2.000 linhas"</td>
+</tr>
+<tr>
+<td>Binário sem preview</td>
+<td>ícone do tipo, nome, tamanho, data, botão Baixar em destaque</td>
+</tr>
+<tr>
+<td>Arquivo bloqueado (denylist)</td>
+<td>"Este arquivo está protegido (segredos e chaves não são exibidos pelo TaskNexus)."</td>
+</tr>
+<tr>
+<td>Não encontrado / apagado</td>
+<td>"O arquivo não existe mais. Ele pode ter sido movido pelo agente." + botão "Buscar pelo nome"</td>
+</tr>
+<tr>
+<td>Sem permissão de leitura no disco</td>
+<td>mensagem do sistema operacional traduzida + caminho</td>
+</tr>
+<tr>
+<td>Arquivo mudou enquanto aberto</td>
+<td>faixa discreta no topo: "Arquivo alterado agora · Recarregar"</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="12-design">1.2 Design</h2>
+<ul>
+<li><strong>Estrutura:</strong> o viewer é um componente único (<code>FileViewer</code>) usado em três
+  lugares: tela <strong>Arquivos</strong>, <strong>painel de contexto</strong> ao lado do chat e <strong>folha
+  em tela cheia</strong> no celular. Mesmo componente, contêiner diferente.</li>
+<li><strong>Cabeçalho do arquivo:</strong> breadcrumb (<code>docs / plano-release.md</code>), linha de
+  metadados (tamanho, "alterado há 3 min", autor quando vier do agente) e
+  ações à direita. No celular, as ações viram ícones com rótulo acessível.</li>
+<li><strong>Abas:</strong> controle segmentado <code>Preview | Código | Diff</code>, 36 px de altura,
+  mesmo estilo do seletor Chat/Terminal (Parte 3). A aba Diff só aparece
+  quando o arquivo tem alteração no git.</li>
+<li><strong>Tipografia de leitura:</strong> corpo em Figtree 16 px / 1,6 no tablet
+  (15 px no celular), coluna de no máximo 76 caracteres; código em IBM Plex
+  Mono 13,5 px. Controle "Aa" com 3 tamanhos (salvo em <code>localStorage</code>).</li>
+<li><strong>Markdown:</strong> visual de referência é o GitHub: títulos com linha inferior
+  em H1/H2, tabelas com cabeçalho preenchido e rolagem horizontal própria,
+  checklists com caixas reais (somente leitura), citações com barra lateral
+  de 3 px na cor <code>--v2-border</code>, blocos de código escuros em ambos os temas.</li>
+<li><strong>Blocos de código:</strong> cabeçalho com linguagem + nome do arquivo quando
+  houver, botões <strong>Copiar</strong> e <strong>Quebrar linhas</strong>. Números de linha na aba
+  Código, não no Preview.</li>
+<li><strong>Árvore:</strong> linhas de 40 px (alvo de toque), indentação de 16 px por nível,
+  ícone por tipo, letra de status git à direita (<code>M</code> amarelo, <code>A</code> verde,
+  <code>D</code> vermelho, <code>?</code> cinza). Pastas ocultas por padrão com opção "Mostrar
+  ocultos".</li>
+<li><strong>Cores:</strong> apenas tokens <code>--v2-*</code> existentes. Diff usa <code>--v2-accent-soft</code>
+  para linhas adicionadas e <code>--v2-danger-soft</code> para removidas.</li>
+</ul>
+<hr />
+<h2 id="13-arquitetura-tl">1.3 Arquitetura (TL)</h2>
+<figure><img src="img/07-fluxo-visualizador.svg" alt="Fluxo do visualizador" loading="lazy"><figcaption>Fluxo do visualizador</figcaption></figure>
+<h3 id="131-por-que-um-token-de-projeto-na-url">1.3.1 Por que um "token de projeto" na URL</h3>
+<p>O <code>project_id</code> pode conter <code>/</code> (projetos aninhados, ex.: <code>podesubir/teste</code>).
+As rotas de anexos já usam <code>{project_id:path}</code>, o que funciona quando o
+sufixo é fixo. Para arquivos, precisamos de <strong>dois</strong> caminhos na mesma URL
+(o do projeto e o do arquivo), e a rota <code>raw</code> precisa que <strong>links relativos
+dentro de um HTML</strong> funcionem (<code>&lt;link href="style.css"&gt;</code> tem que resolver para
+o arquivo vizinho). Solução:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>project_token = base64url(project_id)  (sem padding "=")
+/api/fs/{project_token}/raw/{file_path:path}
+</code></pre></div>
+<p>Assim, um HTML em <code>/api/fs/cG9kZXN1Ymly/raw/docs/relatorio.html</code> que pede
+<code>style.css</code> faz o navegador buscar <code>/api/fs/cG9kZXN1Ymly/raw/docs/style.css</code>,
+que é exatamente o arquivo vizinho.</p>
+<h3 id="132-endpoints-novos">1.3.2 Endpoints novos</h3>
+<p>Todos exigem autenticação (4.1) e resolvem o projeto com a mesma lógica de
+<code>_resolve_project_or_404</code>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Método e rota</th>
+<th>Para quê</th>
+<th>Resposta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/fs/{token}/tree?path=docs</code></td>
+<td>lista <strong>uma</strong> pasta (lazy)</td>
+<td><code>{"path":"docs","entries":[{"name":"plano.md","type":"file","size":12034,"mtime":1727290000.1,"git":"M"}], "truncated":false}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/content?path=docs/plano.md</code></td>
+<td>metadados + texto para preview</td>
+<td><code>{"path","size","mtime","mime","kind":"markdown|html|code|image|pdf|video|binary","language":"python","is_text":true,"text":"…","truncated":false,"sha256":"…"}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/raw/{file_path}</code></td>
+<td>bytes do arquivo (preview de HTML, imagem, PDF)</td>
+<td><code>FileResponse</code> com <code>Content-Type</code> correto e cabeçalhos de segurança (1.4)</td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/raw/{file_path}?download=1</code></td>
+<td>download</td>
+<td>igual acima + <code>Content-Disposition: attachment; filename*=UTF-8''nome.ext</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/zip?path=docs</code></td>
+<td>baixar pasta</td>
+<td><code>StreamingResponse</code> de um zip gerado em streaming, com limite de 200 MB</td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/search?q=plano&amp;limit=50</code></td>
+<td>busca por nome</td>
+<td><code>{"results":[{"path":"docs/plano-release.md","score":0.92}]}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/git/status</code></td>
+<td>arquivos alterados</td>
+<td><code>{"is_repo":true,"branch":"main","files":[{"path":"docs/plano.md","status":"M","added":18,"removed":4}]}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/git/diff?path=docs/plano.md</code></td>
+<td>diff unificado de um arquivo</td>
+<td><code>{"path","diff":"@@ -1,4 +1,6 @@…","binary":false}</code></td>
+</tr>
+<tr>
+<td><code>GET /api/fs/{token}/events</code> (opcional, fase 2)</td>
+<td>aviso de "arquivo mudou"</td>
+<td>Server-Sent Events com <code>{"path","mtime"}</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Regras de implementação:</p>
+<ul>
+<li><strong><code>tree</code></strong>: ordena pastas primeiro, depois arquivos, ambos por nome sem
+  diferenciar maiúsculas. Máximo de 2.000 entradas por pasta (<code>truncated:true</code>
+  acima disso). Pastas ignoradas por padrão: <code>.git</code>, <code>node_modules</code>,
+  <code>__pycache__</code>, <code>.venv*</code>, <code>dist</code>, <code>build</code>, <code>.next</code>, <code>.pytest_cache</code>,
+  <code>.escritorio</code>. Parâmetro <code>show_hidden=1</code> mostra pontos-arquivos, <strong>nunca</strong>
+  os da denylist.</li>
+<li><strong><code>content</code></strong>: lê no máximo 1 MB. Detecta texto lendo os primeiros 8 KB
+  (sem byte <code>\x00</code> e decodificável como UTF-8, com fallback latin-1). <code>kind</code>
+  vem da extensão, <code>language</code> de um mapa extensão → id do Shiki
+  (<code>.py→python</code>, <code>.jsx→jsx</code>, <code>.ps1→powershell</code>, <code>Dockerfile→docker</code>…).</li>
+<li><strong><code>search</code></strong>: se <code>rg</code> (ripgrep) estiver no PATH, usa <code>rg --files</code> (respeita
+  <code>.gitignore</code>, muito rápido); senão, <code>os.walk</code> com as mesmas exclusões.
+  Pontuação por subsequência (estilo fuzzy do VS Code) feita em Python.
+  Cache por projeto de 30 s.</li>
+<li><strong><code>git/*</code></strong>: <code>git -C &lt;projeto&gt; status --porcelain=v1 -z</code> e
+  <code>git diff --numstat</code> / <code>git diff -- &lt;arquivo&gt;</code> via
+  <code>asyncio.create_subprocess_exec</code> (<strong>nunca</strong> <code>shell=True</code>), timeout de 5 s.
+  Arquivos não rastreados (<code>??</code>) mostram o conteúdo inteiro como adição.</li>
+<li><strong>Tudo que toca disco roda em thread</strong> (<code>asyncio.to_thread</code>) para não travar
+  o loop que também atende os WebSockets.</li>
+</ul>
+<h3 id="133-onde-colocar-o-código">1.3.3 Onde colocar o código</h3>
+<p>Não aumente o <code>main.py</code>. Crie:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/files_api.py        # APIRouter com as rotas acima
+backend/app/file_access.py      # resolve_safe_path, denylist, detecção de tipo
+backend/app/git_info.py         # status e diff via subprocess
+backend/tests/test_file_access.py
+backend/tests/test_files_api.py
+</code></pre></div>
+<p>e registre com <code>app.include_router(files_router)</code> no <code>main.py</code>.</p>
+<hr />
+<h2 id="14-segurança-tl-leia-com-atenção">1.4 Segurança (TL) — leia com atenção</h2>
+<h3 id="141-contenção-de-caminho">1.4.1 Contenção de caminho</h3>
+<p>Função única, usada por <strong>todas</strong> as rotas:</p>
+<div class="code"><div class="code-head"><span>python</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_safe_path</span><span class="p">(</span><span class="n">project_root</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rel_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Devolve o caminho absoluto real ou levanta PermissionError/FileNotFoundError."""</span>
+    <span class="k">if</span> <span class="s2">"</span><span class="se">\x00</span><span class="s2">"</span> <span class="ow">in</span> <span class="n">rel_path</span> <span class="ow">or</span> <span class="s2">"</span><span class="se">\\</span><span class="s2">"</span> <span class="ow">in</span> <span class="n">rel_path</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">PermissionError</span><span class="p">(</span><span class="s2">"caractere inválido"</span><span class="p">)</span>
+    <span class="n">candidate</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_root</span><span class="p">,</span> <span class="n">rel_path</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)))</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">project_root</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">commonpath</span><span class="p">([</span><span class="n">root</span><span class="p">,</span> <span class="n">candidate</span><span class="p">])</span> <span class="o">!=</span> <span class="n">root</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">PermissionError</span><span class="p">(</span><span class="s2">"fora do projeto"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_denied</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">relpath</span><span class="p">(</span><span class="n">candidate</span><span class="p">,</span> <span class="n">root</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">PermissionError</span><span class="p">(</span><span class="s2">"arquivo protegido"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">candidate</span>
+</code></pre></div>
+<ul>
+<li><code>realpath</code> resolve <strong>links simbólicos</strong>: um symlink dentro do projeto que
+  aponte para <code>~/.ssh</code> é recusado porque o destino real fica fora da raiz.</li>
+<li>A lógica é a mesma de <code>_is_within_directory</code> em <code>attachments.py</code>; reaproveite
+  ou extraia para um util comum, sem duplicar.</li>
+<li>O middleware <code>RejectBackslashPathMiddleware</code> já existente continua valendo.</li>
+</ul>
+<h3 id="142-denylist-nunca-exibir-nem-baixar">1.4.2 Denylist (nunca exibir nem baixar)</h3>
+<p><code>.env</code>, <code>.env.*</code> (exceto <code>.env.example</code>), <code>*.pem</code>, <code>*.key</code>, <code>*.p12</code>, <code>*.pfx</code>,
+<code>id_rsa*</code>, <code>id_ed25519*</code>, <code>*.kdbx</code>, <code>.git/</code> (conteúdo interno), <code>.npmrc</code>,
+<code>.pypirc</code>, <code>credentials*.json</code>, <code>*.sqlite</code>/<code>*.db</code> do próprio TaskNexus
+(<code>sessions.db</code>). A lista fica em <code>file_access.py</code> e é testada.</p>
+<h3 id="143-html-isolado">1.4.3 HTML isolado</h3>
+<p>Um HTML gerado pelo agente pode ter JavaScript. Se ele rodasse na mesma origem
+do TaskNexus, poderia chamar <code>/api/cards</code>, <code>/api/sessions/.../paste</code> (escrever
+no terminal do agente!) etc. Por isso, duas camadas:</p>
+<ol>
+<li><strong>No frontend:</strong> <code>&lt;iframe src="/api/fs/.../raw/relatorio.html" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"&gt;</code>,
+   <strong>sem</strong> <code>allow-same-origin</code>. O conteúdo roda numa origem opaca.</li>
+<li><strong>No backend</strong>, na rota <code>raw</code> para <code>text/html</code>, <code>image/svg+xml</code> e <code>text/xml</code>:
+   <div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>Content-Security-Policy: sandbox allow-scripts allow-popups; default-src * data: blob: 'unsafe-inline' 'unsafe-eval'
+X-Content-Type-Options: nosniff
+Cross-Origin-Resource-Policy: same-origin
+</code></pre></div>
+   A diretiva <code>sandbox</code> no cabeçalho protege até quando alguém abre a URL
+   direto numa aba, fora do iframe.</li>
+</ol>
+<p><strong>Armadilha importante (auth × sandbox):</strong> dentro de um iframe sem
+<code>allow-same-origin</code>, o navegador trata as requisições de CSS, imagens e
+scripts do HTML como vindas de outro site, e <strong>não envia o cookie de sessão</strong>
+(<code>SameSite=Lax</code>/<code>Strict</code>). Resultado: o HTML abriria sem estilo e sem imagens
+(401). A solução é uma URL de preview <strong>assinada no próprio caminho</strong>:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>GET /api/fs/{token}/preview-url?path=docs/relatorio.html
+→ {"url": "/api/fs/pv/{assinatura}/docs/relatorio.html", "expires_in": 900}
+
+assinatura = base64url(hmac_sha256(SECRET, f"{project_id}|{expira_em}")) + "." + expira_em
+</code></pre></div>
+<p>A rota <code>/api/fs/pv/{assinatura}/{file_path:path}</code> aceita a assinatura no lugar
+do cookie, vale para <strong>qualquer arquivo daquele projeto</strong> por 15 minutos
+(assim <code>style.css</code> e <code>img/logo.png</code> relativos funcionam) e aplica as mesmas
+regras de <code>resolve_safe_path</code> e denylist. O iframe usa essa URL.</p>
+<p>Além disso, como o <code>CORSMiddleware</code> hoje está com <code>allow_origins=["*"]</code>,
+restrinja para a própria origem quando a auth entrar (4.1). Uma origem opaca
+(<code>null</code>) não pode ser aceita.</p>
+<h3 id="144-limites">1.4.4 Limites</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Limite</th>
+<th>Valor</th>
+<th>Motivo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Texto no <code>content</code></td>
+<td>1 MB</td>
+<td>iPad renderizando markdown gigante trava</td>
+</tr>
+<tr>
+<td>Arquivo no <code>raw</code></td>
+<td>sem limite (streaming)</td>
+<td>download precisa funcionar para arquivos grandes</td>
+</tr>
+<tr>
+<td>Zip de pasta</td>
+<td>200 MB e 10.000 arquivos</td>
+<td>evitar travar o PC</td>
+</tr>
+<tr>
+<td>Entradas por pasta</td>
+<td>2.000</td>
+<td>árvore responsiva</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="15-frontend-dev">1.5 Frontend (Dev)</h2>
+<h3 id="151-dependências-novas">1.5.1 Dependências novas</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Pacote</th>
+<th>Uso</th>
+<th>Observação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>shiki</code></td>
+<td>destaque de sintaxe</td>
+<td>usar <code>createHighlighterCore</code> + <code>createOnigurumaEngine</code> (ou engine JS) e <strong>carregar cada linguagem sob demanda</strong> (<code>import('shiki/langs/python.mjs')</code>). Temas <code>github-light</code> e <code>github-dark</code>, trocados pelo <code>data-theme</code> já existente</td>
+</tr>
+<tr>
+<td><code>mermaid</code></td>
+<td>diagramas em markdown</td>
+<td><code>import('mermaid')</code> só quando o documento tiver bloco <code>```mermaid</code></td>
+</tr>
+<tr>
+<td><code>marked</code> + <code>dompurify</code></td>
+<td>já instalados</td>
+<td>reaproveitar <code>utils/markdown.js</code>, ampliando (1.5.3)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Não use <code>react-markdown</code> para não ter dois renderizadores de markdown no app.</p>
+<h3 id="152-componentes">1.5.2 Componentes</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/features/files/
+  FilesScreen.jsx          # tela "Arquivos": seletor de projeto + árvore + viewer
+  FileTree.jsx             # árvore lazy, teclado (setas) e toque
+  FileSearch.jsx           # busca ⌘P (modal no tablet, tela no celular)
+  FileViewer.jsx           # cabeçalho + abas + escolhe o renderizador pelo kind
+  renderers/
+    MarkdownRenderer.jsx   # marked + DOMPurify + Shiki + mermaid + links
+    HtmlRenderer.jsx       # iframe sandbox + alternância "ver código"
+    CodeRenderer.jsx       # Shiki com números de linha, #L42, quebra de linha
+    ImageRenderer.jsx      # &lt;img&gt; com zoom por pinça (CSS touch-action)
+    PdfRenderer.jsx        # &lt;iframe&gt; do PDF (Safari tem visualizador nativo)
+    BinaryRenderer.jsx     # só metadados + Baixar
+    DiffRenderer.jsx       # diff unificado com cores e números das duas versões
+  useFileContent.js        # busca /content, cache em memória por path+mtime
+  fileLinks.js             # detecta caminhos em texto e monta href interno
+  fsApi.js                 # funções fetch das rotas /api/fs
+</code></pre></div>
+<h3 id="153-markdown-como-no-github">1.5.3 Markdown "como no GitHub"</h3>
+<p>Amplie <code>utils/markdown.js</code> (hoje: <code>marked.parse</code> + <code>DOMPurify.sanitize</code>):</p>
+<ol>
+<li><code>marked.use({ gfm: true })</code> para tabelas, checklists, autolinks e riscado.</li>
+<li>Renderer de <code>code</code> que emite <code>&lt;pre data-lang="python"&gt;&lt;code&gt;…&lt;/code&gt;&lt;/pre&gt;</code>
+   e deixa o destaque para depois (Shiki é assíncrono): o componente percorre
+   os <code>&lt;pre data-lang&gt;</code> após montar e substitui pelo HTML do Shiki.</li>
+<li>IDs nos títulos (<code>slug</code>) para o índice lateral e para links <code>#secao</code>.</li>
+<li>Links:
+   - <code>http(s)://</code> → <code>target="_blank" rel="noopener noreferrer"</code>.
+   - Relativos (<code>../outro.md</code>, <code>img/x.png</code>) → resolvidos contra a pasta do
+     arquivo atual e abertos <strong>no próprio viewer</strong> (clique interceptado).
+   - Imagens relativas → <code>src</code> reescrito para <code>/api/fs/{token}/raw/...</code>.</li>
+<li>DOMPurify com <code>ADD_ATTR: ['target']</code> e hook <code>afterSanitizeAttributes</code>
+   que força <code>rel="noopener noreferrer"</code> em links externos.</li>
+<li>Blocos <code>mermaid</code> → <code>&lt;div class="mermaid-src"&gt;</code> renderizado com
+   <code>mermaid.render()</code> usando <code>securityLevel: 'strict'</code>.</li>
+</ol>
+<h3 id="154-baixar-e-compartilhar-no-ipad">1.5.4 Baixar e compartilhar no iPad</h3>
+<div class="code"><div class="code-head"><span>jsx</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="c1">// Baixar: link real, sem JavaScript. O Safari do iPadOS respeita</span>
+<span class="c1">// Content-Disposition: attachment e salva em Arquivos › Downloads.</span>
+<span class="p">&lt;</span><span class="nt">a</span><span class="w"> </span><span class="na">className</span><span class="o">=</span><span class="s">"btn"</span><span class="w"> </span><span class="na">href</span><span class="o">=</span><span class="p">{</span><span class="sb">`</span><span class="si">${</span><span class="nx">rawUrl</span><span class="si">}</span><span class="sb">?download=1`</span><span class="p">}</span><span class="w"> </span><span class="na">download</span><span class="o">=</span><span class="p">{</span><span class="nx">fileName</span><span class="p">}&gt;</span><span class="nx">Baixar</span><span class="p">&lt;/</span><span class="nt">a</span><span class="p">&gt;</span>
+
+<span class="c1">// Compartilhar: Web Share API nível 2 (suportada no Safari do iPadOS).</span>
+<span class="k">async</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">share</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">blob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="p">(</span><span class="k">await</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="nx">rawUrl</span><span class="p">)).</span><span class="nx">blob</span><span class="p">();</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">File</span><span class="p">([</span><span class="nx">blob</span><span class="p">],</span><span class="w"> </span><span class="nx">fileName</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="nx">blob</span><span class="p">.</span><span class="nx">type</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">navigator</span><span class="p">.</span><span class="nx">canShare</span><span class="o">?</span><span class="p">.({</span><span class="w"> </span><span class="nx">files</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">file</span><span class="p">]</span><span class="w"> </span><span class="p">}))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">await</span><span class="w"> </span><span class="nx">navigator</span><span class="p">.</span><span class="nx">share</span><span class="p">({</span><span class="w"> </span><span class="nx">files</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="nx">file</span><span class="p">],</span><span class="w"> </span><span class="nx">title</span><span class="o">:</span><span class="w"> </span><span class="nx">fileName</span><span class="w"> </span><span class="p">});</span>
+<span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nb">window</span><span class="p">.</span><span class="nx">location</span><span class="p">.</span><span class="nx">href</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="sb">`</span><span class="si">${</span><span class="nx">rawUrl</span><span class="si">}</span><span class="sb">?download=1`</span><span class="p">;</span><span class="w"> </span><span class="c1">// fallback</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>navigator.share</code> só funciona em <strong>contexto seguro</strong> (HTTPS ou localhost),
+  o mesmo requisito do Web Push já documentado no README. Pela Tailscale com
+  <code>https://&lt;host&gt;.ts.net</code> funciona.</li>
+<li>Precisa ser chamado <strong>dentro do toque do usuário</strong>; por isso busque o blob
+  antes (ao abrir o arquivo, se for &lt; 20 MB) ou mostre "Preparando…" e peça um
+  segundo toque.</li>
+<li>"Copiar conteúdo" usa <code>utils/clipboard.js</code> que já existe.</li>
+</ul>
+<h3 id="155-links-de-arquivo-no-texto-usado-também-pelo-chat">1.5.5 Links de arquivo no texto (usado também pelo chat)</h3>
+<p><code>fileLinks.js</code> exporta <code>linkifyFilePaths(text, knownRoots)</code> que reconhece:</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/main.py
+backend/app/main.py:42
+backend/app/main.py:42:7
+./frontend/src/App.jsx
+/home/bruno/projetos/tasknexus/README.md   (absoluto dentro do projeto)
+`src/utils/markdown.js`                    (entre crases)
+</code></pre></div>
+<p>Regras: precisa ter pelo menos uma <code>/</code> <strong>ou</strong> uma extensão conhecida; não
+pode estar dentro de URL; caminhos absolutos só viram link se estiverem dentro
+da raiz do projeto. O link gerado é interno:
+<code>/arquivos?p=&lt;token&gt;&amp;f=&lt;path&gt;&amp;l=42</code>.</p>
+<h3 id="156-rota-e-navegação">1.5.6 Rota e navegação</h3>
+<ul>
+<li>Nova tela <code>arquivos</code> no <code>AppV2</code> (ao lado de chat, board, tarefas,
+  configuração). Hoje <code>v2Screen</code> é um <code>useState</code>; para permitir link direto,
+  adicione suporte a <code>/arquivos?...</code> no <code>useRoute</code> ou leia <code>location.search</code>
+  ao montar.</li>
+<li>No chat, o viewer abre no <strong>painel de contexto</strong> (Parte 3) e não troca de tela.</li>
+</ul>
+<hr />
+<h2 id="16-testes-e-critérios-de-aceite">1.6 Testes e critérios de aceite</h2>
+<h3 id="backend-pytest">Backend (pytest)</h3>
+<ul>
+<li><code>resolve_safe_path</code> recusa: <code>../x</code>, <code>a/../../x</code>, caminho absoluto fora da
+  raiz, symlink para fora, <code>\x00</code>, <code>\\</code>, cada item da denylist.</li>
+<li><code>tree</code> ignora <code>node_modules</code> e <code>.git</code>, ordena pastas antes, corta em 2.000.</li>
+<li><code>content</code> de arquivo binário devolve <code>is_text:false</code> e sem <code>text</code>.</li>
+<li><code>raw</code> de <code>.html</code> tem <code>Content-Security-Policy</code> com <code>sandbox</code>.</li>
+<li><code>raw?download=1</code> tem <code>Content-Disposition: attachment</code> com nome UTF-8
+  (teste com <code>relatório ção.md</code>).</li>
+<li><code>git/status</code> num diretório sem git devolve <code>is_repo:false</code> sem erro 500.</li>
+</ul>
+<h3 id="frontend-vitest">Frontend (vitest)</h3>
+<ul>
+<li><code>linkifyFilePaths</code> com uma tabela de 20 casos (positivos e negativos, incluindo URLs).</li>
+<li><code>MarkdownRenderer</code> reescreve imagem relativa para <code>/api/fs/.../raw/...</code> e
+  adiciona <code>rel="noopener noreferrer"</code> em link externo.</li>
+<li><code>HtmlRenderer</code> renderiza iframe <strong>sem</strong> <code>allow-same-origin</code>.</li>
+<li><code>FileViewer</code> mostra o estado "Arquivo grande" quando <code>truncated:true</code>.</li>
+</ul>
+<h3 id="aceite-manual-no-ipad-safari-e-pwa-instalado">Aceite manual no iPad (Safari e PWA instalado)</h3>
+<ol>
+<li>Abrir um <code>.md</code> com tabela, checklist, código Python e mermaid: tudo renderiza.</li>
+<li>Selecionar três linhas de um bloco de código com o dedo e colar no Notas.</li>
+<li>Abrir um <code>.html</code> com CSS e imagem relativos: aparece igual ao navegador do PC.</li>
+<li>Esse HTML tenta <code>fetch('/api/cards')</code>: a chamada falha (origem opaca).</li>
+<li>Baixar um <code>.zip</code> de 50 MB: aparece em Arquivos › Downloads.</li>
+<li>Compartilhar um <code>.md</code> por AirDrop para o Mac.</li>
+<li>Tocar em <code>backend/app/main.py:42</code> no chat: abre na linha 42 destacada.</li>
+<li>Tentar <code>/api/fs/&lt;token&gt;/raw/../../.ssh/id_rsa</code>: resposta 403.</li>
+</ol><div class="pager"><a href="00-visao-geral-e-diagnostico.html"><small>Anterior</small>0 · Visão geral e diagnóstico</a><a class="next" href="02-chat-conversacional.html"><small>Próxima</small>2 · Chat conversacional</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

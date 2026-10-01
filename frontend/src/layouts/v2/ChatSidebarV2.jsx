@@ -56,12 +56,22 @@
 // `collapsed` — visual do modal mobile não muda) — este arquivo agora só
 // cuida do header ("+ Novo chat" + toggle de colapso) e do NewChatSheet,
 // delegando a lista propriamente dita.
+//
+// Fase N (escopo global cliente → projeto, useNavScope no AppV2): recebe também
+// `selectedProjetoId`. A lista filtra pela subárvore do projeto (ChatList), o
+// "+ Novo chat" abre o formulário já apontando para ele (`initialProjetoId`
+// do NewChatSheet), e aparece um título "CLIENTE / PROJETO" entre o cabeçalho
+// e a lista — só quando há projeto: nos estados que já existiam ("Todos" e
+// cliente inteiro) a coluna fica idêntica, e é justamente com um projeto
+// escolhido que a lista encolhe e o usuário precisa saber por quê (seção 8.5,
+// "usuário se perder no nível Projetos").
 
 import { useEffect, useRef, useState } from 'react';
 import { NewChatSheet } from './NewChatSheet.jsx';
 import { ChatList } from './ChatList.jsx';
 import { COLLAPSED_WIDTH, SIDEBAR_TRANSITION } from './collapseLayout.js';
 import { isClienteId } from '../../utils/clientes.js';
+import { scopeLabel } from '../../utils/projectTree.js';
 
 const EXPANDED_WIDTH = '280px';
 
@@ -99,6 +109,21 @@ const styles = {
     cursor: 'pointer',
     fontSize: '14px',
   },
+  // Mesma grafia dos rótulos de grupo da lista (ChatList `groupLabel`) e do
+  // "CLIENTE · PROJETOS" da sidebar, mas em --v2-text-dim: é informação que
+  // explica o filtro, e --v2-text-faint não passa 4,5:1 (ver ChatList rowMeta).
+  scopeTitle: {
+    fontSize: '10px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    color: 'var(--v2-text-dim)',
+    fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+    padding: '0 16px 8px',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
   newChatBtn: (disabled) => ({
     flex: 1,
     minWidth: 0,
@@ -120,6 +145,7 @@ export function ChatSidebarV2({
   activeSessions,
   persistedSessions,
   selectedClienteId,
+  selectedProjetoId = null,
   onSelectChat,
   onRenameChat,
   onCloseChat,
@@ -151,6 +177,9 @@ export function ChatSidebarV2({
   const noClienteSelecionado = selectedClienteId == null;
   const clienteOrfao = !noClienteSelecionado && !selectedCliente;
   const newChatDisabled = clienteOrfao;
+  const projetoLabel = selectedProjetoId != null
+    ? scopeLabel(selectedClienteId, selectedProjetoId, projects)
+    : null;
 
   const handleNewChatClick = () => {
     if (newChatDisabled) return;
@@ -226,7 +255,7 @@ export function ChatSidebarV2({
                 ? 'Cliente selecionado não encontrado em projects'
                 : noClienteSelecionado
                 ? 'Novo chat — escolha o cliente'
-                : `Novo chat em ${selectedCliente?.nome || selectedClienteId}`
+                : `Novo chat em ${projetoLabel || selectedCliente?.nome || selectedClienteId}`
             }
           >
             + Novo chat
@@ -243,12 +272,19 @@ export function ChatSidebarV2({
         </button>
       </div>
 
+      {!collapsed && projetoLabel && (
+        <div style={styles.scopeTitle} title={projetoLabel} data-testid="chat-scope-title">
+          {projetoLabel}
+        </div>
+      )}
+
       <ChatList
         projects={projects}
         activeSessionKey={activeSessionKey}
         activeSessions={activeSessions}
         persistedSessions={persistedSessions}
         selectedClienteId={selectedClienteId}
+        selectedProjetoId={selectedProjetoId}
         onSelectChat={onSelectChat}
         onRenameChat={onRenameChat}
         onCloseChat={onCloseChat}
@@ -263,6 +299,7 @@ export function ChatSidebarV2({
           cliente={selectedCliente}
           clientes={clientes}
           projects={projects}
+          initialProjetoId={selectedProjetoId}
           presentation="modal"
           onSubmit={onStartNewChat}
           onRetryProjects={onRetryProjects}

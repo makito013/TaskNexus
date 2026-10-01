@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskNexus no Tablet · Chat conversacional</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#fdfcf9; --surface-2:#efece5; --border:#e2ddd3;
+  --text:#3b3530; --dim:#6b645c; --faint:#8a8378;
+  --accent:#3f8f7c; --accent-strong:#2f7564; --accent-soft:#e3f1ec;
+  --accent-2:#4b5fb0; --warn-soft:#fbf3e1; --warn:#c9962d;
+  --code-bg:#25272d; --code-fg:#e6e3dd; --code-head:#31343b;
+  --shadow:0 1px 2px rgba(60,50,40,.06),0 6px 20px rgba(60,50,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+    --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+    --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+    --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+    --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1f2227; --surface:#262a31; --surface-2:#2f343c; --border:#3b414b;
+  --text:#e7e8ec; --dim:#b2b6bf; --faint:#8f94a0;
+  --accent:#7cc6b1; --accent-strong:#9ad8c6; --accent-soft:#233a35;
+  --accent-2:#a3b1ea; --warn-soft:#3a3222; --warn:#e0b85a;
+  --code-bg:#17191d; --code-fg:#e6e3dd; --code-head:#22252b;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Figtree,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.6}
+a{color:var(--accent-2)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,pre,kbd{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);max-width:1320px;margin:0 auto;
+  padding-inline:24px;gap:40px}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow:auto;
+  padding-block:28px 40px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;
+  color:#fff;font-weight:700;font-size:14px}
+.brand b{display:block;font-size:15px;line-height:1.2}
+.brand-text>span{display:block;font-size:12px;color:var(--faint)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.parts a{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:10px;text-decoration:none;
+  color:var(--dim);font-size:14px;line-height:1.3}
+.parts a .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);min-width:14px}
+.parts a:hover{background:var(--surface-2);color:var(--text)}
+.parts a.on{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+.parts a.on .n{color:var(--accent-strong)}
+.toc{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.toc-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 8px 10px}
+.toc ul{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:4px 10px;font-size:13px;color:var(--dim);text-decoration:none;line-height:1.35;
+  border-radius:8px}
+.toc a:hover{color:var(--text);background:var(--surface-2)}
+.toc ul ul a{padding-left:22px;font-size:12.5px;color:var(--faint)}
+.theme-btn{margin-top:18px;margin-left:10px;font:inherit;font-size:12.5px;color:var(--dim);background:none;
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;min-height:36px}
+
+main{padding-block:28px 96px;min-width:0;overflow-x:clip}
+.doc{max-width:80ch}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-strong);
+  margin:0 0 6px}
+.doc h1{font-size:clamp(26px,3.4vw,34px);line-height:1.2;margin:0 0 18px;text-wrap:balance;letter-spacing:-.01em}
+.doc h2{font-size:23px;line-height:1.25;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--border);
+  text-wrap:balance}
+.doc h3{font-size:18px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-size:16px;margin:24px 0 6px}
+.doc h1+p,.doc h1+blockquote{margin-top:0}
+.doc p,.doc li{max-width:72ch}
+.doc ul,.doc ol{padding-left:1.4em}
+.doc li{margin:4px 0}
+.doc li::marker{color:var(--faint)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc blockquote{margin:20px 0;padding:14px 18px;background:var(--accent-soft);border-radius:12px;color:var(--text)}
+.doc blockquote p{margin:6px 0}
+.doc blockquote strong:first-child{color:var(--accent-strong)}
+.doc :not(pre)>code{font-size:.88em;background:var(--surface-2);padding:.12em .38em;border-radius:6px;
+  overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:18px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+.doc th,.doc td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.doc th{background:var(--surface-2);font-weight:600;white-space:nowrap}
+.doc tr:last-child td{border-bottom:0}
+.doc td code{white-space:nowrap}
+.code{position:relative;margin:18px 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 14px;
+  background:var(--code-head);font-size:12px;color:#b9b4ab;font-family:"IBM Plex Mono",monospace}
+.copy{font:inherit;font-size:12px;color:#e6e3dd;background:transparent;border:1px solid #4a4e57;border-radius:7px;
+  padding:4px 10px;cursor:pointer;min-height:30px}
+.copy:hover{background:#3a3e46}
+.code pre{margin:0;padding:14px 16px;overflow-x:auto;color:var(--code-fg);font-size:13.5px;line-height:1.55;
+  -webkit-overflow-scrolling:touch}
+.doc figure{margin:26px 0}
+.doc figure img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--border)}
+.doc figcaption{font-size:13px;color:var(--faint);margin-top:8px}
+.doc input[type=checkbox]{margin-right:6px}
+.pager{display:flex;justify-content:space-between;gap:16px;margin-top:56px;padding-top:20px;
+  border-top:1px solid var(--border);flex-wrap:wrap}
+.pager a{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:1px solid var(--border);
+  border-radius:12px;text-decoration:none;color:var(--text);background:var(--surface);min-width:0;flex:1 1 220px}
+.pager a small{color:var(--faint);font-size:12px}
+.pager a.next{text-align:right}
+.part-sep{margin-top:80px}
+.topbar{display:none}
+
+/* Pygments (tema escuro nos dois temas, casa com o bloco de código do chat) */
+.hl .k,.hl .kn,.hl .kd,.hl .kr,.hl .kc,.hl .ow{color:#9fd9c5}
+.hl .s,.hl .s1,.hl .s2,.hl .sb,.hl .sd,.hl .se,.hl .si,.hl .sh{color:#e7c07b}
+.hl .c,.hl .c1,.hl .cm,.hl .ch,.hl .cs{color:#8a8f98;font-style:italic}
+.hl .nf,.hl .fm{color:#a9c1ff}
+.hl .nc,.hl .nn{color:#f0b5d0}
+.hl .m,.hl .mi,.hl .mf{color:#f5a97f}
+.hl .nt{color:#9fd9c5}
+.hl .na,.hl .nb,.hl .bp{color:#c4b5fd}
+.hl .p,.hl .o{color:#cfcac2}
+.hl .err{color:inherit;background:none}
+
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr);padding-inline:16px;gap:0}
+  .side{display:none}
+  .topbar{display:flex;gap:6px;overflow-x:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;
+    background:var(--bg);padding:10px 16px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch}
+  .topbar a{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--border);font-size:13px;
+    text-decoration:none;color:var(--dim);background:var(--surface);min-height:36px;display:flex;align-items:center}
+  .topbar a.on{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent;font-weight:600}
+  main{padding-block:20px 72px}
+  .doc h2{font-size:21px}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Partes"><a href="CONTEXTO-PARA-AGENTE.html">C · Contexto para o agente</a><a href="00-visao-geral-e-diagnostico.html">0 · Visão geral e diagnóstico</a><a href="01-visualizador-de-arquivos.html">1 · Visualizador de arquivos</a><a class="on" href="02-chat-conversacional.html">2 · Chat conversacional</a><a href="03-layout-amigavel.html">3 · Layout amigável</a><a href="04-melhorias-adicionais.html">4 · Melhorias adicionais</a><a href="05-plano-de-execucao-e-prompts.html">5 · Plano e prompts</a><a href="06-planejamento-fase-v.html">6 · Planejamento da Fase V</a><a href="07-planejamento-artefatos.html">7 · Planejamento da Fase A</a><a href="08-planejamento-navegacao-cliente-projeto.html">8 · Planejamento da Fase N</a></nav>
+<div class="shell">
+  <aside class="side" aria-label="Navegação">
+    <a class="brand" href="#top"><span class="brand-mark">TN</span><span class="brand-text"><b>TaskNexus no Tablet</b><span>Design · UX · TL · Dev</span></span></a>
+    <ul class="parts"><li><a href="CONTEXTO-PARA-AGENTE.html"><span class="n">C</span><span>Contexto para o agente</span></a></li><li><a href="00-visao-geral-e-diagnostico.html"><span class="n">0</span><span>Visão geral e diagnóstico</span></a></li><li><a href="01-visualizador-de-arquivos.html"><span class="n">1</span><span>Visualizador de arquivos</span></a></li><li><a class="on" href="02-chat-conversacional.html"><span class="n">2</span><span>Chat conversacional</span></a></li><li><a href="03-layout-amigavel.html"><span class="n">3</span><span>Layout amigável</span></a></li><li><a href="04-melhorias-adicionais.html"><span class="n">4</span><span>Melhorias adicionais</span></a></li><li><a href="05-plano-de-execucao-e-prompts.html"><span class="n">5</span><span>Plano e prompts</span></a></li><li><a href="06-planejamento-fase-v.html"><span class="n">6</span><span>Planejamento da Fase V</span></a></li><li><a href="07-planejamento-artefatos.html"><span class="n">7</span><span>Planejamento da Fase A</span></a></li><li><a href="08-planejamento-navegacao-cliente-projeto.html"><span class="n">8</span><span>Planejamento da Fase N</span></a></li></ul>
+    <div class="toc"><p class="toc-title">Nesta página</p><ul><li><a href="#21-o-que-muda-para-você">2.1 O que muda para você</a></li><li><a href="#22-ux-fluxos-e-comportamentos">2.2 UX — fluxos e comportamentos</a><ul><li><a href="#221-enviar-uma-mensagem">2.2.1 Enviar uma mensagem</a></li><li><a href="#222-acompanhar-o-trabalho-do-agente">2.2.2 Acompanhar o trabalho do agente</a></li><li><a href="#223-aprovar-ou-negar">2.2.3 Aprovar ou negar</a></li><li><a href="#224-parar">2.2.4 Parar</a></li><li><a href="#225-anexos-imagens-e-arquivos">2.2.5 Anexos, imagens e @arquivos</a></li><li><a href="#226-ações-numa-mensagem">2.2.6 Ações numa mensagem</a></li><li><a href="#227-trocar-entre-chat-e-terminal">2.2.7 Trocar entre Chat e Terminal</a></li><li><a href="#228-estados-e-mensagens-de-sistema">2.2.8 Estados e mensagens de sistema</a></li></ul></li><li><a href="#23-design-anatomia-de-uma-conversa">2.3 Design — anatomia de uma conversa</a></li><li><a href="#24-arquitetura-tl">2.4 Arquitetura (TL)</a><ul><li><a href="#241-como-obter-eventos-estruturados-do-claude">2.4.1 Como obter eventos estruturados do claude</a></li><li><a href="#242-como-aprovar-ferramentas-pelo-chat">2.4.2 Como aprovar ferramentas pelo chat</a></li><li><a href="#243-interromper">2.4.3 Interromper</a></li><li><a href="#244-ciclo-de-vida-do-processo">2.4.4 Ciclo de vida do processo</a></li><li><a href="#245-codex-fase-4">2.4.5 Codex (fase 4)</a></li></ul></li><li><a href="#25-contratos-dev">2.5 Contratos (Dev)</a><ul><li><a href="#251-evento-normalizado-chatevent">2.5.1 Evento normalizado (ChatEvent)</a></li><li><a href="#252-websocket-wschatsession_key">2.5.2 WebSocket /ws/chat/{session_key}</a></li><li><a href="#253-rest-complementar">2.5.3 REST complementar</a></li><li><a href="#254-banco-de-dados">2.5.4 Banco de dados</a></li></ul></li><li><a href="#26-histórico-e-conversas-antigas">2.6 Histórico e conversas antigas</a></li><li><a href="#27-estrutura-de-código">2.7 Estrutura de código</a><ul><li><a href="#backend">Backend</a></li><li><a href="#frontend">Frontend</a></li></ul></li><li><a href="#28-testes-e-critérios-de-aceite">2.8 Testes e critérios de aceite</a><ul><li><a href="#backend_1">Backend</a></li><li><a href="#frontend_1">Frontend</a></li><li><a href="#aceite-manual-no-ipad">Aceite manual no iPad</a></li></ul></li></ul></div>
+    <button class="theme-btn" type="button">Tema: sistema</button>
+  </aside>
+  <main id="top"><article class="doc"><p class="eyebrow">Parte 2 de 8</p><h1 id="parte-2-chat-conversacional-do-terminal-para-uma-conversa-estilo-whatsapp">Parte 2 — Chat conversacional (do terminal para uma conversa estilo WhatsApp)</h1>
+<blockquote>
+<p><strong>Objetivo:</strong> conversar com o <code>claude</code> (e depois com o <code>codex</code>) numa tela de
+chat de verdade: bolhas, markdown como no GitHub, blocos de código com botão
+copiar, links clicáveis, cartões para o que o agente está fazendo, botões
+para aprovar ações e um campo de texto normal, com seleção, correção e
+ditado nativos do iPad. O terminal continua disponível como <strong>modo
+alternativo</strong> da mesma conversa.</p>
+</blockquote>
+<figure><img src="img/03-mockup-chat-ipad.svg" alt="Mockup do chat no iPad" loading="lazy"><figcaption>Mockup do chat no iPad</figcaption></figure>
+<p>Legenda: <strong>A</strong> sua mensagem (bolha à direita, com hora e status) · <strong>B</strong>
+cartões compactos de ferramenta ("Executou pytest", "Leu 2 arquivos") ·
+<strong>C</strong> resposta do agente em markdown com link de arquivo e link externo ·
+<strong>D</strong> bloco de código com Abrir / Copiar / Expandir · <strong>E</strong> pedido de
+aprovação com três botões · <strong>F</strong> composer (campo de mensagem) · <strong>G</strong> lista de
+conversas com prévia da última mensagem, status e contador de não lidas.</p>
+<figure><img src="img/05-mockup-celular.svg" alt="Mockup no celular" loading="lazy"><figcaption>Mockup no celular</figcaption></figure>
+<hr />
+<h2 id="21-o-que-muda-para-você">2.1 O que muda para você</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Hoje (terminal)</th>
+<th>Com o chat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Texto desenhado em canvas, sem seleção nativa</td>
+<td>Texto real: toque longo, lupa, "Copiar", "Compartilhar"</td>
+</tr>
+<tr>
+<td>Links e caminhos são texto morto</td>
+<td>URLs abrem numa aba; caminhos abrem o visualizador (Parte 1)</td>
+</tr>
+<tr>
+<td>Código aparece no meio do resto</td>
+<td>Bloco destacado com linguagem, cor e botão Copiar</td>
+</tr>
+<tr>
+<td>Pedir permissão = navegar na TUI com setas e Enter</td>
+<td>Cartão com <strong>Negar / Permitir uma vez / Sempre nesta sessão</strong></td>
+</tr>
+<tr>
+<td>Precisa de Esc, Tab, Ctrl+C no teclado virtual</td>
+<td>Botões: <strong>Parar</strong> (no lugar do Ctrl+C/Esc), menu <strong>/</strong> para comandos</td>
+</tr>
+<tr>
+<td>Girar o iPad bagunça a tela</td>
+<td>Layout fluido, nada a redesenhar</td>
+</tr>
+<tr>
+<td>Uma aba por vez vê a sessão (a outra é derrubada)</td>
+<td>Vários aparelhos podem acompanhar a mesma conversa ao mesmo tempo</td>
+</tr>
+<tr>
+<td>Notificação "terminou" sem conteúdo</td>
+<td>Notificação com o começo da resposta ou "precisa de aprovação"</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="22-ux-fluxos-e-comportamentos">2.2 UX — fluxos e comportamentos</h2>
+<h3 id="221-enviar-uma-mensagem">2.2.1 Enviar uma mensagem</h3>
+<ol>
+<li>Você digita no composer. O rascunho é salvo por conversa (sobrevive a
+   recarregar a página).</li>
+<li><strong>Enviar:</strong>
+   - teclado físico: <code>⌘ Enter</code> sempre envia; <code>Enter</code> envia se a opção
+     "Enter envia" estiver ligada (padrão ligada quando há teclado físico,
+     desligada no teclado virtual, igual ao WhatsApp no iPad);
+   - teclado virtual: botão redondo de enviar.</li>
+<li>A bolha aparece na hora com relógio (⏱). Quando o backend confirma
+   (<code>user_message</code> com <code>seq</code>), vira ✓. Quando o agente começa a responder, ✓✓.</li>
+<li>O cabeçalho mostra "pensando…" e o botão de enviar vira <strong>Parar</strong> (■).</li>
+<li>O texto da resposta aparece aos poucos (streaming). Se você rolou para
+   cima para ler algo, a tela <strong>não</strong> puxa você para baixo; aparece o botão
+   "↓ Novas mensagens".</li>
+</ol>
+<p><strong>Mandar outra mensagem enquanto o agente trabalha:</strong> permitido. A mensagem
+fica numa fila visível ("na fila · será enviada quando o claude terminar")
+com opção de cancelar. Isso espelha o comportamento do CLI e evita misturar
+turnos.</p>
+<h3 id="222-acompanhar-o-trabalho-do-agente">2.2.2 Acompanhar o trabalho do agente</h3>
+<ul>
+<li>Cada uso de ferramenta vira um <strong>cartão compacto</strong> numa linha
+  ("▸ Leu <code>main.py</code>", "▸ Executou <code>pytest -q</code> · 4,2 s", "▸ Editou 2 arquivos
+  +14 −3"). Vários cartões seguidos se agrupam ("▸ 6 ações"), expansíveis.</li>
+<li>Toque no cartão abre os detalhes num painel: comando e saída completa em
+  monoespaçado (com Copiar), ou o <strong>diff</strong> da edição, ou a lista de arquivos lidos.</li>
+<li>Erro de ferramenta: cartão com borda <code>--v2-danger</code> e a mensagem de erro visível
+  sem precisar expandir.</li>
+</ul>
+<h3 id="223-aprovar-ou-negar">2.2.3 Aprovar ou negar</h3>
+<ul>
+<li>O pedido aparece como cartão amarelo no fim da conversa, com o que o agente
+  quer fazer em linguagem humana ("Claude quer executar <code>npm test</code>",
+  "Claude quer editar <code>attachments.py</code> (+6 −2)") e um link "ver diff/detalhes".</li>
+<li>Botões: <strong>Negar</strong> (abre campo opcional "diga ao agente o que fazer em vez
+  disso"), <strong>Permitir uma vez</strong>, <strong>Sempre nesta sessão</strong> (para aquela
+  ferramenta; para <code>Bash</code>, para aquele comando/prefixo).</li>
+<li>Se a aba não estiver aberta, chega um push: "claude · tasknexus precisa de
+  aprovação". Tocar abre direto no cartão.</li>
+<li>O pedido aparece em todos os aparelhos abertos; quem responder primeiro
+  resolve, e nos outros o cartão vira "Permitido por você no iPad".</li>
+<li>Seletor no cabeçalho: <strong>Aprovação: Perguntar sempre · Aceitar edições ·
+  Liberado · Só planejar</strong> (mapeia para <code>--permission-mode</code> do claude:
+  <code>default</code>, <code>acceptEdits</code>, <code>bypassPermissions</code>, <code>plan</code>).</li>
+</ul>
+<h3 id="224-parar">2.2.4 Parar</h3>
+<p>Botão <strong>Parar</strong> interrompe o turno atual. A resposta parcial fica visível com
+a marca "interrompido". A próxima mensagem continua a mesma conversa.</p>
+<h3 id="225-anexos-imagens-e-arquivos">2.2.5 Anexos, imagens e @arquivos</h3>
+<ul>
+<li><strong>＋ Anexar</strong>: foto, captura de tela ou arquivo. Reaproveita o upload de
+  anexos que já existe (<code>.escritorio/attachments/</code>). Imagens vão como
+  conteúdo de imagem na mensagem (o claude enxerga); outros arquivos vão como
+  caminho no texto.</li>
+<li><strong>Colar imagem</strong> (<code>⌘V</code> com captura na área de transferência) anexa direto.</li>
+<li>Digitar <strong>@</strong> abre a busca de arquivos (Parte 1, rota <code>search</code>) e insere o
+  caminho como chip; o agente recebe o caminho relativo.</li>
+<li>Digitar <strong>/</strong> abre a lista de comandos: comandos do projeto
+  (<code>.claude/commands/*.md</code>) e os comandos que funcionam em modo headless.
+  Comandos que só existem na TUI (ex.: seletores interativos) aparecem com
+  "abrir no modo Terminal".</li>
+</ul>
+<h3 id="226-ações-numa-mensagem">2.2.6 Ações numa mensagem</h3>
+<p>Toque longo (iPad/celular) ou botão "⋯" ao passar o mouse (PC):
+<strong>Copiar texto · Copiar como markdown · Responder citando · Criar card no
+Board · Criar tarefa · Abrir arquivos citados · Selecionar texto</strong>.
+"Selecionar texto" abre a mensagem numa folha só com o texto, para seleção
+livre sem conflito com o toque longo.</p>
+<h3 id="227-trocar-entre-chat-e-terminal">2.2.7 Trocar entre Chat e Terminal</h3>
+<ul>
+<li>Controle segmentado <strong>Chat | Terminal</strong> no cabeçalho.</li>
+<li>Trocar encerra o processo do modo atual e retoma o <strong>mesmo id de conversa</strong>
+  no outro modo (<code>--resume</code>). Mostra "Trocando para o terminal…" por ~1 s.</li>
+<li>Ao voltar para o Chat, o que foi conversado no terminal aparece no
+  histórico (importado do transcript, ver 2.6).</li>
+<li>Não é possível trocar no meio de um turno: o botão fica desabilitado com a
+  dica "aguarde o agente terminar ou toque em Parar".</li>
+<li>Agentes sem modo estruturado (<code>agy</code>, <code>cursor</code>, <code>terminal</code>) abrem direto no
+  Terminal e o controle não aparece.</li>
+</ul>
+<h3 id="228-estados-e-mensagens-de-sistema">2.2.8 Estados e mensagens de sistema</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Situação</th>
+<th>Como aparece</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Conversa nova, vazia</td>
+<td>Saudação curta com o nome do agente e do projeto + 3 sugestões ("Explique este projeto", "Rode os testes", "O que mudou desde ontem?")</td>
+</tr>
+<tr>
+<td>Reconectando</td>
+<td>Faixa fina no topo: "Reconectando…" (nada some da tela)</td>
+</tr>
+<tr>
+<td>Processo do agente morreu</td>
+<td>Aviso no fluxo: "O claude encerrou inesperadamente. Sua próxima mensagem retoma a conversa." + botão "Ver log"</td>
+</tr>
+<tr>
+<td>Retomada falhou (id não existe)</td>
+<td>Mesmo fluxo de hoje (<code>resume_failed</code>), em forma de cartão: "Não encontrei essa conversa no claude. Começar uma nova?"</td>
+</tr>
+<tr>
+<td>Contexto compactado</td>
+<td>Separador: "— conversa resumida pelo claude para caber no contexto —"</td>
+</tr>
+<tr>
+<td>Fim de turno</td>
+<td>Rodapé discreto na última resposta: hora · custo · duração</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="23-design-anatomia-de-uma-conversa">2.3 Design — anatomia de uma conversa</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Elemento</th>
+<th>Especificação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bolha sua</td>
+<td>Alinhada à direita, largura máx. 75 %, fundo <code>--v2-accent-soft</code>, raio 16 px (canto inferior direito 6 px), texto 15 px</td>
+</tr>
+<tr>
+<td>Resposta do agente</td>
+<td>Alinhada à esquerda, <strong>cartão largo</strong> (máx. 760 px) em <code>--v2-surface</code> com borda <code>--v2-border</code>: respostas longas com código ficam ilegíveis numa bolha estreita. Avatar de 28 px com iniciais do agente só na primeira mensagem de um grupo</td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td>O mesmo <code>MarkdownRenderer</code> da Parte 1, em tamanho de chat (15 px)</td>
+</tr>
+<tr>
+<td>Bloco de código</td>
+<td>Fundo escuro nos dois temas, cabeçalho com linguagem + nome do arquivo quando houver, <strong>Copiar</strong>, <strong>Abrir</strong> (viewer) e <strong>⤢</strong> (tela cheia). Blocos com mais de 18 linhas mostram 12 e um "mostrar mais". Rolagem horizontal própria (a página nunca rola para o lado)</td>
+</tr>
+<tr>
+<td>Cartão de ferramenta</td>
+<td>Pílula de 28 px, <code>--v2-surface-2</code>, ícone por tipo (📄 ler, ✏️ editar, ▶ executar, 🔎 buscar, 🌐 web, 🧩 MCP) — ícones em SVG, não emoji</td>
+</tr>
+<tr>
+<td>Pedido de aprovação</td>
+<td><code>--v2-warn-soft</code> com borda <code>--v2-warn</code>; botões de 40 px de altura; "Permitir uma vez" é o primário</td>
+</tr>
+<tr>
+<td>Separador de data</td>
+<td>"Hoje", "Ontem", "qua., 24 set." centralizado, 12 px, <code>--v2-text-faint</code></td>
+</tr>
+<tr>
+<td>Indicador "pensando"</td>
+<td>Três pontos pulsando ao lado do avatar (respeita <code>prefers-reduced-motion</code>) + texto de status do cabeçalho</td>
+</tr>
+<tr>
+<td>Composer</td>
+<td>Caixa com raio 18 px, textarea auto-ajustável até 40 % da altura visível, botão ＋ à esquerda, enviar/parar à direita (44 px). Fica acima do teclado virtual usando o <code>useVisibleViewportShell</code> que já existe</td>
+</tr>
+<tr>
+<td>Links</td>
+<td>Cor <code>--v2-accent-2</code>, sublinhado; caminhos de arquivo em monoespaçado com ícone de documento</td>
+</tr>
+</tbody>
+</table></div>
+<p>Regra de ouro do Design: <strong>todo texto é texto real</strong> (nada de canvas), com
+<code>user-select: text</code> e <code>-webkit-touch-callout: default</code> nas mensagens.</p>
+<hr />
+<h2 id="24-arquitetura-tl">2.4 Arquitetura (TL)</h2>
+<figure><img src="img/06-sequencia-turno.svg" alt="Sequência de um turno" loading="lazy"><figcaption>Sequência de um turno</figcaption></figure>
+<p>A figura mostra um turno completo: sua mensagem vira uma linha JSON no stdin
+do claude, o texto volta em pedaços (<code>text_delta</code>), o pedido de permissão
+passa pelo cartão amarelo e volta como decisão, e o <code>result</code> fecha o turno
+disparando a mesma notificação que o hook <code>Stop</code> dispara hoje.</p>
+<h3 id="241-como-obter-eventos-estruturados-do-claude">2.4.1 Como obter eventos estruturados do claude</h3>
+<p>O <code>claude</code> CLI (versão verificada: 2.1.x) tem um modo não interativo que
+conversa em JSON por linhas, com <strong>as mesmas flags de sessão</strong> que o
+TaskNexus já usa:</p>
+<div class="code"><div class="code-head"><span>bash</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>claude<span class="w"> </span>-p<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--input-format<span class="w"> </span>stream-json<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output-format<span class="w"> </span>stream-json<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--verbose<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--include-partial-messages<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--session-id<span class="w"> </span>&lt;uuid&gt;<span class="w">          </span><span class="c1"># conversa nova  (ou --resume &lt;uuid&gt;)</span>
+<span class="w">  </span>--settings<span class="w"> </span><span class="s1">'&lt;json do hook Stop&gt;'</span><span class="w">        </span><span class="c1"># já montado por _build_stop_hook_settings()</span>
+<span class="w">  </span>--mcp-config<span class="w"> </span><span class="s1">'&lt;json dos MCP&gt;'</span><span class="w">           </span><span class="c1"># já montado por _build_mcp_config_json()</span>
+<span class="w">  </span>--append-system-prompt<span class="w"> </span><span class="s1">'&lt;prompt&gt;'</span><span class="w">       </span><span class="c1"># só em conversa nova</span>
+<span class="w">  </span>--permission-mode<span class="w"> </span>default
+<span class="w">  </span>--permission-prompt-tool<span class="w"> </span>mcp__escritorio_perm__aprovar_ferramenta
+</code></pre></div>
+<ul>
+<li><strong>Entrada (stdin):</strong> uma linha JSON por mensagem sua:
+  <code>{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Roda os testes"}]}}</code>.
+  O processo <strong>continua vivo</strong> esperando a próxima linha, então a conversa
+  inteira usa um processo só.</li>
+<li><strong>Saída (stdout):</strong> uma linha JSON por evento. Os tipos que importam:</li>
+</ul>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th><code>type</code> na saída</th>
+<th>O que é</th>
+<th>Vira evento normalizado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>system</code> (subtype <code>init</code>)</td>
+<td>sessão pronta: id, modelo, ferramentas, MCPs</td>
+<td><code>status {state:"ready", model}</code></td>
+</tr>
+<tr>
+<td><code>stream_event</code></td>
+<td>pedaços da resposta enquanto é gerada (<code>content_block_delta</code> com <code>text_delta</code>)</td>
+<td><code>text_delta</code></td>
+</tr>
+<tr>
+<td><code>assistant</code></td>
+<td>mensagem completa do modelo: blocos <code>text</code>, <code>tool_use</code>, <code>thinking</code></td>
+<td><code>assistant_message</code>, <code>tool_use</code></td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td>resultados de ferramenta (<code>tool_result</code>) devolvidos ao modelo</td>
+<td><code>tool_result</code></td>
+</tr>
+<tr>
+<td><code>result</code></td>
+<td>fim do turno: <code>total_cost_usd</code>, <code>duration_ms</code>, <code>usage</code>, <code>is_error</code></td>
+<td><code>turn_end</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>Tarefa de verificação para o agente implementador:</strong> antes de escrever o
+parser, rode o comando acima num projeto de teste, grave a saída de 3
+conversas (simples, com ferramenta, com erro) em
+<code>backend/tests/fixtures/claude_stream/*.jsonl</code> e escreva o parser contra
+essas gravações. O formato acima é o documentado, mas o detalhe de cada
+campo deve vir da gravação, não da memória.</p>
+</blockquote>
+<h3 id="242-como-aprovar-ferramentas-pelo-chat">2.4.2 Como aprovar ferramentas pelo chat</h3>
+<p>Hoje, no modo interativo, o próprio TUI pergunta. No modo <code>-p</code> não existe
+TUI, então usamos a flag documentada <code>--permission-prompt-tool</code>: o claude
+chama <strong>uma ferramenta MCP nossa</strong> sempre que precisaria perguntar. É o mesmo
+padrão dos dois servidores MCP que o TaskNexus já injeta
+(<code>mcp_task_adapter.py</code>, <code>mcp_card_adapter.py</code>):</p>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>claude  ──chama tool──▶  mcp_permission_adapter.py (stdio, stdlib puro)
+                              │ POST /api/hooks/permission {session_id, tool_name, input}
+                              ▼ (a requisição fica aberta esperando)
+                         PermissionBroker (backend)
+                              │ emite permission_request no /ws/chat
+                              ▼
+                         você toca "Permitir uma vez"
+                              │ permission_response pelo /ws/chat
+                              ▼
+                         broker resolve o Future → HTTP 200 {"behavior":"allow","updatedInput":{…}}
+claude  ◀──resultado da tool──┘
+</code></pre></div>
+<ul>
+<li>Resposta da tool, conforme o contrato do <code>--permission-prompt-tool</code>:
+  permitir → <code>{"behavior":"allow","updatedInput":&lt;input original ou editado&gt;}</code>;
+  negar → <code>{"behavior":"deny","message":"&lt;motivo que o agente vai ler&gt;"}</code>.
+  O adapter devolve isso como <strong>texto JSON</strong> no conteúdo do resultado da tool MCP.</li>
+<li><strong>Tempo limite:</strong> 30 minutos sem resposta → nega com a mensagem
+  "Sem resposta do usuário; pergunte de novo quando ele voltar".</li>
+<li><strong>"Sempre nesta sessão":</strong> o broker guarda uma regra em memória
+  (<code>tool_name</code>, e para <code>Bash</code> o prefixo do comando) e responde <code>allow</code> sem
+  perguntar nas próximas vezes. Regras somem quando a sessão reinicia (seguro por padrão).</li>
+<li><strong>Compatibilidade:</strong> o adapter segue as mesmas restrições dos outros
+  (Python 3.9, só biblioteca padrão, TLS de loopback sem verificação).</li>
+<li><strong>Por que não o Claude Agent SDK para Python?</strong> Ele encapsula exatamente
+  este protocolo e seria a opção mais limpa, mas exige Python 3.10+, e o
+  ambiente do TaskNexus roda Python 3.9.6 (ver docstring de
+  <code>mcp_task_adapter.py</code>). Se o backend for migrado para 3.10+, trocar
+  <code>ClaudeStreamAdapter</code> por um adapter baseado no SDK (<code>ClaudeSDKClient</code>,
+  callback <code>can_use_tool</code>) é uma troca isolada, porque o resto do sistema só
+  enxerga eventos normalizados.</li>
+</ul>
+<h3 id="243-interromper">2.4.3 Interromper</h3>
+<ol>
+<li>Tentar o pedido de interrupção do protocolo stream-json (é o que o SDK
+   oficial usa; confirmar o formato na gravação/documentação da versão instalada).</li>
+<li>Se não houver confirmação em 3 s: encerrar o processo (mesmo <code>_schedule_reap</code>
+   do <code>pty_manager</code>, que já faz SIGTERM → SIGKILL) e marcar a sessão para
+   <code>--resume</code> na próxima mensagem. A resposta parcial fica salva como "interrompida".</li>
+</ol>
+<h3 id="244-ciclo-de-vida-do-processo">2.4.4 Ciclo de vida do processo</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Momento</th>
+<th>O que acontece</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primeira mensagem (ou abrir a conversa)</td>
+<td><code>ChatSessionManager</code> pega o lock da <code>session_key</code>, garante que <strong>não</strong> há PTY vivo para ela (se houver, encerra), e sobe <code>claude -p … --resume &lt;id&gt;</code> (ou <code>--session-id</code> se nova)</td>
+</tr>
+<tr>
+<td>Mensagens seguintes</td>
+<td>Escreve no stdin do mesmo processo</td>
+</tr>
+<tr>
+<td>Ninguém conectado</td>
+<td>Processo continua até terminar o turno atual; depois de 10 min ocioso e sem cliente, é encerrado (a conversa não se perde: próxima mensagem faz <code>--resume</code>)</td>
+</tr>
+<tr>
+<td>Troca para Terminal</td>
+<td>Encerra o processo <code>-p</code>, e o <code>pty_endpoint</code> sobe a TUI com <code>--resume</code> (fluxo atual)</td>
+</tr>
+<tr>
+<td>Backend reinicia</td>
+<td>Nada a recuperar em memória: histórico está no <code>chat_events</code>, id está no <code>sessions</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Uma regra inegociável:</strong> nunca rodar o processo <code>-p</code> e a TUI ao mesmo tempo
+para a mesma conversa. Os dois escreveriam no mesmo transcript. O lock por
+<code>session_key</code> (o <code>_ensure_pty</code> já usa um lock parecido) cobre os dois modos.</p>
+<h3 id="245-codex-fase-4">2.4.5 Codex (fase 4)</h3>
+<p>O <code>codex</code> tem um servidor JSON-RPC (<code>codex app-server</code>) com eventos de
+mensagem, uso de ferramenta e <strong>pedidos de aprovação</strong> (execução de comando e
+aplicação de patch) e retomada de conversa por id. O <code>CodexAdapter</code> traduz
+esses eventos para o mesmo formato normalizado. Pontos a verificar na versão
+instalada antes de implementar: nome exato dos métodos de "iniciar/retomar
+conversa", "enviar mensagem" e "responder aprovação", e se o <code>notify</code> atual
+(<code>codex_notify_adapter.py</code>) continua necessário (provavelmente não: o fim do
+turno já chega como evento). Enquanto isso não estiver pronto, o codex segue
+no modo Terminal, que já funciona.</p>
+<hr />
+<h2 id="25-contratos-dev">2.5 Contratos (Dev)</h2>
+<h3 id="251-evento-normalizado-chatevent">2.5.1 Evento normalizado (<code>ChatEvent</code>)</h3>
+<p>Formato único, independente do agente. É o que vai para o SQLite e para o WebSocket.</p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>{
+  "seq": 57,                      // crescente por session_key, começa em 1
+  "ts": 1727290001.52,            // epoch em segundos
+  "kind": "tool_use",             // ver tabela abaixo
+  "message_id": "msg_01H…",       // agrupa deltas e blocos da mesma resposta
+  "data": { … }                   // depende do kind
+}
+</code></pre></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th><code>data</code></th>
+<th>Persistido?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_message</code></td>
+<td><code>{text, attachments:[{name,path,mime}], client_id}</code></td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>text_delta</code></td>
+<td><code>{text}</code></td>
+<td><strong>não</strong> (só ao vivo)</td>
+</tr>
+<tr>
+<td><code>assistant_message</code></td>
+<td><code>{text, thinking?:string}</code> (texto final completo)</td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>tool_use</code></td>
+<td><code>{tool_use_id, name, input, summary}</code> (<code>summary</code> = "Executou pytest -q")</td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>tool_result</code></td>
+<td><code>{tool_use_id, ok, output_preview, output_size, diff?}</code> (preview até 4 KB; completo via REST)</td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>permission_request</code></td>
+<td><code>{request_id, tool_name, input, summary, diff?}</code></td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>permission_resolved</code></td>
+<td><code>{request_id, decision:"allow"|"deny"|"allow_always", by_device, message?}</code></td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>turn_end</code></td>
+<td><code>{cost_usd, duration_ms, usage, interrupted, is_error}</code></td>
+<td>sim</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>{state:"idle"|"thinking"|"waiting_permission"|"starting"|"stopped", model?}</code></td>
+<td>não</td>
+</tr>
+<tr>
+<td><code>notice</code></td>
+<td><code>{level:"info"|"warn"|"error", text, code}</code> (compactação, processo morreu, retomada falhou)</td>
+<td>sim</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>summary</code> é gerado no backend por uma função pura por ferramenta (<code>Bash</code> →
+"Executou <code>cmd</code>", <code>Read</code> → "Leu <code>arquivo</code>", <code>Edit</code>/<code>Write</code> → "Editou
+<code>arquivo</code> +a −r", <code>Grep</code>/<code>Glob</code> → "Buscou <code>padrão</code>", <code>WebFetch</code> → "Abriu
+<code>domínio</code>", MCP → "Usou <code>servidor.tool</code>"), assim o frontend não precisa
+conhecer cada ferramenta.</p>
+<h3 id="252-websocket-wschatsession_key">2.5.2 WebSocket <code>/ws/chat/{session_key}</code></h3>
+<p><strong>Cliente → servidor</strong></p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>{"type":"hello","last_seq":41,"device":"iPad"}          // primeira mensagem sempre
+{"type":"send","client_id":"c-8f2…","text":"Roda os testes","attachments":[]}
+{"type":"permission_response","request_id":"p-12","decision":"allow"}   // allow | deny | allow_always
+{"type":"permission_response","request_id":"p-12","decision":"deny","message":"use o venv"}
+{"type":"interrupt"}
+{"type":"cancel_queued","client_id":"c-8f2…"}
+{"type":"set_permission_mode","mode":"acceptEdits"}
+</code></pre></div>
+<p><strong>Servidor → cliente</strong></p>
+<div class="code"><div class="code-head"><span>json</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>{"type":"history","events":[…],"has_more":true,"partial":{"message_id":"…","text":"…"}}
+{"type":"event","event":{ChatEvent}}
+{"type":"queued","client_id":"c-8f2…","position":1}
+{"type":"error","code":"agent_unavailable","detail":"…"}
+</code></pre></div>
+<ul>
+<li><code>hello.last_seq</code>: o servidor manda só o que veio depois. Primeira abertura:
+  últimos 200 eventos; <code>has_more</code> libera o "carregar mais antigas" via REST.</li>
+<li><code>partial</code>: se você reconectar no meio de uma resposta, recebe o texto
+  acumulado até ali e continua recebendo <code>text_delta</code>.</li>
+<li><strong>Vários clientes por sessão:</strong> diferente do <code>/ws/pty</code> (que derruba a
+  conexão anterior), o chat mantém uma lista de assinantes e manda cada
+  evento para todos.</li>
+<li>Autenticação: mesma do resto (4.1), validada no handshake.</li>
+</ul>
+<h3 id="253-rest-complementar">2.5.3 REST complementar</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Rota</th>
+<th>Uso</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/chat/{session_key}/events?before_seq=…&amp;limit=100</code></td>
+<td>paginação para trás</td>
+</tr>
+<tr>
+<td><code>GET /api/chat/{session_key}/tool-output/{tool_use_id}</code></td>
+<td>saída completa de uma ferramenta</td>
+</tr>
+<tr>
+<td><code>POST /api/chat/{session_key}/mode</code> <code>{mode:"chat"|"terminal"}</code></td>
+<td>troca de modo (409 se houver turno em andamento)</td>
+</tr>
+<tr>
+<td><code>POST /api/hooks/permission</code></td>
+<td>usado <strong>só</strong> pelo <code>mcp_permission_adapter</code> (loopback)</td>
+</tr>
+<tr>
+<td><code>GET /api/chat/{session_key}/commands</code></td>
+<td>lista de comandos <code>/</code> disponíveis</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="254-banco-de-dados">2.5.4 Banco de dados</h3>
+<div class="code"><div class="code-head"><span>sql</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">chat_events</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">session_key</span><span class="w">  </span><span class="nb">TEXT</span><span class="w">    </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">seq</span><span class="w">          </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">ts</span><span class="w">           </span><span class="nb">REAL</span><span class="w">    </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">kind</span><span class="w">         </span><span class="nb">TEXT</span><span class="w">    </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">message_id</span><span class="w">   </span><span class="nb">TEXT</span><span class="p">,</span>
+<span class="w">  </span><span class="k">data</span><span class="w">         </span><span class="nb">TEXT</span><span class="w">    </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">          </span><span class="c1">-- JSON</span>
+<span class="w">  </span><span class="n">source_uuid</span><span class="w">  </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                      </span><span class="c1">-- uuid da linha do .jsonl importada (dedupe)</span>
+<span class="w">  </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">session_key</span><span class="p">,</span><span class="w"> </span><span class="n">seq</span><span class="p">)</span>
+<span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">ix_chat_events_source</span>
+<span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="n">chat_events</span><span class="p">(</span><span class="n">session_key</span><span class="p">,</span><span class="w"> </span><span class="n">source_uuid</span><span class="p">)</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">source_uuid</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span>
+
+<span class="c1">-- colunas novas em sessions, no mesmo estilo de ALTER tolerante de ConversationStore.initialize()</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="k">mode</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'chat'</span><span class="p">;</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">last_preview</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">        </span><span class="c1">-- 1ª linha da última mensagem, para a lista</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">last_event_at</span><span class="w"> </span><span class="nb">REAL</span><span class="p">;</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">sessions</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">transcript_cursor</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">;</span><span class="w">   </span><span class="c1">-- último uuid importado do .jsonl</span>
+</code></pre></div>
+<p><code>ChatStore</code> segue o padrão dos stores atuais: conexão <code>aiosqlite</code> própria,
+<code>PRAGMA journal_mode=WAL</code> e <code>busy_timeout=5000</code>.</p>
+<hr />
+<h2 id="26-histórico-e-conversas-antigas">2.6 Histórico e conversas antigas</h2>
+<ul>
+<li>As conversas criadas no terminal já existem no transcript do claude:
+  <code>~/.claude/projects/&lt;caminho-do-projeto-com-hifens&gt;/&lt;session-id&gt;.jsonl</code>
+  (uma linha por evento, com <code>type</code> <code>user</code>/<code>assistant</code> e <code>uuid</code>).</li>
+<li><code>transcript_import.py</code> lê esse arquivo <strong>a partir do <code>transcript_cursor</code></strong>
+  e grava em <code>chat_events</code> com <code>source_uuid</code>, ignorando tipos internos.
+  Roda: (1) na primeira vez que uma conversa antiga é aberta no Chat;
+  (2) ao voltar do modo Terminal para o Chat.</li>
+<li>É uma <strong>importação</strong>, não a fonte de verdade: se o formato do <code>.jsonl</code>
+  mudar, o chat continua funcionando para conversas novas; só a importação
+  precisa de ajuste. Teste com fixtures reais gravadas.</li>
+<li>Codex: transcripts ficam em <code>~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl</code>;
+  mesma ideia, adapter próprio, fase 4.</li>
+</ul>
+<hr />
+<h2 id="27-estrutura-de-código">2.7 Estrutura de código</h2>
+<h3 id="backend">Backend</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>backend/app/chat/
+  __init__.py
+  router.py                  # /ws/chat, REST /api/chat/*, /api/hooks/permission
+  manager.py                 # ChatSessionManager: lock por sessão, fila, assinantes, ciclo de vida
+  store.py                   # ChatStore (chat_events + colunas novas em sessions)
+  events.py                  # dataclasses/pydantic do ChatEvent + summarize_tool()
+  permission_broker.py       # Futures por request_id, regras "sempre", timeout
+  transcript_import.py       # .jsonl do claude → chat_events
+  adapters/
+    base.py                  # interface AgentAdapter: start(), send(), interrupt(), events() async-iter, stop()
+    claude_stream.py         # claude -p stream-json → ChatEvent
+    codex_appserver.py       # fase 4
+backend/app/mcp_permission_adapter.py   # servidor MCP stdio (stdlib) com a tool aprovar_ferramenta
+backend/tests/chat/…                    # testes + fixtures/claude_stream/*.jsonl
+</code></pre></div>
+<p>Reaproveitar do <code>main.py</code> (extrair para um módulo comum em vez de copiar):
+<code>_build_stop_hook_settings</code>, <code>_build_mcp_config_json</code> (adicionar o servidor de
+permissão), resolução de agente/projeto, <code>store</code> (ConversationStore) para o id
+da conversa, <code>mark_needs_attention</code> + <code>_dispatch_push_for_session</code> no <code>turn_end</code>.</p>
+<p>Atenção ao hook <code>Stop</code>: no modo <code>-p</code> ele também dispara. Como o <code>turn_end</code>
+já chama <code>mark_needs_attention</code>, deixe o hook ligado (idempotente) ou
+desligue-o só no modo chat. Não dispare <strong>dois</strong> pushes: use o mesmo ledger
+<code>push_notified</code> que já existe.</p>
+<h3 id="frontend">Frontend</h3>
+<div class="code"><div class="code-head"><span>texto</span><button class="copy" type="button">Copiar</button></div><pre><span></span><code>frontend/src/features/chat/
+  ChatView.jsx               # cabeçalho + lista + composer; substitui &lt;TerminalPanel&gt; quando mode === 'chat'
+  ChatHeader.jsx             # nome, status, Chat|Terminal, modo de aprovação, ações
+  MessageList.jsx            # lista virtualizada, âncora no fim, "↓ Novas mensagens"
+  UserBubble.jsx
+  AssistantMessage.jsx       # markdown + rodapé de custo/tempo
+  CodeBlock.jsx              # usado também pelo MarkdownRenderer da Parte 1
+  ToolCallGroup.jsx / ToolCallChip.jsx / ToolCallSheet.jsx
+  PermissionCard.jsx
+  NoticeRow.jsx / DateSeparator.jsx / ThinkingIndicator.jsx
+  Composer.jsx               # textarea, ⌘Enter, rascunho, anexos, colar imagem
+  SlashMenu.jsx / MentionMenu.jsx
+  MessageActionsSheet.jsx    # toque longo
+  useChatSession.js          # WebSocket, hello/last_seq, reconexão com backoff, fila local
+  chatReducer.js             # PURO: aplica eventos ao estado (fácil de testar)
+  linkify.js                 # URLs + caminhos (reusa fileLinks.js da Parte 1)
+</code></pre></div>
+<ul>
+<li><strong>Lista longa:</strong> usar <code>react-virtuoso</code> (suporta "grudar no fim" e itens de
+  altura variável). Alternativa sem dependência: <code>content-visibility: auto</code>
+  nos itens, aceitável até ~500 mensagens.</li>
+<li><strong>Streaming sem travar o iPad:</strong> acumular <code>text_delta</code> num <code>ref</code> e aplicar
+  no estado no máximo a cada <code>requestAnimationFrame</code>; re-renderizar o
+  markdown da mensagem em andamento no máximo a cada 100 ms; se houver
+  bloco <code>```</code> aberto sem fechar, fechar temporariamente só para
+  renderizar.</li>
+<li><strong>Integração no layout atual:</strong> <code>ChatV2.jsx</code> hoje monta um <code>TerminalPanel</code>
+  por sessão (todas no DOM, <code>display:none</code> nas inativas). Passa a montar
+  <code>ChatView</code> quando <code>session.mode === 'chat'</code> e <code>TerminalPanel</code> quando
+  <code>'terminal'</code>. Manter a regra "sessões montadas continuam montadas" também para o chat.</li>
+<li><strong>Lista de conversas:</strong> <code>ChatSidebarV2</code>/<code>ChatList</code> passam a mostrar
+  <code>last_preview</code>, hora de <code>last_event_at</code> e o status (<code>pensando…</code>,
+  <code>aguardando aprovação</code>). Isso vem de <code>/api/sessions/persisted</code> (adicionar os
+  campos) e de um canal leve de status (pode ser o polling de 7 s que já existe).</li>
+</ul>
+<hr />
+<h2 id="28-testes-e-critérios-de-aceite">2.8 Testes e critérios de aceite</h2>
+<h3 id="backend_1">Backend</h3>
+<ul>
+<li>Parser do <code>claude_stream</code> contra as fixtures gravadas: cada linha vira o
+  <code>ChatEvent</code> esperado (tabela de casos).</li>
+<li><code>summarize_tool</code> para cada ferramenta conhecida e para MCP desconhecida.</li>
+<li><code>ChatSessionManager</code>: duas mensagens seguidas → a segunda entra na fila e só
+  vai para o stdin depois do <code>turn_end</code>.</li>
+<li>Lock: com chat ativo, abrir <code>/ws/pty</code> da mesma sessão encerra o processo do
+  chat antes (ou recusa com mensagem clara, decidir e testar).</li>
+<li><code>PermissionBroker</code>: allow, deny com mensagem, allow_always (segunda chamada
+  não emite <code>permission_request</code>), timeout → deny.</li>
+<li><code>hello{last_seq:N}</code> devolve exatamente os eventos <code>&gt; N</code>.</li>
+<li>Importação do <code>.jsonl</code> é idempotente (rodar duas vezes não duplica).</li>
+<li>Adapter fake (sem CLI real) para testar o WebSocket ponta a ponta.</li>
+</ul>
+<h3 id="frontend_1">Frontend</h3>
+<ul>
+<li><code>chatReducer</code>: sequência de eventos → estado (mensagem otimista vira
+  confirmada, deltas se juntam, <code>tool_result</code> marca o chip, <code>permission_resolved</code>
+  fecha o cartão, reconexão com <code>partial</code> não duplica texto).</li>
+<li><code>Composer</code>: ⌘Enter envia; Enter com "Enter envia" desligado quebra linha;
+  rascunho restaurado.</li>
+<li><code>linkify</code>: URLs e caminhos viram links; texto dentro de bloco de código não
+  vira link, mas caminhos em código inline viram.</li>
+</ul>
+<h3 id="aceite-manual-no-ipad">Aceite manual no iPad</h3>
+<ol>
+<li>Conversa nova no Chat: pedir "liste os arquivos da raiz e leia o README";
+   ver cartões de ferramenta e resposta em markdown.</li>
+<li>Selecionar metade de um parágrafo com o dedo e copiar.</li>
+<li>Tocar num link externo (abre aba) e num caminho de arquivo (abre viewer).</li>
+<li>Pedir uma edição: aparece cartão de aprovação; negar com mensagem; o agente
+   reage à mensagem.</li>
+<li>"Sempre nesta sessão" para <code>Bash(npm test)</code>: segunda execução não pergunta.</li>
+<li>Fechar o Safari no meio de um turno longo; receber o push; reabrir e ver a
+   conversa completa, sem buracos.</li>
+<li>Abrir a mesma conversa no PC e no iPad ao mesmo tempo; aprovar no PC; o
+   cartão fecha no iPad.</li>
+<li>Trocar para Terminal, mandar uma mensagem na TUI, voltar para Chat: a
+   mensagem aparece no histórico.</li>
+<li>Ditar uma mensagem com o microfone do teclado do iPad.</li>
+<li>Girar o iPad durante o streaming: nada quebra.</li>
+</ol><div class="pager"><a href="01-visualizador-de-arquivos.html"><small>Anterior</small>1 · Visualizador de arquivos</a><a class="next" href="03-layout-amigavel.html"><small>Próxima</small>3 · Layout amigável</a></div></article></main>
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var pre=btn.closest('.code').querySelector('pre');
+    var text=pre.innerText;
+    function done(){btn.textContent='Copiado';setTimeout(function(){btn.textContent='Copiar'},1400)}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();
+      s.removeAllRanges();s.addRange(r);btn.textContent='Selecionado';}
+    try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}
+  });
+});
+(function(){
+  var btn=document.querySelector('.theme-btn'); if(!btn) return;
+  var root=document.documentElement, key='tn-doc-theme';
+  function label(){var t=root.getAttribute('data-theme');btn.textContent=t==='dark'?'Tema: escuro':t==='light'?'Tema: claro':'Tema: sistema'}
+  try{var saved=localStorage.getItem(key); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  label();
+  btn.addEventListener('click',function(){
+    var t=root.getAttribute('data-theme'); var n=!t?'dark':t==='dark'?'light':null;
+    if(n) root.setAttribute('data-theme',n); else root.removeAttribute('data-theme');
+    try{n?localStorage.setItem(key,n):localStorage.removeItem(key)}catch(e){}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

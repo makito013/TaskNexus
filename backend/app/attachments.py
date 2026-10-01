@@ -21,32 +21,17 @@ import time
 from datetime import datetime
 from typing import Any
 
+from app.file_access import is_within_directory
 from app.models import Attachment, AttachmentUploadResult
 
 _ATTACHMENTS_DIRNAME = os.path.join(".escritorio", "attachments")
 
 
-def _is_within_directory(base_dir: str, target_dir: str) -> bool:
-    """True only if `target_dir` resolves to somewhere strictly inside
-    `base_dir` — both sides run through os.path.realpath() first, so
-    drive letters, ".." segments, symlinks and relative fragments all
-    collapse to the same canonical form before comparing. This is the
-    actual containment check; a substring blacklist (an earlier version
-    of this module used one) only approximates it and misses
-    platform-specific escapes — e.g. on Windows, os.path.join() silently
-    drops everything before a component that itself carries a drive
-    letter ("C:\\attachments" joined with "D:\\evil" yields "D:\\evil",
-    not a path under attachments/ at all), which no blacklist of
-    characters like ".."/"/" catches. os.path.commonpath() raises
-    ValueError when the two paths don't even share a drive — that case is
-    "not contained", not an error, from this function's point of view."""
-    base_real = os.path.realpath(base_dir)
-    target_real = os.path.realpath(target_dir)
-    try:
-        common = os.path.commonpath([base_real, target_real])
-    except ValueError:
-        return False
-    return common == base_real and target_real != base_real
+# A checagem de contenção mora em app/file_access.py desde a Fase V (o
+# visualizador de arquivos precisa exatamente da mesma regra, e duas cópias de
+# código de segurança divergem com o tempo). O nome antigo continua exportado
+# daqui porque é o que este módulo e os testes dos anexos usam.
+_is_within_directory = is_within_directory
 
 
 # Checked against the RAW name received from the client, before
