@@ -2309,7 +2309,7 @@ def test_build_codex_config_overrides_reuses_hook_url_suffixes():
     for server in spec.values():
         expected |= suffixes_from(server["env"])
     assert expected == {
-        "task", "cards/create", "cards/move", "cards/update",
+        "task", "task/delete", "cards/create", "cards/move", "cards/update",
         "cards/delete", "cards/get", "cards/list", "viewer/open",
         # Fase A: `publicar_artefato` (mesmo servidor do visualizador).
         "artifacts/publish",

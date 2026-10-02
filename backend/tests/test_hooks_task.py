@@ -140,7 +140,8 @@ def test_hook_task_known_session_returns_success_true(client):
         "descricao_markdown": "md",
     })
     assert r.status_code == 200
-    assert r.json() == {"success": True}
+    assert r.json()["success"] is True
+    assert isinstance(r.json()["task_id"], int)
 
 
 def test_hook_task_with_same_cliente_projeto_id_succeeds_and_persists(client):
@@ -155,7 +156,8 @@ def test_hook_task_with_same_cliente_projeto_id_succeeds_and_persists(client):
         "projeto_id": "cliente/outro",
     })
     assert r.status_code == 200
-    assert r.json() == {"success": True}
+    assert r.json()["success"] is True
+    assert isinstance(r.json()["task_id"], int)
 
     tasks = client.get(f"/api/sessions/{session_key}/tasks").json()
     assert len(tasks) == 1
@@ -200,3 +202,52 @@ def test_hook_task_other_cliente_projeto_id_rejected_and_nothing_created(client)
 
     tasks = client.get(f"/api/sessions/{session_key}/tasks").json()
     assert tasks == []
+
+
+# -- POST /api/hooks/task/delete (tool excluir_tarefa) -----------------------
+
+
+def _create_task(client, claude_sid, **extra):
+    r = client.post("/api/hooks/task", json={
+        "claude_session_id": claude_sid, "titulo": "T", "descricao_markdown": "md", **extra,
+    })
+    return r.json()["task_id"]
+
+
+def test_hook_task_delete_removes_own_task(client):
+    session_key = "meu-projeto::claude"
+    claude_sid = _register_session(client, session_key)
+    task_id = _create_task(client, claude_sid)
+    r = client.post("/api/hooks/task/delete", json={
+        "claude_session_id": claude_sid, "task_id": task_id,
+    })
+    assert r.json() == {"success": True}
+    assert client.get(f"/api/sessions/{session_key}/tasks").json() == []
+
+
+def test_hook_task_delete_unknown_id_returns_error(client):
+    claude_sid = _register_session(client, "meu-projeto::claude")
+    r = client.post("/api/hooks/task/delete", json={
+        "claude_session_id": claude_sid, "task_id": 999999,
+    })
+    assert r.json()["success"] is False
+
+
+def test_hook_task_delete_other_cliente_rejected_and_task_kept(client):
+    # tarefa criada por uma sessão de OUTRO cliente
+    other_key = "outrocliente/proj::claude"
+    other_sid = _register_session(client, other_key, project_id="outrocliente/proj")
+    task_id = _create_task(client, other_sid)
+    own_sid = _register_session(client, "cliente/aadmin::claude", project_id="cliente/aadmin")
+    r = client.post("/api/hooks/task/delete", json={
+        "claude_session_id": own_sid, "task_id": task_id,
+    })
+    assert r.json()["success"] is False
+    assert len(client.get(f"/api/sessions/{other_key}/tasks").json()) == 1
+
+
+def test_hook_task_delete_unknown_session_is_silent_noop(client):
+    r = client.post("/api/hooks/task/delete", json={
+        "claude_session_id": "nao-existe", "task_id": 1,
+    })
+    assert r.json() == {"status": "ok"}

@@ -52,6 +52,7 @@ from app.models import (
     TaskCreateRequest,
     Task,
     TaskGlobal,
+    HookTaskDeleteRequest,
     HookTaskRequest,
     Card,
     CardImage,
@@ -789,6 +790,7 @@ def _escritorio_mcp_servers(session_id: str) -> dict[str, _McpServerSpec]:
             "env": {
                 "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
                 "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
+                "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/task/delete",
                 # Defense in depth alongside the reconfigure() calls in
                 # mcp_task_adapter.main(): forces UTF-8 mode for the whole
                 # child interpreter (stdin/stdout/stderr + filesystem),
@@ -1913,10 +1915,36 @@ async def hook_task(body: HookTaskRequest):
     except ValueError as e:
         return {"success": False, "error": str(e)}
 
-    await task_store.create(
+    task_id = await task_store.create(
         session_key, body.titulo, body.descricao_markdown, body.descricao_html,
         projeto_id=projeto_id,
     )
+    return {"success": True, "task_id": task_id}
+
+
+@app.post("/api/hooks/task/delete")
+async def hook_task_delete(body: HookTaskDeleteRequest):
+    """Exclusão de tarefa pelo agente (tool `excluir_tarefa`). Mesma regra de
+    autorização dos cards: qualquer agente pode excluir qualquer tarefa do
+    MESMO cliente da conversa atual. O cliente da tarefa vem do projeto_id
+    dela, ou — quando NULL (tarefa da própria sessão) — do projeto da
+    session_key em que foi criada. A checagem roda ANTES de excluir, e
+    "não existe" / "outro cliente" são respostas distintas só depois de a
+    sessão resolver (sessão desconhecida segue o no-op silencioso)."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}
+
+    task = await task_store.get(body.task_id)
+    if task is None:
+        return {"success": False, "error": f"Tarefa {body.task_id} não existe"}
+
+    own_projeto_id = session_key.partition("::")[0]
+    task_projeto_id = task["projeto_id"] or task["session_key"].partition("::")[0]
+    if cliente_id_from_projeto_id(task_projeto_id) != cliente_id_from_projeto_id(own_projeto_id):
+        return {"success": False, "error": f"Tarefa {body.task_id} pertence a outro cliente"}
+
+    await task_store.delete(body.task_id)
     return {"success": True}
 
 

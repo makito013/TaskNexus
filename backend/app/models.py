@@ -148,6 +148,12 @@ class HookTaskRequest(BaseModel):
     projeto_id: str | None = None
 
 
+class HookTaskDeleteRequest(BaseModel):
+    """Body para POST /api/hooks/task/delete (tool `excluir_tarefa`)."""
+    claude_session_id: str
+    task_id: int
+
+
 class CardImage(BaseModel):
     """Anexo de imagem de um card/subcard. `url` é o path servido
     estaticamente (ex: /board_uploads/{card_id}/{filename}) — não persistido
