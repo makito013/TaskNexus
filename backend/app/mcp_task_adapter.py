@@ -31,6 +31,9 @@ import urllib.request
 # deploy.ps1), e é intencionalmente diferente da porta de produção para
 # falhar cedo se as env vars não estiverem configuradas.
 HOOK_URL = os.environ.get("ESCRITORIO_HOOK_URL", "http://localhost:8000/api/hooks/task")
+HOOK_DELETE_URL = os.environ.get(
+    "ESCRITORIO_HOOK_DELETE_URL", "http://localhost:8000/api/hooks/task/delete"
+)
 
 # Contexto SSL que não valida certificado — seguro aqui porque a conexão é
 # estritamente loopback (127.0.0.1). Necessário quando o deploy usa TLS: o
@@ -78,6 +81,25 @@ TOOL_SCHEMA = {
 }
 
 
+TOOL_EXCLUIR_NAME = "excluir_tarefa"
+
+TOOL_EXCLUIR_SCHEMA = {
+    "name": TOOL_EXCLUIR_NAME,
+    "description": (
+        "Exclui definitivamente uma tarefa do Escritório de Agentes. Só é "
+        "possível excluir tarefas do mesmo cliente da conversa atual. O id "
+        "da tarefa é devolvido por criar_tarefa_validacao."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {"task_id": {"type": "integer"}},
+        "required": ["task_id"],
+    },
+}
+
+TOOLS = [TOOL_SCHEMA, TOOL_EXCLUIR_SCHEMA]
+
+
 def _write_message(message: dict) -> None:
     sys.stdout.write(json.dumps(message) + "\n")
     sys.stdout.flush()
@@ -105,7 +127,7 @@ def _handle_initialize(request: dict) -> dict:
 
 
 def _handle_tools_list(request: dict) -> dict:
-    return _success_response(request.get("id"), {"tools": [TOOL_SCHEMA]})
+    return _success_response(request.get("id"), {"tools": TOOLS})
 
 
 def _post_json(url: str, body: dict):
@@ -162,7 +184,22 @@ def _handle_criar_tarefa(arguments: dict) -> str:
         **arguments,
     }
     result = _post_json(HOOK_URL, body)
-    return _format_result(result, "Tarefa de validação criada.")
+    task_id = result.get("task_id") if isinstance(result, dict) else None
+    success_text = (
+        "Tarefa de validação criada (id {0}).".format(task_id)
+        if task_id is not None
+        else "Tarefa de validação criada."
+    )
+    return _format_result(result, success_text)
+
+
+def _handle_excluir_tarefa(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "task_id": arguments.get("task_id"),
+    }
+    result = _post_json(HOOK_DELETE_URL, body)
+    return _format_result(result, "Tarefa excluída com sucesso.")
 
 
 def _handle_tools_call(request: dict) -> dict:
@@ -172,6 +209,8 @@ def _handle_tools_call(request: dict) -> dict:
 
     if tool_name == TOOL_NAME:
         text = _handle_criar_tarefa(arguments)
+    elif tool_name == TOOL_EXCLUIR_NAME:
+        text = _handle_excluir_tarefa(arguments)
     else:
         text = "Tool desconhecida: {0}".format(tool_name)
 

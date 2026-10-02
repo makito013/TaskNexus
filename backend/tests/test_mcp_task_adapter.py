@@ -98,6 +98,7 @@ class _AdapterProcess:
 def _make_adapter(port, session_id="test-session-id"):
     env = os.environ.copy()
     env["ESCRITORIO_HOOK_URL"] = "http://127.0.0.1:{0}/api/hooks/task".format(port)
+    env["ESCRITORIO_HOOK_DELETE_URL"] = "http://127.0.0.1:{0}/api/hooks/task/delete".format(port)
     env["ESCRITORIO_CLAUDE_SESSION_ID"] = session_id
     return _AdapterProcess(env)
 
@@ -220,7 +221,7 @@ def test_tools_list_returns_criar_tarefa_validacao():
             adapter.send({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
             response = adapter.recv()
             tools = response["result"]["tools"]
-            assert len(tools) == 1
+            assert [t["name"] for t in tools] == ["criar_tarefa_validacao", "excluir_tarefa"]
             tool = tools[0]
             assert tool["name"] == "criar_tarefa_validacao"
             required = tool["inputSchema"]["required"]
@@ -307,6 +308,66 @@ def test_tools_call_success_returns_created_text():
             })
             response = adapter.recv()
             assert response["result"]["content"][0]["text"] == "Tarefa de validação criada."
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_tools_call_success_reports_task_id():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/task": {"success": True, "task_id": 7}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "criar_tarefa_validacao",
+                    "arguments": {"titulo": "T", "descricao_markdown": "D"},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert text == "Tarefa de validação criada (id 7)."
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_excluir_tarefa_posts_to_delete_url_and_reports_result():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/task/delete": {"success": True}}
+    )
+    try:
+        adapter = _make_adapter(port, session_id="sess-9")
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "excluir_tarefa", "arguments": {"task_id": 7}},
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert text == "Tarefa excluída com sucesso."
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_excluir_tarefa_relays_business_error():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/task/delete": {"success": False, "error": "Tarefa 7 não existe"}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "excluir_tarefa", "arguments": {"task_id": 7}},
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert text == "Tarefa 7 não existe"
         finally:
             adapter.close()
     finally:

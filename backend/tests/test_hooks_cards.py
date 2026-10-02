@@ -161,6 +161,22 @@ def test_hook_cards_create_subcard_with_missing_parent_returns_explicit_error(cl
 
 # -- POST /api/hooks/cards/create: validação "mesmo cliente" (Tarefa 3) ------
 
+def test_hook_cards_create_without_projeto_id_does_not_scan_projects(client):
+    """Regressão: scan_projects percorre o PROJECTS_ROOT inteiro (segundos num
+    root grande) e o adaptador MCP desiste após 3s ("não foi possível conectar
+    ao backend"). Sem projeto_id pedido o scan é desnecessário e não pode
+    acontecer."""
+    session_key = "meu-projeto::agente-teste"
+    claude_sid = _register_session(client, session_key)
+    with patch("app.main.scan_projects", side_effect=AssertionError("scan desnecessário")):
+        r = client.post("/api/hooks/cards/create", json={
+            "claude_session_id": claude_sid,
+            "titulo": "Sem scan",
+        })
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+
 def test_hook_cards_create_same_cliente_projeto_id_succeeds(client):
     """O agente pode criar um card em outro sub-projeto do MESMO cliente via
     projeto_id — o card é criado nesse projeto-alvo."""

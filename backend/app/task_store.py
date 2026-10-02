@@ -176,6 +176,39 @@ class TaskStore:
         await self._conn.commit()
         return True
 
+    async def get(self, task_id: int) -> dict | None:
+        """Tarefa por id, sem filtro de session_key (quem chama aplica a regra
+        de autorização), ou None se não existe."""
+        async with self._conn.execute(
+            """
+            SELECT id, session_key, titulo, descricao_markdown, descricao_html,
+                   status, created_at, completed_at, projeto_id
+            FROM tasks WHERE id = ?
+            """,
+            (task_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "session_key": row[1],
+            "titulo": row[2],
+            "descricao_markdown": row[3],
+            "descricao_html": row[4],
+            "status": row[5],
+            "created_at": row[6],
+            "completed_at": row[7],
+            "projeto_id": row[8],
+        }
+
+    async def delete(self, task_id: int) -> bool:
+        """Exclusão definitiva (a tabela não tem soft-delete). False se o id
+        não existe."""
+        cursor = await self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     async def clear_for_session(self, session_key: str) -> None:
         await self._conn.execute(
             "DELETE FROM tasks WHERE session_key = ?",

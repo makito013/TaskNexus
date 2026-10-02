@@ -52,6 +52,7 @@ from app.models import (
     TaskCreateRequest,
     Task,
     TaskGlobal,
+    HookTaskDeleteRequest,
     HookTaskRequest,
     Card,
     CardImage,
@@ -789,6 +790,7 @@ def _escritorio_mcp_servers(session_id: str) -> dict[str, _McpServerSpec]:
             "env": {
                 "ESCRITORIO_CLAUDE_SESSION_ID": session_id,
                 "ESCRITORIO_HOOK_URL": f"{base_url}/api/hooks/task",
+                "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/task/delete",
                 # Defense in depth alongside the reconfigure() calls in
                 # mcp_task_adapter.main(): forces UTF-8 mode for the whole
                 # child interpreter (stdin/stdout/stderr + filesystem),
@@ -1872,6 +1874,23 @@ async def list_tasks_global():
     return result
 
 
+async def _resolve_hook_projeto_alvo(own_projeto_id: str, projeto_id_pedido: str | None) -> str:
+    """resolve_projeto_alvo para os hooks de agente, sem escanear o disco à toa.
+
+    scan_projects percorre a árvore inteira de PROJECTS_ROOT (segundos num
+    root grande) e o adaptador MCP desiste após 3s, reportando "não foi
+    possível conectar ao backend". A lista só é necessária quando o agente
+    pede um projeto explícito; sem pedido, resolve_projeto_alvo devolve o
+    projeto da conversa sem olhar `projects`. Quando precisa, o scan roda numa
+    thread para não travar o event loop."""
+    if not projeto_id_pedido:
+        return own_projeto_id
+    projects = await asyncio.to_thread(
+        scan_projects, PROJECTS_ROOT, global_agents=_global_agents_cache
+    )
+    return resolve_projeto_alvo(own_projeto_id, projeto_id_pedido, projects)
+
+
 @app.post("/api/hooks/task")
 async def hook_task(body: HookTaskRequest):
     """Callback do adaptador MCP (mcp_task_adapter.py), disparado pela tool
@@ -1891,16 +1910,41 @@ async def hook_task(body: HookTaskRequest):
         return {"status": "ok"}
 
     own_projeto_id = session_key.partition("::")[0]
-    projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
     try:
-        projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+        projeto_id = await _resolve_hook_projeto_alvo(own_projeto_id, body.projeto_id)
     except ValueError as e:
         return {"success": False, "error": str(e)}
 
-    await task_store.create(
+    task_id = await task_store.create(
         session_key, body.titulo, body.descricao_markdown, body.descricao_html,
         projeto_id=projeto_id,
     )
+    return {"success": True, "task_id": task_id}
+
+
+@app.post("/api/hooks/task/delete")
+async def hook_task_delete(body: HookTaskDeleteRequest):
+    """Exclusão de tarefa pelo agente (tool `excluir_tarefa`). Mesma regra de
+    autorização dos cards: qualquer agente pode excluir qualquer tarefa do
+    MESMO cliente da conversa atual. O cliente da tarefa vem do projeto_id
+    dela, ou — quando NULL (tarefa da própria sessão) — do projeto da
+    session_key em que foi criada. A checagem roda ANTES de excluir, e
+    "não existe" / "outro cliente" são respostas distintas só depois de a
+    sessão resolver (sessão desconhecida segue o no-op silencioso)."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}
+
+    task = await task_store.get(body.task_id)
+    if task is None:
+        return {"success": False, "error": f"Tarefa {body.task_id} não existe"}
+
+    own_projeto_id = session_key.partition("::")[0]
+    task_projeto_id = task["projeto_id"] or task["session_key"].partition("::")[0]
+    if cliente_id_from_projeto_id(task_projeto_id) != cliente_id_from_projeto_id(own_projeto_id):
+        return {"success": False, "error": f"Tarefa {body.task_id} pertence a outro cliente"}
+
+    await task_store.delete(body.task_id)
     return {"success": True}
 
 
@@ -2423,9 +2467,8 @@ async def hook_cards_create(body: HookCardCreateRequest):
         # Card de topo: mesma validação "mesmo cliente" de hook_task (Tarefa 3)
         # — o agente pode pedir um sub-projeto diferente via body.projeto_id,
         # mas só do próprio cliente.
-        projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
         try:
-            projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+            projeto_id = await _resolve_hook_projeto_alvo(own_projeto_id, body.projeto_id)
         except ValueError as e:
             return {"success": False, "error": str(e)}
 
