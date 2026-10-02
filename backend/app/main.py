@@ -1872,6 +1872,23 @@ async def list_tasks_global():
     return result
 
 
+async def _resolve_hook_projeto_alvo(own_projeto_id: str, projeto_id_pedido: str | None) -> str:
+    """resolve_projeto_alvo para os hooks de agente, sem escanear o disco à toa.
+
+    scan_projects percorre a árvore inteira de PROJECTS_ROOT (segundos num
+    root grande) e o adaptador MCP desiste após 3s, reportando "não foi
+    possível conectar ao backend". A lista só é necessária quando o agente
+    pede um projeto explícito; sem pedido, resolve_projeto_alvo devolve o
+    projeto da conversa sem olhar `projects`. Quando precisa, o scan roda numa
+    thread para não travar o event loop."""
+    if not projeto_id_pedido:
+        return own_projeto_id
+    projects = await asyncio.to_thread(
+        scan_projects, PROJECTS_ROOT, global_agents=_global_agents_cache
+    )
+    return resolve_projeto_alvo(own_projeto_id, projeto_id_pedido, projects)
+
+
 @app.post("/api/hooks/task")
 async def hook_task(body: HookTaskRequest):
     """Callback do adaptador MCP (mcp_task_adapter.py), disparado pela tool
@@ -1891,9 +1908,8 @@ async def hook_task(body: HookTaskRequest):
         return {"status": "ok"}
 
     own_projeto_id = session_key.partition("::")[0]
-    projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
     try:
-        projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+        projeto_id = await _resolve_hook_projeto_alvo(own_projeto_id, body.projeto_id)
     except ValueError as e:
         return {"success": False, "error": str(e)}
 
@@ -2423,9 +2439,8 @@ async def hook_cards_create(body: HookCardCreateRequest):
         # Card de topo: mesma validação "mesmo cliente" de hook_task (Tarefa 3)
         # — o agente pode pedir um sub-projeto diferente via body.projeto_id,
         # mas só do próprio cliente.
-        projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
         try:
-            projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+            projeto_id = await _resolve_hook_projeto_alvo(own_projeto_id, body.projeto_id)
         except ValueError as e:
             return {"success": False, "error": str(e)}
 
