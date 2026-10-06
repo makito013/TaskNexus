@@ -16,11 +16,13 @@
 import { useViewer, surfaceForScope } from './ViewerContext.jsx';
 import { ViewerPanel } from './ViewerPanel.jsx';
 import { isPlainEscape } from './escape.js';
+import { useDockWidth } from './useDockWidth.js';
 
 export const DOCK_WIDTH = 'clamp(420px, 42vw, 780px)';
 
 const styles = {
   column: {
+    position: 'relative',
     width: DOCK_WIDTH,
     minWidth: DOCK_WIDTH,
     flexShrink: 0,
@@ -43,10 +45,20 @@ const styles = {
  */
 export function ViewerDock({ scope, surface, hidden = false, emptyHint, onOpenPath }) {
   const viewer = useViewer();
+  const { width, dragging, handleProps } = useDockWidth();
   if (!viewer) return null;
   const target = surface || surfaceForScope(scope);
+  const columnStyle = width == null
+    ? styles.column
+    : { ...styles.column, width: `${width}px`, minWidth: `${width}px` };
   return (
-    <aside style={styles.column} data-testid="viewer-dock">
+    <aside
+      style={columnStyle}
+      data-testid="viewer-dock"
+      className={dragging ? 'vw-dock--dragging' : undefined}
+    >
+      {/* Alça de redimensionar na borda esquerda (ver useDockWidth.js). */}
+      <div className="vw-dock-resize" data-testid="viewer-dock-resize" {...handleProps} />
       {!hidden && (
         <ViewerPanel
           scope={scope}

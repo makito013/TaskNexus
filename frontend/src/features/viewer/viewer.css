@@ -544,3 +544,41 @@
   .vw-line--flash,
   .vw-skeleton span { animation-duration: 0ms; }
 }
+
+/* ---- Alça de redimensionar do painel encaixado (useDockWidth.js) --------- */
+
+/* Faixa de 8px colada à borda esquerda, por DENTRO da coluna (o aside tem
+ * overflow: hidden); a linha visível é o ::after, que só acende no
+ * hover/foco/arrasto. */
+.vw-dock-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+}
+.vw-dock-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease-out;
+}
+.vw-dock-resize:hover::after,
+.vw-dock-resize:focus-visible::after,
+.vw-dock--dragging .vw-dock-resize::after { background: var(--v2-accent); }
+.vw-dock-resize:focus-visible { outline: none; }
+
+/* Durante o arrasto: nada de selecionar texto e o iframe não come o ponteiro. */
+.vw-dock--dragging { user-select: none; -webkit-user-select: none; cursor: col-resize; }
+.vw-dock--dragging .vw-panel { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vw-dock-resize::after { transition: none; }
+}
