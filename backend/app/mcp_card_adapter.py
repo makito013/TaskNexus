@@ -25,7 +25,10 @@ lê e repassa o corpo da resposta HTTP (`{success, error}` / `{success,
 card_id}`) em vez de ignorá-lo. Só uma falha genuína de conectividade (POST
 que nem completa) continua tolerante — não trava esperando retry, mas também
 não finge sucesso: retorna um erro genérico de conectividade como resultado
-da tool.
+da tool. Uma resposta HTTP de erro (422, 500, ...) NÃO é falha de
+conectividade e volta ao agente com o status e o `detail` do backend; e
+argumentos fora do inputSchema são barrados antes do POST
+(`_validate_arguments`), com a lista dos parâmetros aceitos.
 
 Compatibilidade: ambiente roda Python 3.9.6 — sem match/case, sem `X | Y` em
 anotação de runtime (só sob `from __future__ import annotations`, que está
@@ -262,6 +265,71 @@ TOOLS = [
     TOOL_LISTAR_CARDS,
 ]
 
+_TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+
+# Tipos JSON Schema usados nos inputSchema acima -> nome legível na mensagem.
+_SCHEMA_TYPE_LABEL = {"integer": "inteiro", "string": "texto"}
+
+
+def _validate_arguments(tool: dict, arguments: dict):
+    """Confere `arguments` contra o inputSchema da tool ANTES do POST.
+
+    Retorna `(argumentos, None)` quando válidos, ou `(None, mensagem)`. O
+    `claude` CLI não garante que o agente respeite o schema: já houve
+    `mover_card({"id": "133", "coluna": "feito"})`, que chegava ao backend
+    como `card_id: null` e voltava como erro de conectividade. A mensagem lista
+    os parâmetros aceitos para o agente conseguir se corrigir sozinho.
+
+    Parâmetro desconhecido é rejeitado, não ignorado: em `editar_card`, um
+    `coluna` no lugar de `status` seria descartado em silêncio e a tool
+    responderia "editado com sucesso" sem ter mudado nada.
+
+    Inteiro enviado como string só de dígitos ("133") é convertido em vez de
+    rejeitado — o backend (Pydantic) já aceitaria, e é o deslize mais comum.
+    """
+    schema = tool["inputSchema"]
+    properties = schema.get("properties", {})
+    problems = []
+
+    unknown = sorted(name for name in arguments if name not in properties)
+    if unknown:
+        problems.append("parâmetro(s) desconhecido(s): " + ", ".join(unknown))
+
+    missing = [name for name in schema.get("required", []) if arguments.get(name) is None]
+    if missing:
+        problems.append("parâmetro(s) obrigatório(s) ausente(s): " + ", ".join(missing))
+
+    validated = dict(arguments)
+    for name, value in arguments.items():
+        expected = properties.get(name, {}).get("type")
+        if value is None or expected is None:
+            continue
+        if expected == "integer":
+            if isinstance(value, str) and value.strip().isdigit():
+                validated[name] = int(value)
+            elif isinstance(value, bool) or not isinstance(value, int):
+                problems.append("{0} deve ser inteiro (recebido: {1})".format(
+                    name, json.dumps(value, ensure_ascii=False)))
+        elif expected == "string" and not isinstance(value, str):
+            problems.append("{0} deve ser texto (recebido: {1})".format(
+                name, json.dumps(value, ensure_ascii=False)))
+
+    if not problems:
+        return validated, None
+
+    required = set(schema.get("required", []))
+    accepted = ", ".join(
+        "{0} ({1}{2})".format(
+            name,
+            _SCHEMA_TYPE_LABEL.get(prop.get("type"), prop.get("type")),
+            ", obrigatório" if name in required else "",
+        )
+        for name, prop in properties.items()
+    )
+    return None, "Argumentos inválidos para {0}: {1}. Parâmetros aceitos: {2}.".format(
+        tool["name"], "; ".join(problems), accepted or "nenhum"
+    )
+
 
 def _write_message(message: dict) -> None:
     sys.stdout.write(json.dumps(message) + "\n")
@@ -315,8 +383,39 @@ def _post_json(url: str, body: dict):
         with urllib.request.urlopen(req, timeout=3, context=ctx) as resp:
             raw = resp.read()
         return json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        # O backend RESPONDEU (422 de validação do Pydantic, 500, ...): não é
+        # falha de conectividade. Reportar como tal faz o agente concluir que
+        # o backend caiu e repetir a mesma chamada inválida em vez de
+        # corrigi-la. Precisa vir antes do `except Exception` porque
+        # HTTPError é subclasse de URLError.
+        return {"success": False, "error": _http_error_text(exc)}
     except Exception:
         return None
+
+
+def _http_error_text(exc) -> str:
+    """Monta a mensagem de um HTTPError a partir do corpo da resposta. O
+    formato de 422 do FastAPI é `{"detail": [{"loc": [...], "msg": ...}]}`;
+    qualquer outro corpo (texto, JSON sem `detail`) vira só o status."""
+    detail = None
+    try:
+        detail = json.loads(exc.read()).get("detail")
+    except Exception:
+        pass
+    if isinstance(detail, list):
+        parts = []
+        for item in detail:
+            if not isinstance(item, dict):
+                continue
+            loc = [str(p) for p in item.get("loc") or [] if p != "body"]
+            msg = item.get("msg") or "inválido"
+            parts.append("{0}: {1}".format(".".join(loc), msg) if loc else msg)
+        detail = "; ".join(parts)
+    text = "O backend do Escritório rejeitou a requisição (HTTP {0}).".format(exc.code)
+    if detail:
+        text += " {0}".format(detail)
+    return text
 
 
 def _format_result(result, success_text: str) -> str:
@@ -446,7 +545,14 @@ def _handle_tools_call(request: dict) -> dict:
     tool_name = params.get("name")
     arguments = params.get("arguments") or {}
 
-    if tool_name == TOOL_CRIAR_CARD["name"]:
+    tool = _TOOLS_BY_NAME.get(tool_name)
+    error_text = None
+    if tool is not None:
+        arguments, error_text = _validate_arguments(tool, arguments)
+
+    if error_text is not None:
+        text = error_text
+    elif tool_name == TOOL_CRIAR_CARD["name"]:
         text = _handle_criar_card(arguments)
     elif tool_name == TOOL_MOVER_CARD["name"]:
         text = _handle_mover_card(arguments)

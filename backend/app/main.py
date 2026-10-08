@@ -1988,8 +1988,8 @@ async def _validate_card_status(status: str | None) -> str | None:
     - UI/REST (create_card, create_subcard, update_card) -> HTTPException 400,
       via `_require_valid_card_status` below;
     - agent/MCP (hook_cards_create/move/update) -> {"success": False, "error"},
-      because a raised 422/400 is swallowed by mcp_card_adapter._post_json and
-      would reach the agent as a meaningless "connectivity error".
+      the contract mcp_card_adapter._format_result reads for business-rule
+      errors (an HTTP error status is reserved for malformed requests).
 
     This is what replaced the fixed `enum` the MCP tool schemas used to carry,
     and the column list is user-managed now, so nothing static can stand in for

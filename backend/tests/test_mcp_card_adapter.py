@@ -27,6 +27,8 @@ class _CapturingHandler(http.server.BaseHTTPRequestHandler):
     received: "queue_mod.Queue" = queue_mod.Queue()
     # Per-test override: maps request path -> response dict to send back.
     responses: dict = {}
+    # Per-test override: maps request path -> HTTP status (default 200).
+    statuses: dict = {}
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -39,7 +41,7 @@ class _CapturingHandler(http.server.BaseHTTPRequestHandler):
         })
         response_body = self.__class__.responses.get(self.path, {"status": "ok"})
         payload = json.dumps(response_body).encode("utf-8")
-        self.send_response(200)
+        self.send_response(self.__class__.statuses.get(self.path, 200))
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(payload)
@@ -48,9 +50,10 @@ class _CapturingHandler(http.server.BaseHTTPRequestHandler):
         pass  # silence default stderr logging
 
 
-def _start_ephemeral_server(responses=None):
+def _start_ephemeral_server(responses=None, statuses=None):
     _CapturingHandler.received = queue_mod.Queue()
     _CapturingHandler.responses = responses or {}
+    _CapturingHandler.statuses = statuses or {}
     server = http.server.HTTPServer(("127.0.0.1", 0), _CapturingHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -898,6 +901,136 @@ def test_editar_card_forwards_tipo_in_the_body():
             adapter.recv()
             received = _CapturingHandler.received.get(timeout=3.0)
             assert received["body"]["tipo"] == ""
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+# -- argument validation + HTTP errors vs connectivity ----------------------
+#
+# Regressão real: o agente chamou mover_card({"id": "133", "coluna": "feito"}).
+# O adapter mandava card_id/novo_status = null, o backend respondia 422 e o
+# _post_json engolia o HTTPError como falha de rede — o agente leu "não foi
+# possível conectar" 8 vezes seguidas com o backend de pé.
+
+
+def _call_tool(adapter, request_id, tool, args):
+    adapter.send({
+        "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+        "params": {"name": tool, "arguments": args},
+    })
+    response = adapter.recv(timeout=5.0)
+    return response["result"]["content"][0]["text"]
+
+
+def test_mover_card_wrong_argument_names_returns_usable_error_without_posting():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/move": {"success": True}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 60, "mover_card", {"id": "133", "coluna": "feito"})
+            assert "não foi possível conectar" not in text.lower()
+            assert "sucesso" not in text.lower()
+            assert "coluna" in text and "id" in text  # desconhecidos
+            assert "card_id" in text and "novo_status" in text  # aceitos/ausentes
+            assert _CapturingHandler.received.empty()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_unknown_argument_is_rejected_even_when_required_ones_are_present():
+    """editar_card com `coluna` no lugar de `status` não pode virar um
+    "editado com sucesso" que não mudou nada."""
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/update": {"success": True, "card": {}}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 61, "editar_card", {"card_id": 7, "coluna": "feito"})
+            assert "sucesso" not in text.lower()
+            assert "desconhecido" in text and "coluna" in text
+            assert _CapturingHandler.received.empty()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_integer_argument_sent_as_digit_string_is_coerced():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/move": {"success": True}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 62, "mover_card", {"card_id": "133", "novo_status": "feito"})
+            assert "sucesso" in text.lower()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["card_id"] == 133
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_argument_with_wrong_type_is_rejected_without_posting():
+    server, thread, port = _start_ephemeral_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 63, "ver_card", {"card_id": "abc"})
+            assert "card_id deve ser inteiro" in text
+            text = _call_tool(adapter, 64, "criar_card", {"titulo": 5})
+            assert "titulo deve ser texto" in text
+            assert _CapturingHandler.received.empty()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_http_error_from_backend_is_reported_with_detail_not_as_connectivity():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/move": {
+                "detail": [
+                    {"loc": ["body", "card_id"], "msg": "Input should be a valid integer"}
+                ]
+            }
+        },
+        statuses={"/api/hooks/cards/move": 422},
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 65, "mover_card", {"card_id": 1, "novo_status": "feito"})
+            assert "não foi possível conectar" not in text.lower()
+            assert "sucesso" not in text.lower()
+            assert "HTTP 422" in text
+            assert "card_id: Input should be a valid integer" in text
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_http_error_with_non_json_body_still_reports_the_status():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/list": "boom"},
+        statuses={"/api/hooks/cards/list": 500},
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 66, "listar_cards", {})
+            assert "HTTP 500" in text
+            assert "não foi possível conectar" not in text.lower()
         finally:
             adapter.close()
     finally:
