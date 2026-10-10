@@ -10,6 +10,7 @@ node_modules/
 __pycache__/
 *.pyc
 dist/
+dist-v3/
 .DS_Store
 backend/.venv*/
 .venv*/

@@ -5,6 +5,7 @@
 #      .\deploy.ps1 -NoTls       # HTTP puro na 80, sem certificado
 #      .\deploy.ps1 -Port 8000   # porta única explícita, sem TLS (o modo antigo)
 #      .\deploy.ps1 -HookPort 0  # sem canal de hooks (desliga a notificação)
+#      .\deploy.ps1 -V3 -Port 8010 -HookPort 8766   # layout V3 experimental, instância paralela
 #
 # Equivalente ao deploy.sh (macOS/Linux): builda o frontend e sobe o uvicorn
 # em primeiro plano, num terminal que você deixa aberto. Sem supervisão de
@@ -42,7 +43,14 @@ param(
 
     # Porta do canal de hooks (listener HTTP só de loopback, dentro do processo
     # do backend). 0 desliga o canal. Ver a seção "Canal de hooks" abaixo.
-    [int]$HookPort = 8765
+    [int]$HookPort = 8765,
+
+    # Layout V3 experimental: builda `npm run build:v3` em frontend\dist-v3 (NÃO
+    # toca frontend\dist, que a produção serve ao vivo) e serve esse dist via
+    # FRONTEND_DIST. Não grava nada no banco. Sem a flag, tudo igual a antes.
+    # Com a produção no ar, use -Port 8010 -HookPort 8766 (e, de preferência,
+    # SESSIONS_DB apontando para uma cópia do banco).
+    [switch]$V3
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,13 +66,33 @@ $RedirectScript = Join-Path $ScriptDir "scripts\redirect_http_to_https.py"
 # e o par 80/443 só faz sentido junto.
 if ($Port -gt 0) { $NoTls = $true }
 
-Write-Host "==> Buildando frontend (npm run build)..."
+# -V3 sem -Port binda na porta da produção (443/80): só avisa, não bloqueia.
+if ($V3 -and $Port -eq 0) {
+    Write-Warning "V3 na porta da produção; use -Port 8010 -HookPort 8766 enquanto a produção estiver no ar."
+} elseif ($V3 -and $Port -gt 0 -and -not $PSBoundParameters.ContainsKey('HookPort')) {
+    Write-Warning "-V3 -Port $Port sem -HookPort: o canal de hooks usa a 8765, que a produção pode estar ocupando. Sugestão: -HookPort 8766."
+}
+
+$BuildScript = if ($V3) { 'build:v3' } else { 'build' }
+Write-Host "==> Buildando frontend (npm run $BuildScript)..."
 Push-Location $FrontendDir
 try {
-    npm run build
-    if ($LASTEXITCODE -ne 0) { throw "npm run build falhou (exit $LASTEXITCODE)" }
+    npm run $BuildScript
+    if ($LASTEXITCODE -ne 0) { throw "npm run $BuildScript falhou (exit $LASTEXITCODE)" }
 } finally {
     Pop-Location
+}
+
+# Os dois ramos são explícitos de propósito: $env: atribuído no pwsh persiste na
+# sessão do terminal depois que o script termina, então um `-V3` anterior
+# vazaria FRONTEND_DIST para um deploy seguinte sem a flag.
+if ($V3) {
+    $env:FRONTEND_DIST = Join-Path $FrontendDir 'dist-v3'
+    $LogFile = 'uvicorn-v3.log'
+    Write-Host "==> Layout V3 (experimental) ativo — servindo frontend\dist-v3 (terminal, board e chat indisponíveis nesta versão)"
+} else {
+    $env:FRONTEND_DIST = $null
+    $LogFile = 'uvicorn.log'
 }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -213,7 +241,7 @@ if (-not $NoTls -and $AppPort -eq 443 -and (Test-Path $RedirectScript)) {
 # ---------------------------------------------------------------------------
 # Backend
 # ---------------------------------------------------------------------------
-Write-Host "==> Subindo backend em ${Scheme}://0.0.0.0:${AppPort} (Ctrl+C para parar) — logs em $LogDir\uvicorn.log"
+Write-Host "==> Subindo backend em ${Scheme}://0.0.0.0:${AppPort} (Ctrl+C para parar) — logs em $LogDir\$LogFile"
 if (-not $NoTls) {
     Write-Host "    Acesse por https://$tsHost (cert válido, sem aviso no iPad)"
 }
@@ -221,7 +249,7 @@ Push-Location $BackendDir
 try {
     & $VenvUvicorn app.main:app --host 0.0.0.0 --port $AppPort @UvicornTlsArgs `
         --log-level warning --timeout-graceful-shutdown 5 2>&1 |
-        Tee-Object -FilePath (Join-Path $LogDir "uvicorn.log") -Append
+        Tee-Object -FilePath (Join-Path $LogDir $LogFile) -Append
 } finally {
     Pop-Location
     # O redirect é filho deste script: sem isto ele sobrevive ao Ctrl+C e a

@@ -1,14 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// API_PORT (shell env, not .env) lets the dev server proxy to a backend that is
+// not on 8000, e.g. the parallel test instance on 8010.
+const apiPort = process.env.API_PORT || '8000'
+
 export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/ws': { target: 'ws://localhost:8000', ws: true },
+      '/api': `http://localhost:${apiPort}`,
+      '/ws': { target: `ws://localhost:${apiPort}`, ws: true },
     },
   },
   test: {

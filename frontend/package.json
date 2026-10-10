@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:v3": "vite build --mode v3 --outDir dist-v3",
+    "dev:v3": "vite --mode v3",
     "preview": "vite preview",
     "test": "vitest run"
   },

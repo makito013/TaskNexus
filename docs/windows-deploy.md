@@ -73,4 +73,25 @@ mesmo assim, sem o canal — nenhuma falha desse listener derruba o app.
 .\deploy.ps1 -NoTls          # HTTP puro na 80, sem certificado
 .\deploy.ps1 -Port 8000       # Porta única explícita, sem TLS
 .\deploy.ps1 -HookPort 9000   # Canal de hooks na 9000 (padrão: 8765)
+.\deploy.ps1 -V3 -Port 8010 -HookPort 8766   # Layout V3 experimental (ver abaixo)
 ```
+
+## Layout V3 experimental
+
+`-V3` roda `npm run build:v3` (saída em `frontend\dist-v3`, **sem tocar** em
+`frontend\dist`, que a produção serve ao vivo) e sobe o uvicorn com
+`FRONTEND_DIST` apontando para esse dist; os logs vão para `logs\uvicorn-v3.log`.
+Sem a flag, `FRONTEND_DIST` é zerado e tudo funciona como antes. A flag não
+grava nada no banco (`layout_version` continua `v2`). Nesta versão o terminal, o
+board e o chat não existem.
+
+Com a produção no ar, `-V3` sem `-Port` binda a mesma porta dela (443/80); o
+script só **avisa**, não bloqueia. Suba a V3 numa instância paralela:
+
+```powershell
+$env:SESSIONS_DB = "C:/tmp/tn-v3/sessions-v3.db"   # opcional: cópia do banco
+.\deploy.ps1 -V3 -Port 8010 -HookPort 8766
+```
+
+Sem `SESSIONS_DB`, a V3 lê o `sessions.db` da produção. `./deploy.sh --v3`
+é o equivalente no macOS/Linux.

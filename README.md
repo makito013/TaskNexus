@@ -71,7 +71,13 @@ cd frontend && npm run dev                     # porta 5173, com proxy /api e /w
 .\deploy.ps1 -NoTls         # Windows — HTTP puro na 80, sem certificado
 .\deploy.ps1 -Port 8000     # Windows — porta única explícita, sem TLS
 .\deploy.ps1 -HookPort 0    # Windows — desliga o canal de hooks
+.\deploy.ps1 -V3 -Port 8010 -HookPort 8766   # Windows — layout V3 experimental (ver abaixo)
 ```
+
+`-V3` (`./deploy.sh --v3` no macOS/Linux) builda e serve o layout V3 em
+construção (`frontend/dist-v3`); sem a flag o app é o V2 de sempre, e a flag
+não grava nada no banco. Com a produção no ar, suba a V3 numa instância
+paralela (`-Port 8010 -HookPort 8766`) para não colidir com as portas dela.
 
 Builda o frontend e sobe o backend servindo tudo. `Ctrl+C` pra parar — não há
 supervisão de processo (auto-restart).
