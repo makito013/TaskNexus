@@ -118,6 +118,7 @@ class _Adapter:
             [sys.executable, ADAPTER_PATH],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, text=not raw, bufsize=0 if raw else 1,
+            encoding=None if raw else "utf-8",
         )
         self._lines: "queue_mod.Queue" = queue_mod.Queue()
         threading.Thread(target=self._read_loop, daemon=True).start()

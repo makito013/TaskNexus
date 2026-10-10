@@ -2185,6 +2185,13 @@ async def test_move_card_stamps_atualizado_em_and_the_author(store):
     other = await _make_card(store, "Outro")
     other_before = (await store.get(other))["atualizado_em"]
     card_id = await _make_card(store, "Movido")
+    # Backdate the stamp: two time.time() reads can return the same value on
+    # Windows (coarse clock), which made the strict `>` below flaky.
+    await store._conn.execute(
+        "UPDATE cards SET atualizado_em = atualizado_em - 100 WHERE id = ?",
+        (card_id,),
+    )
+    await store._conn.commit()
     before = await store.get(card_id)
 
     moved = await store.move_card(

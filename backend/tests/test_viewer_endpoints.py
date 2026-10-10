@@ -27,18 +27,18 @@ def project(tmp_path):
     root = tmp_path / "meu-projeto"
     (root / ".claude").mkdir(parents=True)
     (root / "docs" / "img").mkdir(parents=True)
-    (root / "README.md").write_text(README, encoding="utf-8")
-    (root / "docs" / "plano.md").write_text("# Plano\n", encoding="utf-8")
+    (root / "README.md").write_text(README, encoding="utf-8", newline="\n")
+    (root / "docs" / "plano.md").write_text("# Plano\n", encoding="utf-8", newline="\n")
     (root / "docs" / "relatorio.html").write_text(
         '<html><head><link rel="stylesheet" href="style.css"></head>'
         '<body><img src="img/logo.png"></body></html>',
         encoding="utf-8",
     )
-    (root / "docs" / "style.css").write_text("body { color: red }", encoding="utf-8")
+    (root / "docs" / "style.css").write_text("body { color: red }", encoding="utf-8", newline="\n")
     (root / "docs" / "img" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00fake")
-    (root / "app.py").write_text("print('oi')\n", encoding="utf-8")
-    (root / ".env").write_text("TOKEN=segredo", encoding="utf-8")
-    (tmp_path / "fora.txt").write_text("fora do projeto", encoding="utf-8")
+    (root / "app.py").write_text("print('oi')\n", encoding="utf-8", newline="\n")
+    (root / ".env").write_text("TOKEN=segredo", encoding="utf-8", newline="\n")
+    (tmp_path / "fora.txt").write_text("fora do projeto", encoding="utf-8", newline="\n")
     return root
 
 
@@ -261,7 +261,7 @@ def test_user_open_on_session_of_unknown_project_is_404(client):
 
 def test_limit_of_15_tabs_per_session_evicts_the_oldest(client, project):
     for i in range(16):
-        (project / f"n{i}.md").write_text(str(i), encoding="utf-8")
+        (project / f"n{i}.md").write_text(str(i), encoding="utf-8", newline="\n")
     ids = [_open(client, f"n{i}.md").json()["item"]["item_id"] for i in range(15)]
     last = _open(client, "n15.md").json()
     assert last["evicted"] == [ids[0]]
@@ -342,7 +342,7 @@ def test_content_of_markdown(client):
 
 def test_content_reflects_the_file_as_it_is_now(client, project):
     item = _open(client, "README.md").json()["item"]
-    (project / "README.md").write_text("# Alterado\n", encoding="utf-8")
+    (project / "README.md").write_text("# Alterado\n", encoding="utf-8", newline="\n")
     assert client.get(f"/api/viewer/{item['item_id']}/content").json()["text"] == "# Alterado\n"
 
 
@@ -369,7 +369,7 @@ def test_content_of_image_has_no_text(client):
 
 def test_content_over_1mb_is_truncated(client, project):
     big = "linha de log\n" * 100_000  # ~1,3 MB
-    (project / "grande.log").write_text(big, encoding="utf-8")
+    (project / "grande.log").write_text(big, encoding="utf-8", newline="\n")
     item = _open(client, "grande.log").json()["item"]
     body = client.get(f"/api/viewer/{item['item_id']}/content").json()
     assert body["is_text"] is True
@@ -411,7 +411,7 @@ def test_f_serves_html_with_sandbox_csp(client):
 
 
 def test_f_serves_svg_with_sandbox_csp(client, project):
-    (project / "d.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
+    (project / "d.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8", newline="\n")
     item = _open(client, "d.svg").json()["item"]
     r = client.get(f"/api/viewer/{item['item_id']}/f/d.svg")
     assert r.headers["content-type"].startswith("image/svg+xml")
@@ -472,7 +472,7 @@ def test_f_missing_file_and_unknown_item_are_404(client):
 
 
 def test_f_download_with_accented_name(client, project):
-    (project / "relatório final.md").write_text("# R\n", encoding="utf-8")
+    (project / "relatório final.md").write_text("# R\n", encoding="utf-8", newline="\n")
     item = _open(client, "relatório final.md").json()["item"]
     r = client.get(
         f"/api/viewer/{item['item_id']}/f/relatório final.md",
