@@ -1,7 +1,7 @@
 // frontend/src/hooks/useMediaQuery.js
 // Navegação mobile dedicada do Layout v2 (plano do TL, Tarefa 1): generaliza
-// useNarrowViewport() de components/TasksDrawer.jsx (NÃO tocado — é usado
-// pelo v1 também, fora de escopo aqui) para aceitar qualquer media query
+// useNarrowViewport() do antigo components/TasksDrawer.jsx (removido junto
+// com o layout v1) para aceitar qualquer media query
 // como parâmetro, não só a NARROW_VIEWPORT_QUERY (820px) fixa.
 //
 // Diferença deliberada em relação ao original: lá o efeito usa `[]` nas deps

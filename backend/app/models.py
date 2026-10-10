@@ -409,8 +409,8 @@ class AppearanceUpdateRequest(BaseModel):
     @field_validator("layout_version")
     @classmethod
     def _valid_layout_version(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("v1", "v2"):
-            raise ValueError("layout_version deve ser 'v1' ou 'v2'")
+        if v is not None and v != "v2":
+            raise ValueError("layout_version deve ser 'v2'")
         return v
 
     @field_validator("theme_mode")

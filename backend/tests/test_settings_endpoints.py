@@ -55,6 +55,11 @@ def test_put_invalid_layout_version_returns_422(client):
     assert r.status_code == 422
 
 
+def test_put_layout_version_v1_returns_422(client):
+    r = client.put("/api/settings/appearance", json={"layout_version": "v1"})
+    assert r.status_code == 422
+
+
 def test_put_invalid_theme_mode_returns_422(client):
     r = client.put("/api/settings/appearance", json={"theme_mode": "blue"})
     assert r.status_code == 422
@@ -318,3 +323,40 @@ def test_pretrust_skips_projects_without_claude_dir(tmp_path, monkeypatch):
     assert str(tmp_path / "proj-claude") in trusted
     assert str(tmp_path / "proj-codex") not in trusted
     assert str(tmp_path / "proj-gemini") not in trusted
+
+
+def test_put_layout_version_v3_and_wrong_case_return_422(client):
+    for value in ("v3", "V2", ""):
+        r = client.put("/api/settings/appearance", json={"layout_version": value})
+        assert r.status_code == 422, value
+    assert client.get("/api/settings/appearance").json()["layout_version"] == "v2"
+
+
+def test_legacy_db_with_v1_is_served_as_v2_and_still_updatable(tmp_path):
+    import sqlite3
+    import importlib
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+
+    db_path = tmp_path / "sessions.db"
+    env = {
+        "PROJECTS_ROOT": str(tmp_path),
+        "SESSIONS_DB": str(db_path),
+        "CLAUDE_CONFIG_PATH": str(tmp_path / "claude.json"),
+        "CLEANUP_DELAY": "0.1",
+    }
+    with patch.dict("os.environ", env):
+        import app.main as main_mod
+        importlib.reload(main_mod)
+        with TestClient(main_mod.app):
+            pass  # first boot creates the schema
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE app_settings SET layout_version = 'v1' WHERE id = 1")
+        conn.commit()
+        conn.close()
+        importlib.reload(main_mod)
+        with TestClient(main_mod.app) as c:
+            assert c.get("/api/settings/appearance").json()["layout_version"] == "v2"
+            r = c.put("/api/settings/appearance", json={"theme_mode": "dark"})
+            assert r.status_code == 200
+            assert r.json() == {"layout_version": "v2", "theme_mode": "dark"}

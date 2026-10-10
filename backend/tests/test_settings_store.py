@@ -158,3 +158,23 @@ async def test_notification_settings_persist_across_instances(tmp_path):
         "quiet_hours_start": "01:00",
         "quiet_hours_end": "07:00",
     }
+
+
+@pytest.mark.asyncio
+async def test_legacy_v1_layout_version_row_is_migrated_to_v2_on_initialize(tmp_path):
+    import aiosqlite
+
+    db_path = str(tmp_path / "legacy.db")
+    first = SettingsStore(db_path)
+    await first.initialize()
+    await first.close()
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("UPDATE app_settings SET layout_version = 'v1' WHERE id = 1")
+        await conn.commit()
+
+    second = SettingsStore(db_path)
+    await second.initialize()
+    try:
+        assert (await second.get())["layout_version"] == "v2"
+    finally:
+        await second.close()
