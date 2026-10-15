@@ -40,6 +40,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { clienteIdFromProjetoId, isClienteId } from '../../utils/clientes.js';
 import { resolveClienteNome } from '../../utils/taskGroups.js';
 import { compareProjectPaths } from '../../utils/projects.js';
+import { resolveProjectName } from '../../utils/projectNames.js';
 
 // Every project id in `rootId`'s subtree, including `rootId` itself. Matching
 // is on the full "rootId/" prefix so that a sibling whose id merely starts
@@ -52,17 +53,9 @@ export function collectSubtreeIds(rootId, projects) {
     .map((p) => p.id);
 }
 
-// Display name of a project. Product decision (Bruno, "orphan card/task"
-// session): a project with no resolvable name (removed/unknown, no entry in
-// `projects`) does not fall back to the raw id — returns `null`, same as
-// `resolveClienteNome` (utils/taskGroups.js). `resolveCardTags` below is
-// already conditional on this, so a missing name just omits the tag; it used
-// to fall back to the raw id verbatim from BoardV2.jsx, which is exactly what
-// this decision removed.
-export function resolveProjectName(projetoId, projects) {
-  const found = (projects || []).find((p) => p.id === projetoId);
-  return found ? found.nome : null;
-}
+// `resolveProjectName` lives in utils/projectNames.js (shared with the v3
+// layout); re-exported here so the v2 callers keep importing it from this file.
+export { resolveProjectName };
 
 // Card/task tags — the client tag is always shown, the project tag only when
 // the project is genuinely different from the client (a client-as-project row
