@@ -38,7 +38,7 @@ const MONTH_ABBR = [
 // hand instead of `new Date(str)` because that constructor reads a bare date
 // string as UTC midnight and then renders it in local time, which shifts the
 // day backwards for every negative-offset timezone — including this app's.
-function parseIsoDate(prazo) {
+export function parseIsoDate(prazo) {
   if (typeof prazo !== 'string') return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(prazo.trim());
   if (!match) return null;
@@ -46,6 +46,9 @@ function parseIsoDate(prazo) {
   const month = Number(match[2]);
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  // Impossible calendar days ("2026-02-31") would silently roll into the next
+  // month; reject them so callers treat the prazo as free-form text.
+  if (new Date(year, month - 1, day).getDate() !== day) return null;
   return { year, month, day };
 }
 

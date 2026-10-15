@@ -8,6 +8,7 @@ import {
   formatDateTime,
   formatPrazo,
   isPrazoAtrasado,
+  parseIsoDate,
 } from './cardMeta.js';
 
 // Explicit "today" everywhere — never the real clock.
@@ -113,5 +114,20 @@ describe('formatDateTime', () => {
 
   it('returns an empty string for an unparseable value instead of "Invalid Date"', () => {
     expect(formatDateTime('not-a-date')).toBe('');
+  });
+});
+
+describe('parseIsoDate', () => {
+  it('parseIsoDate returns null for free-form text and impossible days', () => {
+    expect(parseIsoDate('31/02')).toBeNull();
+    expect(parseIsoDate('amanhã')).toBeNull();
+    expect(parseIsoDate('2026-02-31')).toBeNull();
+    expect(parseIsoDate('2026-13-01')).toBeNull();
+    expect(parseIsoDate(null)).toBeNull();
+  });
+
+  it('parseIsoDate parses a valid ISO date without timezone shift', () => {
+    expect(parseIsoDate('2026-01-01')).toEqual({ year: 2026, month: 1, day: 1 });
+    expect(parseIsoDate('2028-02-29')).toEqual({ year: 2028, month: 2, day: 29 });
   });
 });
