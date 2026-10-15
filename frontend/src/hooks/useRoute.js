@@ -24,5 +24,12 @@ export function useRoute() {
     setPath(to);
   }, []);
 
-  return [path, navigate];
+  // Like navigate, but swaps the current history entry instead of adding one
+  // (redirects). Additive third element: App.jsx destructures only two.
+  const replace = useCallback((to) => {
+    window.history.replaceState({}, '', to);
+    setPath(to);
+  }, []);
+
+  return [path, navigate, replace];
 }

@@ -1,0 +1,305 @@
+/*
+ * Tarefas screen. Columns wrap like the canvas: filters 0 1 220px, list
+ * 999 1 420px (min-width 0), detail 1 1 320px (max var(--v3-panel)).
+ * No transform/filter/contain/will-change anywhere (position: fixed invariant);
+ * the selection is a border + ring, never a lift.
+ */
+.v3-tasks__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-1);
+}
+
+.v3-tasks__summary {
+  margin: 0;
+  color: var(--v3-ink-muted);
+}
+
+.v3-tasks__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--v3-space-5);
+}
+
+/* ---- filters ---- */
+.v3-tasks__filters {
+  flex: 0 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}
+
+.v3-tasks__group-label {
+  padding: 0 10px 6px;
+  color: var(--v3-ink-muted);
+}
+
+.v3-tasks__filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-1);
+}
+
+.v3-tasks__filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--v3-radius-lg);
+  background-color: transparent;
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-sm-size);
+  line-height: var(--v3-type-body-sm-line);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-tasks__filter:hover {
+  background-color: color-mix(in srgb, var(--v3-surface-2) 60%, transparent);
+}
+.v3-tasks__filter[aria-pressed="true"] {
+  border-color: var(--v3-line);
+  background-color: var(--v3-surface);
+  font-weight: 600;
+}
+
+.v3-tasks__filter-count {
+  color: var(--v3-ink-muted);
+}
+
+.v3-tasks__hint {
+  margin: 0;
+  padding: 0 10px;
+  color: var(--v3-ink-muted);
+}
+
+/* ---- list column ---- */
+.v3-tasks__list-column {
+  flex: 999 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+.v3-tasks__list-column:focus-visible {
+  outline-offset: 4px;
+}
+
+.v3-tasks__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v3-task-row {
+  display: grid;
+  /* Leading track sizes to the control: 44px checkbox (validation) or the 22px
+     spacer (cards), so card titles do not carry ~68px of dead space. */
+  grid-template-columns: auto minmax(0, 1fr) auto 132px;
+  align-items: center;
+  gap: 0 14px;
+  min-height: 60px;
+  padding: 8px 14px 8px 10px;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+}
+
+/* Selected: border + ring in tiq (tiq-ink on dark, where tiq fails 3:1). */
+.v3-task-row--selected {
+  border-color: var(--v3-tiq);
+  box-shadow: 0 0 0 1px var(--v3-tiq);
+}
+:root[data-layout="v3"][data-theme="dark"] .v3-task-row--selected {
+  border-color: var(--v3-tiq-ink);
+  box-shadow: 0 0 0 1px var(--v3-tiq-ink);
+}
+
+/* Static placeholder (no shimmer). surface-2 equals the ground in the light
+   theme, so the line border keeps the row visible. */
+.v3-task-row--skeleton {
+  display: block;
+  background-color: var(--v3-surface-2);
+}
+
+.v3-task-row__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+.v3-task-row__check input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--v3-tiq);
+  cursor: pointer;
+}
+:root[data-layout="v3"][data-theme="dark"] .v3-task-row__check input {
+  accent-color: var(--v3-tiq-ink);
+}
+
+.v3-task-row__spacer {
+  width: 22px;
+  height: 44px;
+}
+
+.v3-task-row__main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v3-task-row__title {
+  max-width: 100%;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.v3-task-row--done .v3-task-row__title {
+  color: var(--v3-ink-muted);
+  text-decoration: line-through;
+}
+
+.v3-task-row__project {
+  max-width: 100%;
+  color: var(--v3-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-task-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--v3-space-1);
+}
+
+.v3-task-row__due {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--v3-ink);
+}
+.v3-task-row__due--alert { color: var(--v3-danger-ink); }
+.v3-task-row__due--none { color: var(--v3-ink-muted); }
+
+/* ---- states ---- */
+.v3-tasks__empty,
+.v3-tasks__error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  max-width: 560px;
+}
+.v3-tasks__empty {
+  align-items: center;
+  padding: var(--v3-space-7) var(--v3-space-5);
+  text-align: center;
+}
+.v3-tasks__error {
+  align-items: flex-start;
+  background-color: var(--v3-fin-tint);
+  border-color: var(--v3-fin-line);
+  color: var(--v3-fin-ink);
+}
+.v3-tasks__error-title,
+.v3-tasks__error-text,
+.v3-tasks__empty-title,
+.v3-tasks__empty-text {
+  margin: 0;
+}
+.v3-tasks__empty-text { color: var(--v3-ink-muted); }
+.v3-tasks__error .v3-button { margin-top: var(--v3-space-2); }
+
+.v3-tasks__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- detail ---- */
+.v3-tasks__detail {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: var(--v3-panel);
+}
+
+.v3-tasks__placeholder {
+  color: var(--v3-ink-muted);
+}
+.v3-tasks__placeholder p { margin: 0; }
+
+.v3-task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.v3-task-detail__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+
+.v3-task-detail__title {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.v3-task-detail__due {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v3-task-detail__date,
+.v3-task-detail__relative,
+.v3-task-detail__project,
+.v3-task-detail__empty {
+  margin: 0;
+}
+.v3-task-detail__relative,
+.v3-task-detail__project,
+.v3-task-detail__empty {
+  color: var(--v3-ink-muted);
+}
+
+/* The description scrolls inside the panel when a card carries a long text. */
+.v3-task-detail__description {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.v3-task-detail__footer {
+  display: flex;
+}
+.v3-task-detail__action {
+  width: 100%;
+}

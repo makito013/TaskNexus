@@ -26,9 +26,20 @@ import { api } from '../services/api.js';
 // diverge; keeps both views feeling equally "live".
 const GLOBAL_TASKS_POLL_INTERVAL_MS = 5000;
 
-export function useGlobalTasks() {
+// Additive options/returns (v3 tasks screen): `error` is the last fetch error
+// (cleared on the next successful poll), `refetch()` forces an immediate
+// fetch, and `onError(error)` replaces the native alert() when complete/reopen
+// fails. v2 callers keep calling useGlobalTasks() with no argument and see the
+// same behavior as before (alert fallback included).
+export function useGlobalTasks({ onError } = {}) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Latest-ref so a new onError identity does not recreate the callbacks (and
+  // restart the poll effect that depends on fetchAll).
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
   // "Latest ref" mirror of tasks so completeTask/reopenTask (below) can read
   // the CURRENT list synchronously to look up the task being mutated,
@@ -61,7 +72,9 @@ export function useGlobalTasks() {
     try {
       const list = await api.fetchGlobalTasks();
       mergeTasks(list);
+      setError(null);
     } catch (e) {
+      setError(e);
       // Network blip — keep last known state, same tolerance as the poll in
       // useTasks.js.
       console.warn('fetchGlobalTasks error (keeping last known state)', e);
@@ -83,9 +96,16 @@ export function useGlobalTasks() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [fetchAll]);
 
+  // A mutation failure goes to the caller's onError when given; without one
+  // the v2 behavior (native alert) stays.
+  const reportMutationError = useCallback((e, fallbackMessage) => {
+    if (onErrorRef.current) onErrorRef.current(e);
+    else alert(fallbackMessage);
+  }, []);
+
   const completeTask = useCallback(async (sessionKey, taskId) => {
     const previousTask = tasksRef.current.find((t) => t.id === taskId);
-    if (!previousTask) return; // unknown task id — nothing to optimistically flip or revert
+    if (!previousTask) return false; // unknown task id — nothing to optimistically flip or revert
 
     optimisticDoneIds.current.add(taskId);
     setTasks((prev) => prev.map((t) => (t.id === taskId
@@ -93,12 +113,14 @@ export function useGlobalTasks() {
       : t)));
     try {
       await api.completeTask(sessionKey, taskId);
+      return true;
     } catch (e) {
       optimisticDoneIds.current.delete(taskId);
       setTasks((prev) => prev.map((t) => (t.id === taskId ? previousTask : t)));
-      alert('Falha ao concluir tarefa. Tente novamente.');
+      reportMutationError(e, 'Falha ao concluir tarefa. Tente novamente.');
+      return false;
     }
-  }, []);
+  }, [reportMutationError]);
 
   // Symmetric to completeTask: optimistically flips a done task back to
   // pending. Same optimistic-then-revert-on-failure shape, but the SUCCESS
@@ -109,7 +131,7 @@ export function useGlobalTasks() {
   // useTasks.js.
   const reopenTask = useCallback(async (sessionKey, taskId) => {
     const previousTask = tasksRef.current.find((t) => t.id === taskId);
-    if (!previousTask) return; // unknown task id — nothing to optimistically flip or revert
+    if (!previousTask) return false; // unknown task id — nothing to optimistically flip or revert
 
     setTasks((prev) => prev.map((t) => (t.id === taskId
       ? { ...t, status: 'pending', completed_at: null }
@@ -117,15 +139,19 @@ export function useGlobalTasks() {
     try {
       await api.reopenTask(sessionKey, taskId);
       optimisticDoneIds.current.delete(taskId);
+      return true;
     } catch (e) {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? previousTask : t)));
-      alert('Falha ao reabrir tarefa. Tente novamente.');
+      reportMutationError(e, 'Falha ao reabrir tarefa. Tente novamente.');
+      return false;
     }
-  }, []);
+  }, [reportMutationError]);
 
   return {
     tasks,
     loading,
+    error,
+    refetch: fetchAll,
     completeTask,
     reopenTask,
   };

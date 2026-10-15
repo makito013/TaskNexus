@@ -36,7 +36,13 @@ const V3_CHAIN_SOURCES = [
   './components/ModuleRail/ModuleRail.jsx',
   './components/ComingSoon/ComingSoon.css',
   './components/ComingSoon/ComingSoon.jsx',
+  './IslandContext.jsx',
+  './theme/prose.css',
   './modules/tasks/TasksScreen.jsx',
+  './modules/tasks/TasksScreen.css',
+  './modules/tasks/TaskRow.jsx',
+  './modules/tasks/TaskDetail.jsx',
+  './modules/tasks/SituationFilters.jsx',
   './dev/Gallery.jsx',
   './dev/Gallery.css',
 ]

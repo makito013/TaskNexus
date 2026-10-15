@@ -58,3 +58,22 @@ describe('useRoute — popstate (browser back/forward)', () => {
     expect(path).toBe('/');
   });
 });
+
+describe('useRoute — replace', () => {
+  beforeEach(() => { window.history.pushState({}, '', '/'); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('updates the returned path with replaceState and without a new history entry', () => {
+    const pushStateSpy = vi.spyOn(window.history, 'pushState');
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+    const { result } = renderHook(() => useRoute());
+
+    act(() => { result.current[2]('/tasks'); });
+
+    expect(result.current[0]).toBe('/tasks');
+    expect(replaceStateSpy).toHaveBeenCalledWith({}, '', '/tasks');
+    expect(pushStateSpy).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/tasks');
+  });
+});
+

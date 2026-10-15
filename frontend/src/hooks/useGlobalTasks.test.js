@@ -194,3 +194,86 @@ describe('useGlobalTasks — stale poll does not clobber an optimistic completio
     vi.useRealTimers();
   });
 });
+
+describe('useGlobalTasks — additive options of the v3 tasks screen', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  const okResponse = (body) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+  const failedResponse = () => Promise.resolve({ ok: false, json: () => Promise.resolve({}) });
+
+  it('exposes the last fetch error and clears it after a successful poll', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch = vi.fn(() => failedResponse());
+    const { result } = renderHook(() => useGlobalTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBeInstanceOf(Error);
+
+    global.fetch = vi.fn(() => okResponse([fakeGlobalTask({ id: 1 })]));
+    await act(async () => { await result.current.refetch(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.tasks).toHaveLength(1);
+  });
+
+  it('refetch triggers an immediate fetch', async () => {
+    global.fetch = vi.fn(() => okResponse([]));
+    const { result } = renderHook(() => useGlobalTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const callsBefore = global.fetch.mock.calls.length;
+
+    await act(async () => { await result.current.refetch(); });
+    expect(global.fetch.mock.calls.length).toBe(callsBefore + 1);
+    expect(global.fetch).toHaveBeenLastCalledWith('/api/tasks/global');
+  });
+
+  it('calls onError instead of alert when completing fails', async () => {
+    const task = fakeGlobalTask({ id: 21, status: 'pending' });
+    global.fetch = vi.fn(() => okResponse([task]));
+    global.alert = vi.fn();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useGlobalTasks({ onError }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    global.fetch = vi.fn(() => Promise.reject(new Error('network down')));
+    await act(async () => { await result.current.completeTask('projA::claude', 21); });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(global.alert).not.toHaveBeenCalled();
+    expect(result.current.tasks.find((t) => t.id === 21).status).toBe('pending');
+  });
+
+  it('completeTask and reopenTask resolve false on failure and true on success', async () => {
+    const task = fakeGlobalTask({ id: 31, status: 'pending' });
+    global.fetch = vi.fn(() => okResponse([task]));
+    const { result } = renderHook(() => useGlobalTasks({ onError: () => {} }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    global.fetch = vi.fn(() => okResponse({ status: 'done' }));
+    let outcome;
+    await act(async () => { outcome = await result.current.completeTask('projA::claude', 31); });
+    expect(outcome).toBe(true);
+
+    global.fetch = vi.fn(() => okResponse({ status: 'pending' }));
+    await act(async () => { outcome = await result.current.reopenTask('projA::claude', 31); });
+    expect(outcome).toBe(true);
+
+    global.fetch = vi.fn(() => Promise.reject(new Error('boom')));
+    await act(async () => { outcome = await result.current.reopenTask('projA::claude', 31); });
+    expect(outcome).toBe(false);
+    await act(async () => { outcome = await result.current.completeTask('projA::claude', 31); });
+    expect(outcome).toBe(false);
+  });
+
+  it('keeps the alert fallback when no onError is given', async () => {
+    const task = fakeGlobalTask({ id: 41, status: 'pending' });
+    global.fetch = vi.fn(() => okResponse([task]));
+    global.alert = vi.fn();
+    const { result } = renderHook(() => useGlobalTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    global.fetch = vi.fn(() => Promise.reject(new Error('network down')));
+    await act(async () => { await result.current.completeTask('projA::claude', 41); });
+    expect(global.alert).toHaveBeenCalledTimes(1);
+  });
+});
+

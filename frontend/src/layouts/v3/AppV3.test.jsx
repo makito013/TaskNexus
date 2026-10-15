@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, act, cleanup, waitFor, within } from '@testing-library/react'
 import { api } from '../../services/api.js'
 import AppV3 from './AppV3.jsx'
 
@@ -15,6 +15,11 @@ describe('AppV3', () => {
   beforeEach(() => {
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
+    // The Tarefas screen fetches on mount; keep every test off the network.
+    vi.spyOn(api, 'fetchGlobalTasks').mockResolvedValue([])
+    vi.spyOn(api, 'fetchCards').mockResolvedValue([])
+    vi.spyOn(api, 'fetchBoardColumns').mockResolvedValue([])
+    vi.spyOn(api, 'fetchProjects').mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -141,5 +146,61 @@ describe('AppV3', () => {
     const railLabels = screen.getAllByRole('button').filter((b) => b.classList.contains('v3-rail__item'))
     expect(railLabels).toHaveLength(5)
     expect(screen.queryByRole('button', { name: /galeria/i })).toBeNull()
+  })
+
+  it('keeps one island element across module switches so the status phrase is announced', () => {
+    startAt('/tasks')
+    render(<AppV3 initialTheme="light" />)
+    const before = island()
+    fireEvent.click(screen.getByRole('button', { name: 'Finanças, em breve' }))
+    expect(island()).toBe(before)
+    fireEvent.click(screen.getByRole('button', { name: 'Navegador, em breve' }))
+    expect(island()).toBe(before)
+    expect(within(before).getByRole('status').textContent).toBe('Ainda estou me preparando.')
+  })
+
+  it('drives the island from the tasks data and falls back to the static phrase elsewhere', async () => {
+    vi.spyOn(api, 'fetchBoardColumns').mockResolvedValue([
+      { slug: 'a_fazer', label: 'A fazer', position: 0, is_done: false },
+      { slug: 'feito', label: 'Feito', position: 1, is_done: true },
+    ])
+    vi.spyOn(api, 'fetchCards').mockResolvedValue([
+      { id: 1, titulo: 'Atrasado', projeto_id: 'p', status: 'a_fazer', criado_em: 1, prazo: '2020-01-01', tipo: null, descricao: null },
+    ])
+    startAt('/tasks')
+    render(<AppV3 initialTheme="light" />)
+
+    await waitFor(() => expect(within(island()).getByRole('status').textContent).toBe('1 atrasada. Quer ver?'))
+    expect(island().querySelector('.v3-pet--tiq.v3-pet--alert')).toBeTruthy()
+    expect(within(island()).getByRole('button', { name: 'Ver atrasadas' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Finanças, em breve' }))
+    expect(within(island()).getByRole('status').textContent).toBe('Ainda não cheguei por aqui.')
+    expect(island().querySelector('.v3-pet--fin.v3-pet--sleeping')).toBeTruthy()
+    expect(within(island()).queryByRole('button', { name: 'Ver atrasadas' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tarefas' }))
+    await waitFor(() => expect(within(island()).getByRole('status').textContent).toBe('1 atrasada. Quer ver?'))
+  })
+
+  it('renders exactly one h1 on every screen', async () => {
+    for (const route of ['/tasks', '/home', '/finance', '/projects', '/browser']) {
+      startAt(route)
+      const { container, unmount } = render(<AppV3 initialTheme="light" />)
+      await waitFor(() => expect(container.querySelectorAll('h1')).toHaveLength(1))
+      expect(container.querySelectorAll('h1[tabindex="-1"]')).toHaveLength(1)
+      unmount()
+    }
+  })
+
+  it('after the redirect the route state is the replaced path, so the active module is not pushed again', () => {
+    startAt('/')
+    const push = vi.spyOn(window.history, 'pushState')
+    render(<AppV3 initialTheme="light" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tarefas' }))
+    expect(push).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Finanças, em breve' }))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith({}, '', '/finance')
   })
 })

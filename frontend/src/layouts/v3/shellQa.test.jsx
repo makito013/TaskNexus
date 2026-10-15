@@ -1,10 +1,11 @@
 // QA coverage for the v3 shell (phase 4): spec copy, CSS contracts and real
 // browser-history navigation that the unit tests of each piece do not pin down.
-import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { api } from '../../services/api.js'
 import AppV3 from './AppV3.jsx'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -40,8 +41,14 @@ const SPEC_COPY = {
 describe('v3 shell QA', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    // The Tarefas screen fetches on mount; keep every test off the network.
+    vi.spyOn(api, 'fetchGlobalTasks').mockResolvedValue([])
+    vi.spyOn(api, 'fetchCards').mockResolvedValue([])
+    vi.spyOn(api, 'fetchBoardColumns').mockResolvedValue([])
+    vi.spyOn(api, 'fetchProjects').mockResolvedValue([])
   })
   afterEach(() => {
+    vi.restoreAllMocks()
     window.history.replaceState({}, '', '/')
   })
 

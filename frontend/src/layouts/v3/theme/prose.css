@@ -1,0 +1,99 @@
+/*
+ * Markdown prose (task descriptions). The v2 index.css still loads in the same
+ * document and its `*` reset zeroes the margins/list styles markdown relies on,
+ * so every rule is scoped under .v3-prose with the layout attribute to win
+ * on specificity and read only --v3-* tokens.
+ */
+:root[data-layout="v3"] .v3-prose {
+  color: var(--v3-ink);
+  font-size: var(--v3-type-body-sm-size);
+  line-height: var(--v3-type-body-sm-line);
+  overflow-wrap: anywhere;
+}
+
+:root[data-layout="v3"] .v3-prose > :first-child { margin-top: 0; }
+:root[data-layout="v3"] .v3-prose > :last-child { margin-bottom: 0; }
+
+:root[data-layout="v3"] .v3-prose p,
+:root[data-layout="v3"] .v3-prose ul,
+:root[data-layout="v3"] .v3-prose ol,
+:root[data-layout="v3"] .v3-prose pre,
+:root[data-layout="v3"] .v3-prose blockquote,
+:root[data-layout="v3"] .v3-prose table {
+  margin: 0 0 var(--v3-space-3);
+}
+
+:root[data-layout="v3"] .v3-prose h3,
+:root[data-layout="v3"] .v3-prose h4,
+:root[data-layout="v3"] .v3-prose h5,
+:root[data-layout="v3"] .v3-prose h6 {
+  margin: var(--v3-space-4) 0 var(--v3-space-2);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-size);
+  line-height: var(--v3-type-body-line);
+  font-weight: 600;
+}
+
+:root[data-layout="v3"] .v3-prose ul,
+:root[data-layout="v3"] .v3-prose ol {
+  padding-left: 1.4em;
+}
+:root[data-layout="v3"] .v3-prose ul { list-style: disc; }
+:root[data-layout="v3"] .v3-prose ol { list-style: decimal; }
+:root[data-layout="v3"] .v3-prose li + li { margin-top: var(--v3-space-1); }
+
+:root[data-layout="v3"] .v3-prose strong { font-weight: 600; }
+
+:root[data-layout="v3"] .v3-prose a {
+  color: var(--v3-tiq-ink);
+  text-decoration: underline;
+}
+
+:root[data-layout="v3"] .v3-prose code {
+  padding: 1px 5px;
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-surface-2);
+  font-family: var(--v3-font-mono);
+  font-size: var(--v3-type-mono-sm-size);
+}
+
+:root[data-layout="v3"] .v3-prose pre {
+  padding: var(--v3-space-3);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface-2);
+  overflow-x: auto;
+}
+:root[data-layout="v3"] .v3-prose pre code {
+  padding: 0;
+  background: none;
+}
+
+:root[data-layout="v3"] .v3-prose blockquote {
+  padding-left: var(--v3-space-3);
+  border-left: 3px solid var(--v3-line-strong);
+  color: var(--v3-ink-muted);
+}
+
+:root[data-layout="v3"] .v3-prose hr {
+  margin: var(--v3-space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--v3-line);
+}
+
+:root[data-layout="v3"] .v3-prose img {
+  max-width: 100%;
+  height: auto;
+}
+
+:root[data-layout="v3"] .v3-prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+:root[data-layout="v3"] .v3-prose th,
+:root[data-layout="v3"] .v3-prose td {
+  padding: var(--v3-space-1) var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  text-align: left;
+}
