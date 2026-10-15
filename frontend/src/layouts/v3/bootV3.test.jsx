@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { api } from '../../services/api.js'
-import { bootV3 } from './bootV3.jsx'
+import { APPEARANCE_TIMEOUT_MS, bootV3 } from './bootV3.jsx'
 
 async function flush() {
   await act(async () => {
@@ -23,7 +23,7 @@ describe('bootV3', () => {
     window.localStorage.clear()
   })
 
-  it('renders the placeholder and marks the document as layout v3', async () => {
+  it('renders the shell and marks the document as layout v3', async () => {
     vi.spyOn(api, 'fetchAppearance').mockResolvedValue({ theme_mode: 'dark' })
     await act(async () => {
       await bootV3()
@@ -31,7 +31,9 @@ describe('bootV3', () => {
     await flush()
     expect(document.documentElement.dataset.layout).toBe('v3')
     expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(document.getElementById('root').textContent).toContain('TaskNexus V3')
+    const root = document.getElementById('root')
+    expect(root.querySelector('nav[aria-label="Módulos"]')).toBeTruthy()
+    expect(root.querySelector('.v3-island')).toBeTruthy()
   })
 
   it('prefers the stored v3 theme over the server appearance', async () => {
@@ -62,5 +64,37 @@ describe('bootV3', () => {
     })
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(writer).not.toHaveBeenCalled()
+  })
+
+  it('falls back to light when the appearance request never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(api, 'fetchAppearance').mockReturnValue(new Promise(() => {}))
+      const booting = bootV3()
+      await vi.advanceTimersByTimeAsync(APPEARANCE_TIMEOUT_MS - 1)
+      expect(document.documentElement.dataset.layout).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      await act(async () => {
+        await booting
+      })
+      expect(document.documentElement.dataset.theme).toBe('light')
+      expect(document.documentElement.dataset.layout).toBe('v3')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not register the service worker', async () => {
+    const register = vi.fn()
+    Object.defineProperty(navigator, 'serviceWorker', { value: { register }, configurable: true })
+    try {
+      vi.spyOn(api, 'fetchAppearance').mockResolvedValue({ theme_mode: 'light' })
+      await act(async () => {
+        await bootV3()
+      })
+      expect(register).not.toHaveBeenCalled()
+    } finally {
+      delete navigator.serviceWorker
+    }
   })
 })

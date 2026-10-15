@@ -1,0 +1,102 @@
+.v3-rail {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--v3-space-5) 0;
+  background-color: var(--v3-surface);
+  border-right: 1px solid var(--v3-line);
+}
+/* Children never shrink: in a short window the rail scrolls instead of squashing. */
+.v3-rail > * {
+  flex-shrink: 0;
+}
+
+.v3-rail__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-action);
+  color: var(--v3-action-ink);
+  font-family: var(--v3-font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.v3-rail__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 72px;
+  min-height: 56px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: var(--v3-radius-xl);
+  background-color: transparent;
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-micro-size);
+  line-height: var(--v3-type-micro-line);
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-rail__item:hover {
+  background-color: color-mix(in srgb, var(--v3-surface-2) 60%, transparent);
+}
+
+.v3-rail__item--active,
+.v3-rail__item--active:hover {
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+  font-weight: 600;
+}
+/* Active is also marked by a bar (fill alone is ~1.1:1 between surface and surface-2).
+   left is -3px, not -6px: the rail is 84px wide with a 1px right border (83px content box)
+   and the global 4px scrollbar can take 4 more, so the 72px item sits at 5.5px / 3.5px from
+   the padding edge and -6px would clip the 3px bar. */
+.v3-rail__item--active::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  width: 3px;
+  height: 24px;
+  margin-top: -12px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-ink);
+}
+
+.v3-rail__soon {
+  color: var(--v3-ink-muted);
+  font-weight: 400;
+}
+
+.v3-rail__theme {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-top: auto;
+  border: 0;
+  border-radius: var(--v3-radius-lg);
+  background-color: transparent;
+  color: var(--v3-ink-muted);
+  cursor: pointer;
+  transition: background-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-rail__theme:hover {
+  background-color: var(--v3-surface-2);
+}

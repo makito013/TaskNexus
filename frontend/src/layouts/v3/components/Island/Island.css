@@ -1,0 +1,106 @@
+/*
+ * The island is dark in both themes (island-* tokens). It is a normal-flow,
+ * sticky box: ADR-07 forbids transform/filter/contain/will-change on it (they
+ * would become the containing block of any future position: fixed descendant),
+ * so the entrance animates opacity only; the movement lives inside the pet SVG.
+ */
+.v3-island {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  max-width: 100%;
+  padding: 10px 14px 12px 12px;
+  border: 1px solid var(--v3-island-line);
+  border-top: 0;
+  border-radius: 0 0 var(--v3-radius-island) var(--v3-radius-island);
+  background-color: var(--v3-island);
+  box-shadow: var(--v3-shadow-island);
+  color: var(--v3-island-ink);
+  animation: v3-island-in var(--v3-dur-slow) var(--v3-ease-out) both;
+}
+
+@keyframes v3-island-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-island {
+    animation: none;
+  }
+}
+
+/* The island is dark in both themes, so focus uses the island ink. */
+:root[data-layout="v3"] .v3-island :focus-visible {
+  outline-color: var(--v3-island-ink);
+}
+
+.v3-island__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 380px;
+}
+
+.v3-island__name--bit  { color: var(--v3-island-name-bit); }
+.v3-island__name--tiq  { color: var(--v3-island-name-tiq); }
+.v3-island__name--fin  { color: var(--v3-island-name-fin); }
+.v3-island__name--kan  { color: var(--v3-island-name-kan); }
+.v3-island__name--navi { color: var(--v3-island-name-navi); }
+
+.v3-island__message {
+  margin: 0;
+  font-size: var(--v3-type-body-size);
+  line-height: var(--v3-type-body-line);
+  color: var(--v3-island-ink);
+}
+
+.v3-island__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+
+/* Every button on the island is a pill with the label style (spec, section 1). */
+.v3-island .v3-button {
+  border-radius: var(--v3-radius-pill);
+  font-size: var(--v3-type-label-size);
+  line-height: var(--v3-type-label-line);
+  font-weight: 600;
+}
+
+.v3-island__divider {
+  align-self: center;
+  width: 1px;
+  height: 40px;
+  margin: 0 4px;
+  background-color: var(--v3-island-divider);
+}
+
+.v3-island__colleagues {
+  display: flex;
+  gap: var(--v3-space-1);
+}
+
+.v3-island__colleague {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v3-radius-lg);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-island__colleague:hover {
+  background-color: var(--v3-island-surface);
+}

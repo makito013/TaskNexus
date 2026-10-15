@@ -22,7 +22,16 @@
 .v3-button--sm { min-height: var(--v3-control-sm); }
 .v3-button--lg { min-height: var(--v3-control-lg); }
 
-/* hover / pressed are a design-system gap: ink overlay at 8% / 14%. */
+/*
+ * hover / pressed are a design-system gap (the DS defines no interaction states).
+ * The spec asked for an `ink` overlay at 8% / 14% on every variant. That is kept
+ * for secondary and text. DELIBERATE DEVIATION, kept because it is the correct
+ * contrast choice (reviewed in phase 3):
+ *   - primary: overlay is `action-ink` at 12% / 20% (an `ink` overlay on the
+ *     `action` fill would barely move, and on the dark theme `ink` is light);
+ *   - module:  overlay is `pet-visor` at 8% / 14% (the `ink` overlay would lower
+ *     the contrast of the `island-ink` text on the module colour).
+ */
 .v3-button:hover {
   background-color: color-mix(in srgb, var(--v3-ink) 8%, var(--v3-button-bg));
 }
@@ -56,6 +65,11 @@
 .v3-button--island {
   --v3-button-fg: var(--v3-island-ink);
 }
+/* Safe default for variant="module" without a module: the tiq fill keeps the
+   island-ink text readable (a transparent fill would make it invisible on light). */
+.v3-button--module {
+  --v3-button-bg: var(--v3-tiq);
+}
 .v3-button--module:hover {
   background-color: color-mix(in srgb, var(--v3-pet-visor) 8%, var(--v3-button-bg));
 }
@@ -66,6 +80,10 @@
 .v3-button--island {
   --v3-button-bg: var(--v3-island-surface);
   border-radius: var(--v3-radius-pill);
+  /* `label` style of the spec (13/18) at weight 600; the label token itself is 500. */
+  font-size: var(--v3-type-label-size);
+  line-height: var(--v3-type-label-line);
+  font-weight: 600;
 }
 .v3-button--island:hover,
 .v3-button--island:active {

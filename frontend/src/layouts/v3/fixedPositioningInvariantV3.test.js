@@ -30,6 +30,15 @@ const V3_CHAIN_SOURCES = [
   './theme/fonts.css',
   './components/Panel/Panel.css',
   './components/Panel/Panel.jsx',
+  './components/Island/Island.css',
+  './components/Island/Island.jsx',
+  './components/ModuleRail/ModuleRail.css',
+  './components/ModuleRail/ModuleRail.jsx',
+  './components/ComingSoon/ComingSoon.css',
+  './components/ComingSoon/ComingSoon.jsx',
+  './modules/tasks/TasksScreen.jsx',
+  './dev/Gallery.jsx',
+  './dev/Gallery.css',
 ]
 
 const offendersIn = (source) =>

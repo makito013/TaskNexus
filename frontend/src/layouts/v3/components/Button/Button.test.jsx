@@ -16,6 +16,16 @@ describe('Button', () => {
     expect(screen.getByRole('button').className).toContain('v3-button--module-tiq')
   })
 
+  it('module variant without a module falls back to tiq so the text is never invisible', () => {
+    render(<Button variant="module">Concluir</Button>)
+    expect(screen.getByRole('button').className).toContain('v3-button--module-tiq')
+  })
+
+  it('does not add a module class to other variants', () => {
+    render(<Button variant="secondary">Reabrir</Button>)
+    expect(screen.getByRole('button').className).not.toContain('v3-button--module-')
+  })
+
   it('forwards native button props such as type and aria-busy', () => {
     render(<Button type="submit" aria-busy="true" disabled>Salvando…</Button>)
     const button = screen.getByRole('button')

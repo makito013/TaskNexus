@@ -1,0 +1,40 @@
+/* Layout of the dev-only component gallery (route /dev/gallery of the v3 build, outside the rail). */
+.v3-gallery {
+  padding: 0 0 var(--v3-space-8); /* side padding comes from the shell screen */
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-6);
+}
+
+.v3-gallery__header,
+.v3-gallery__row,
+.v3-gallery__pet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+
+.v3-gallery__header {
+  justify-content: space-between;
+}
+
+.v3-gallery__pets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+}
+
+.v3-gallery__pet-row .v3-type-eyebrow {
+  width: 48px;
+  color: var(--v3-ink-muted);
+}
+
+.v3-gallery__pet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--v3-space-1);
+  margin: 0;
+  color: var(--v3-ink-muted);
+}

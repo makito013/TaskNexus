@@ -1,76 +1,85 @@
-import Button from './components/Button/Button.jsx'
-import Chip from './components/Chip/Chip.jsx'
-import Panel from './components/Panel/Panel.jsx'
-import Pet from './components/Pet/Pet.jsx'
-import { PET_IDS, PET_NAMES } from './components/Pet/petShapes.js'
-import { PET_STATES } from './components/Pet/petStates.js'
+import { useCallback, useEffect, useRef } from 'react'
+import { useRoute } from '../../hooks/useRoute.js'
+import ComingSoon from './components/ComingSoon/ComingSoon.jsx'
+import Island from './components/Island/Island.jsx'
+import ModuleRail from './components/ModuleRail/ModuleRail.jsx'
+import Gallery from './dev/Gallery.jsx'
+import {
+  DEFAULT_MODULE_ID,
+  GALLERY_PATH,
+  MODULES,
+  colleaguesOf,
+  moduleById,
+  moduleForPath,
+} from './modules.js'
+import TasksScreen from './modules/tasks/TasksScreen.jsx'
 import { useV3Theme } from './theme/useV3Theme.js'
 import './AppV3.css'
 
-// TEMPORARY component gallery (phase 3): the only way to eyeball the pets and the
-// atoms in a real browser before the shell exists. Replaced by the real shell in
-// the next phase.
+const SCREENS = { tasks: TasksScreen }
+
+// The v3 shell (desktop): module rail | content column with the sticky island on
+// top and the screen of the open module below. The route table is modules.js;
+// "/" and unknown paths are replaced (not pushed) by the default module, and the
+// dev gallery lives outside the rail at GALLERY_PATH.
 export default function AppV3({ initialTheme }) {
   const { theme, toggleTheme } = useV3Theme({ initialTheme })
+  const [path, navigate] = useRoute()
+
+  const onGallery = path === GALLERY_PATH
+  const routed = moduleForPath(path)
+  const activeModule = onGallery ? null : routed || moduleById(DEFAULT_MODULE_ID)
+
+  useEffect(() => {
+    if (!onGallery && !routed) {
+      window.history.replaceState({}, '', moduleById(DEFAULT_MODULE_ID).path)
+    }
+  }, [onGallery, routed])
+
+  const openModule = useCallback(
+    (moduleId) => {
+      const target = moduleById(moduleId)
+      if (target && window.location.pathname !== target.path) navigate(target.path)
+    },
+    [navigate],
+  )
+
+  // Move focus to the screen heading when the module changes, not on first load.
+  const activeId = activeModule ? activeModule.id : null
+  const previousIdRef = useRef(activeId)
+  useEffect(() => {
+    if (previousIdRef.current === activeId) return
+    previousIdRef.current = activeId
+    if (activeId) document.querySelector('.v3-shell__screen h1')?.focus()
+  }, [activeId])
+
+  const Screen = activeModule && SCREENS[activeModule.id]
 
   return (
-    <div className="v3-main-column v3-gallery">
-      <header className="v3-gallery__header">
-        <h1 className="v3-type-title-lg">TaskNexus V3</h1>
-        <Button onClick={toggleTheme}>
-          {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
-        </Button>
-      </header>
-
-      <section aria-labelledby="gallery-pets">
-        <h2 id="gallery-pets" className="v3-type-title-sm">Pets</h2>
-        <div className="v3-gallery__pets">
-          {PET_IDS.map((pet) => (
-            <div key={pet} className="v3-gallery__pet-row">
-              <span className="v3-type-eyebrow">{PET_NAMES[pet]}</span>
-              {PET_STATES.map((state) => (
-                <figure key={state} className="v3-gallery__pet">
-                  <Pet pet={pet} state={state} />
-                  <figcaption className="v3-type-caption">{state}</figcaption>
-                </figure>
-              ))}
-              <Pet pet={pet} size="side" />
-              <Pet pet={pet} size="nav" decorative />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="gallery-atoms">
-        <h2 id="gallery-atoms" className="v3-type-title-sm">Botões e chips</h2>
-        <div className="v3-gallery__row">
-          <Button variant="primary">Primário</Button>
-          <Button variant="secondary">Secundário</Button>
-          <Button variant="text">Texto</Button>
-          <Button variant="module" module="tiq">Tiq</Button>
-          <Button variant="module" module="bit">Bit</Button>
-          <Button variant="module" module="fin">Fin</Button>
-          <Button variant="module" module="navi">Navi</Button>
-          <Button size="sm">Pequeno</Button>
-          <Button aria-busy="true">Salvando…</Button>
-        </div>
-        <div className="v3-gallery__row">
-          <Chip tone="id">#132</Chip>
-          <Chip tone="badge" kind="bug">bug</Chip>
-          <Chip tone="badge" kind="hotfix">hotfix</Chip>
-          <Chip tone="badge" kind="story">história</Chip>
-          <Chip tone="state" accent="tiq">Pendente</Chip>
-          <Chip tone="state" accent="navi">Concluída</Chip>
-          <Chip tone="state" accent="danger">Atrasada</Chip>
-          <Chip tone="state" accent="soon">Em breve</Chip>
-          <Chip>Validação</Chip>
-        </div>
-        <div className="v3-gallery__row">
-          <Panel>Painel</Panel>
-          <Panel notice="tiq">Nota do Tiq</Panel>
-          <Panel notice="fin">Aviso do Fin</Panel>
-        </div>
-      </section>
-    </div>
+    <>
+      <ModuleRail
+        modules={MODULES}
+        activeId={activeModule ? activeModule.id : null}
+        onSelect={openModule}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+      <div className="v3-main-column v3-shell__column">
+        {activeModule && (
+          <Island
+            key={activeModule.id}
+            pet={activeModule.pet}
+            state={activeModule.ready ? 'idle' : 'sleeping'}
+            message={activeModule.islandMessage}
+            colleagues={colleaguesOf(activeModule.id)}
+            onColleagueSelect={openModule}
+          />
+        )}
+        <main className="v3-shell__screen">
+          {onGallery && <Gallery />}
+          {activeModule && (Screen ? <Screen /> : <ComingSoon key={activeModule.id} module={activeModule} />)}
+        </main>
+      </div>
+    </>
   )
 }
