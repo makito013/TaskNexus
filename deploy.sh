@@ -5,7 +5,7 @@
 #      ./deploy.sh --port 8000      # porta explícita
 #      ./deploy.sh --no-tls         # serve HTTP sem SSL
 #      ./deploy.sh --hook-port 8765 # porta do canal de hooks
-#      ./deploy.sh --v3 --port 8010 --hook-port 8766   # layout V3 experimental
+#      SESSIONS_DB=/tmp/tn-v3/sessions-v3.db #        ./deploy.sh --v3 --port 8010 --hook-port 8766   # layout V3 experimental (cópia do banco obrigatória)
 #
 # Suporta macOS, Linux e WSL.
 
@@ -17,6 +17,7 @@ BACKEND_DIR="$SCRIPT_DIR/backend"
 
 NO_TLS=true
 APP_PORT=8000
+PORT_SET=false
 HOOK_PORT=8765
 V3=false
 
@@ -26,7 +27,7 @@ usage() {
   echo "  -p, --port PORT       Porta do servidor backend (default: 8000)"
   echo "  -n, --no-tls          Desliga TLS e serve HTTP puro (default em Linux/WSL)"
   echo "  -hk, --hook-port PORT Porta do canal de hooks (default: 8765, 0 para desligar)"
-  echo "      --v3              Layout V3 experimental (serve frontend/dist-v3)"
+  echo "      --v3              Layout V3 experimental (serve frontend/dist-v3; exige SESSIONS_DB com uma cópia do banco)"
   echo "  -h, --help            Exibe esta ajuda"
   exit 0
 }
@@ -35,6 +36,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -p|--port)
       APP_PORT="$2"
+      PORT_SET=true
       shift 2
       ;;
     -n|--no-tls)
@@ -61,9 +63,33 @@ done
 
 if [[ "$V3" == true ]]; then
   BUILD_SCRIPT="build:v3"
-  if [[ "$APP_PORT" -eq 8000 ]]; then
+  if [[ "$PORT_SET" == false ]]; then
     echo "==> AVISO: --v3 sem --port usa a 8000; se a produção estiver nela, use --port 8010 --hook-port 8766"
   fi
+  # --v3 never opens the real sessions.db: two backends on the same SQLite file
+  # fight over writes and run the same background jobs. The backend resolves
+  # SESSIONS_DB relative to backend/.
+  real_db="$(cd "$BACKEND_DIR" && pwd -P)/sessions.db"
+  v3_db=""
+  if [[ -n "${SESSIONS_DB:-}" ]]; then
+    case "$SESSIONS_DB" in
+      /*) v3_db="$SESSIONS_DB" ;;
+      *) v3_db="$BACKEND_DIR/$SESSIONS_DB" ;;
+    esac
+    if [[ -d "$(dirname "$v3_db")" ]]; then
+      v3_db="$(cd "$(dirname "$v3_db")" && pwd -P)/$(basename "$v3_db")"
+    fi
+  fi
+  if [[ -z "$v3_db" || "$v3_db" == "$real_db" ]]; then
+    echo "ERRO: --v3 exige SESSIONS_DB apontando para uma CÓPIA do banco, não o backend/sessions.db da produção." >&2
+    echo "Exemplo (cópia consistente mesmo com a produção no ar):" >&2
+    echo "  mkdir -p /tmp/tn-v3" >&2
+    echo "  python3 -c \"import sqlite3; s=sqlite3.connect('backend/sessions.db'); d=sqlite3.connect('/tmp/tn-v3/sessions-v3.db'); s.backup(d)\"" >&2
+    echo "  SESSIONS_DB=/tmp/tn-v3/sessions-v3.db ./deploy.sh --v3 --port 8010 --hook-port 8766" >&2
+    exit 1
+  fi
+  [[ -f "$v3_db" ]] || echo "==> AVISO: SESSIONS_DB=$v3_db não existe: o backend vai criar um banco vazio"
+  echo "==> V3 usando o banco $v3_db"
 else
   BUILD_SCRIPT="build"
 fi
@@ -92,6 +118,7 @@ mkdir -p "$LOG_DIR"
 
 # Encontra ou cria a virtual environment do Python
 VENV_PYTHON=""
+VENV_CREATED=false
 for candidate in "$HOME/.venv-tasknexus/bin/python3" "$BACKEND_DIR/.venv-wsl/bin/python3" "$BACKEND_DIR/.venv/bin/python3"; do
   if [[ -x "$candidate" ]]; then
     VENV_PYTHON="$candidate"
@@ -103,10 +130,18 @@ if [[ -z "$VENV_PYTHON" ]]; then
   echo "==> Criando ambiente virtual Python (.venv-wsl)..."
   python3 -m venv "$BACKEND_DIR/.venv-wsl"
   VENV_PYTHON="$BACKEND_DIR/.venv-wsl/bin/python3"
+  VENV_CREATED=true
 fi
 
-echo "==> Atualizando dependências do backend (pip install -r requirements.txt)..."
-"$VENV_PYTHON" -m pip install -q -r "$BACKEND_DIR/requirements.txt"
+# The venv is shared with production: pip under a live process can swap a lib
+# from under it. V3 adds no backend dependency, so --v3 skips pip unless the
+# venv was just created.
+if [[ "$V3" == true && "$VENV_CREATED" == false ]]; then
+  echo "==> V3: pulando pip install (o venv é compartilhado com a produção)"
+else
+  echo "==> Atualizando dependências do backend (pip install -r requirements.txt)..."
+  "$VENV_PYTHON" -m pip install -q -r "$BACKEND_DIR/requirements.txt"
+fi
 
 if [[ "$HOOK_PORT" -gt 0 ]]; then
   if [[ "$HOOK_PORT" -eq "$APP_PORT" ]]; then

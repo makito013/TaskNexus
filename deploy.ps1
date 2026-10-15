@@ -5,6 +5,7 @@
 #      .\deploy.ps1 -NoTls       # HTTP puro na 80, sem certificado
 #      .\deploy.ps1 -Port 8000   # porta única explícita, sem TLS (o modo antigo)
 #      .\deploy.ps1 -HookPort 0  # sem canal de hooks (desliga a notificação)
+#      $env:SESSIONS_DB = 'C:/tmp/tn-v3/sessions-v3.db'   # cópia do banco (obrigatória com -V3)
 #      .\deploy.ps1 -V3 -Port 8010 -HookPort 8766   # layout V3 experimental, instância paralela
 #
 # Equivalente ao deploy.sh (macOS/Linux): builda o frontend e sobe o uvicorn
@@ -48,8 +49,9 @@ param(
     # Layout V3 experimental: builda `npm run build:v3` em frontend\dist-v3 (NÃO
     # toca frontend\dist, que a produção serve ao vivo) e serve esse dist via
     # FRONTEND_DIST. Não grava nada no banco. Sem a flag, tudo igual a antes.
-    # Com a produção no ar, use -Port 8010 -HookPort 8766 (e, de preferência,
-    # SESSIONS_DB apontando para uma cópia do banco).
+    # Exige SESSIONS_DB apontando para uma CÓPIA do banco e não roda pip (o
+    # .venv é o mesmo da produção). Com a produção no ar, use também
+    # -Port 8010 -HookPort 8766.
     [switch]$V3
 )
 
@@ -71,6 +73,32 @@ if ($V3 -and $Port -eq 0) {
     Write-Warning "V3 na porta da produção; use -Port 8010 -HookPort 8766 enquanto a produção estiver no ar."
 } elseif ($V3 -and $Port -gt 0 -and -not $PSBoundParameters.ContainsKey('HookPort')) {
     Write-Warning "-V3 -Port $Port sem -HookPort: o canal de hooks usa a 8765, que a produção pode estar ocupando. Sugestão: -HookPort 8766."
+}
+
+# -V3 nunca abre o sessions.db real: duas instâncias do backend no mesmo
+# SQLite disputam escrita e rodam os mesmos jobs de fundo. Checado antes do
+# build para falhar rápido. O backend lê SESSIONS_DB relativo a backend\.
+if ($V3) {
+    $RealDb = [IO.Path]::GetFullPath((Join-Path $BackendDir 'sessions.db'))
+    $V3Db = if ($env:SESSIONS_DB) { [IO.Path]::GetFullPath($env:SESSIONS_DB, $BackendDir) } else { $null }
+    if (-not $V3Db -or $V3Db -ieq $RealDb) {
+        throw @"
+-V3 exige SESSIONS_DB apontando para uma CÓPIA do banco, não o backend\sessions.db da produção.
+Exemplo (cópia consistente mesmo com a produção no ar):
+    New-Item -ItemType Directory -Force C:/tmp/tn-v3 | Out-Null
+    backend\.venv\Scripts\python.exe -c "import sqlite3; s=sqlite3.connect('backend/sessions.db'); d=sqlite3.connect('C:/tmp/tn-v3/sessions-v3.db'); s.backup(d)"
+    `$env:SESSIONS_DB = 'C:/tmp/tn-v3/sessions-v3.db'
+    .\deploy.ps1 -V3 -Port 8010 -HookPort 8766
+"@
+    }
+    if (-not (Test-Path $V3Db)) {
+        Write-Warning "SESSIONS_DB=$V3Db não existe: o backend vai criar um banco vazio."
+    }
+    Write-Host "==> V3 usando o banco $V3Db"
+} elseif ($env:SESSIONS_DB) {
+    # $env: persiste na sessão do pwsh: um -V3 anterior neste terminal deixaria
+    # a produção subir em cima da cópia. Não zera (pode ser intencional).
+    Write-Warning "SESSIONS_DB=$($env:SESSIONS_DB) está setado: este deploy vai usar esse banco, não o backend\sessions.db. Se sobrou de um -V3, rode `$env:SESSIONS_DB = `$null e repita."
 }
 
 $BuildScript = if ($V3) { 'build:v3' } else { 'build' }
@@ -102,9 +130,16 @@ if (-not (Test-Path $VenvUvicorn)) {
     throw "Não achei $VenvUvicorn — rode scripts\install-service.ps1 (como Administrador) uma vez antes, pra criar o venv."
 }
 
-Write-Host "==> Instalando dependências do backend (pip install -r requirements.txt)..."
-& $VenvPython -m pip install -q -r (Join-Path $BackendDir "requirements.txt")
-if ($LASTEXITCODE -ne 0) { throw "pip install falhou (exit $LASTEXITCODE)" }
+# O .venv é o mesmo da produção: um pip install com ela no ar pode trocar uma
+# lib embaixo do processo vivo (e no Windows falha em .pyd carregado). A V3 não
+# traz dependência nova de backend, então -V3 pula o pip.
+if ($V3) {
+    Write-Host "==> V3: pulando pip install (o .venv é compartilhado com a produção)"
+} else {
+    Write-Host "==> Instalando dependências do backend (pip install -r requirements.txt)..."
+    & $VenvPython -m pip install -q -r (Join-Path $BackendDir "requirements.txt")
+    if ($LASTEXITCODE -ne 0) { throw "pip install falhou (exit $LASTEXITCODE)" }
+}
 
 # ---------------------------------------------------------------------------
 # Certificado (só no modo TLS)

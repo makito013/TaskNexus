@@ -85,13 +85,30 @@ Sem a flag, `FRONTEND_DIST` é zerado e tudo funciona como antes. A flag não
 grava nada no banco (`layout_version` continua `v2`). Nesta versão o terminal, o
 board e o chat não existem.
 
+`-V3` protege a produção em dois pontos:
+
+- **Banco:** exige `SESSIONS_DB` apontando para uma **cópia** do banco e aborta
+  antes do build se a variável faltar ou resolver para o `backend\sessions.db`
+  real. Dois backends no mesmo SQLite disputam escrita e rodam os mesmos jobs de
+  fundo.
+- **venv:** pula o `pip install`. O `backend\.venv` é o mesmo da produção, e a V3
+  não traz dependência nova de backend.
+
 Com a produção no ar, `-V3` sem `-Port` binda a mesma porta dela (443/80); o
 script só **avisa**, não bloqueia. Suba a V3 numa instância paralela:
 
 ```powershell
-$env:SESSIONS_DB = "C:/tmp/tn-v3/sessions-v3.db"   # opcional: cópia do banco
+New-Item -ItemType Directory -Force C:/tmp/tn-v3 | Out-Null
+# cópia consistente mesmo com a produção gravando (API de backup do SQLite)
+backend\.venv\Scripts\python.exe -c "import sqlite3; s=sqlite3.connect('backend/sessions.db'); d=sqlite3.connect('C:/tmp/tn-v3/sessions-v3.db'); s.backup(d)"
+$env:SESSIONS_DB = "C:/tmp/tn-v3/sessions-v3.db"
 .\deploy.ps1 -V3 -Port 8010 -HookPort 8766
 ```
 
-Sem `SESSIONS_DB`, a V3 lê o `sessions.db` da produção. `./deploy.sh --v3`
-é o equivalente no macOS/Linux.
+`$env:SESSIONS_DB` persiste na sessão do terminal: feche-o (ou rode
+`$env:SESSIONS_DB = $null`) antes de voltar a subir a produção nele.
+`./deploy.sh --v3` é o equivalente no macOS/Linux, com as mesmas proteções.
+
+Para desenvolver a V3 com hot reload: `npm run dev:v3` no `frontend` e, se o
+backend não estiver na 8000, `$env:API_PORT = "8010"` antes (variável do shell,
+não do `.env`).

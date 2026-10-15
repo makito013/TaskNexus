@@ -60,6 +60,11 @@ cd backend && uvicorn app.main:app --reload   # porta 8000
 cd frontend && npm run dev                     # porta 5173, com proxy /api e /ws pro backend
 ```
 
+`npm run dev:v3` sobe o layout V3 em construção no mesmo esquema. Para apontar
+o proxy do Vite para um backend fora da 8000 (por exemplo a instância paralela
+na 8010), use a variável de ambiente do shell `API_PORT` (não vale no `.env`):
+`API_PORT=8010 npm run dev:v3`.
+
 **Modo produção local** (uma porta só, sem hot reload):
 
 ```bash
@@ -76,8 +81,11 @@ cd frontend && npm run dev                     # porta 5173, com proxy /api e /w
 
 `-V3` (`./deploy.sh --v3` no macOS/Linux) builda e serve o layout V3 em
 construção (`frontend/dist-v3`); sem a flag o app é o V2 de sempre, e a flag
-não grava nada no banco. Com a produção no ar, suba a V3 numa instância
-paralela (`-Port 8010 -HookPort 8766`) para não colidir com as portas dela.
+não grava nada no banco. A flag exige `SESSIONS_DB` apontando para uma cópia
+do banco (recusa o `sessions.db` real) e não roda `pip`, porque o venv é o mesmo
+da produção. Com a produção no ar, suba a V3 numa instância paralela
+(`-Port 8010 -HookPort 8766`) para não colidir com as portas dela. A receita
+completa está em [`docs/windows-deploy.md`](docs/windows-deploy.md#layout-v3-experimental).
 
 Builda o frontend e sobe o backend servindo tudo. `Ctrl+C` pra parar — não há
 supervisão de processo (auto-restart).
