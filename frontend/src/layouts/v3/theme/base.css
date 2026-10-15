@@ -1,0 +1,46 @@
+/*
+ * Base layer of the v3 layout. index.css (v2) is still imported globally by
+ * main.jsx, so everything here is scoped under :root[data-layout="v3"] with
+ * enough specificity to beat the v2 globals (`html, body, #root`, scrollbar),
+ * and the v3 styles read only --v3-* tokens, never --bg-* / --border-* / --font-mono.
+ *
+ * html, body and #root keep `overflow: hidden` on purpose (it stops iPad Safari
+ * from panning the layout viewport); the content column is the scroll container.
+ */
+:root[data-layout="v3"],
+:root[data-layout="v3"] body,
+:root[data-layout="v3"] #root {
+  background-color: var(--v3-ground);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: 15px;
+}
+
+:root[data-layout="v3"] body {
+  background-image: radial-gradient(var(--v3-ground-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Transparent so the dotted ground of <body> shows through. */
+:root[data-layout="v3"] #root {
+  background-color: transparent;
+  display: grid;
+  grid-template-columns: var(--v3-rail) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* Content column: the only scroll container of the shell. */
+:root[data-layout="v3"] .v3-main-column {
+  grid-column: 2;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:root[data-layout="v3"] :focus-visible {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
+}
+
+:root[data-layout="v3"] ::-webkit-scrollbar-thumb {
+  background: var(--v3-line-strong);
+}

@@ -1,0 +1,20 @@
+.v3-pet {
+  flex: none;
+  overflow: visible;
+}
+
+/* Expression change: the new LED fades in (SMIL cannot morph between shapes). */
+.v3-pet__led--fade {
+  animation: v3-pet-led-in var(--v3-dur-base) var(--v3-ease-out) both;
+}
+
+@keyframes v3-pet-led-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-pet__led--fade {
+    animation: none;
+  }
+}

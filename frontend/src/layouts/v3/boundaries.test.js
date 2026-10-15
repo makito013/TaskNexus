@@ -13,6 +13,9 @@ const RUNTIME_DEPENDENCIES = Object.keys(PACKAGE_JSON.dependencies)
 const TEST_ONLY_PACKAGES = ['vitest', '@testing-library/react', '@testing-library/dom']
 // Directories of src/ that layouts/v3 may reach into (besides itself).
 const ALLOWED_SRC_DIRS = ['services', 'hooks', 'utils']
+// Test files (never production code) may also use the shared test helpers in
+// src/test and the token generator script in frontend/scripts.
+const TEST_ONLY_SRC_ENTRIES = ['test', '../scripts']
 const FORBIDDEN_SRC_ENTRIES = ['layouts/v2', 'components', 'views', 'features', 'index.css']
 
 const SOURCE_EXTENSIONS = /\.(js|jsx|mjs)$/
@@ -69,7 +72,9 @@ export function violationsForV3File(file, source) {
         continue
       }
       const topDir = target.split('/')[0]
-      if (!isInsideV3(target) && !ALLOWED_SRC_DIRS.includes(topDir)) {
+      const testOnly = isTestFile(file)
+        && TEST_ONLY_SRC_ENTRIES.some((entry) => target === entry || target.startsWith(`${entry}/`))
+      if (!isInsideV3(target) && !ALLOWED_SRC_DIRS.includes(topDir) && !testOnly) {
         problems.push(`${specifier} is outside the allowed directories`)
       }
     } else {
@@ -132,6 +137,20 @@ describe('layouts/v3 boundaries', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('lets test files, and only test files, reach the shared test helpers and the generator script', () => {
+    const testFile = path.join(V3_DIR, 'Fake.test.js')
+    const productionFile = path.join(V3_DIR, 'Fake.jsx')
+    const source = [
+      "import { stripComments } from '../../test/fixedPositioningScan.js'",
+      "import { generateTokensCss } from '../../../scripts/generate-v3-tokens.mjs'",
+    ].join(String.fromCharCode(10))
+    expect(violationsForV3File(testFile, source)).toEqual([])
+    expect(violationsForV3File(productionFile, source)).toEqual([
+      '../../test/fixedPositioningScan.js is outside the allowed directories',
+      '../../../scripts/generate-v3-tokens.mjs is outside the allowed directories',
+    ])
   })
 
   it('would flag a forbidden import', () => {

@@ -35,8 +35,11 @@
 // outro jeito de fazer o efeito visual (animar `opacity`, usar `box-shadow`,
 // mover o efeito para um nó que não seja ancestral do FAB).
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import {
+  FORBIDDEN_PROPERTIES,
+  declaredPropertyNames,
+  readSourceRelativeTo,
+} from '../../test/fixedPositioningScan.js';
 
 // Os arquivos que estilizam algum dos nós da cadeia, de `html` até o nó do
 // `term.open()`. A lista é deliberadamente por ARQUIVO e não por nó: um seletor
@@ -83,206 +86,11 @@ const CHAIN_SOURCES = [
   '../../components/TerminalPanel.jsx',
 ];
 
-// Cada entrada é um NOME de declaração (nunca um valor — ver
-// declaredPropertyNames), e aparece em até duas grafias porque a cadeia v2 é
-// estilizada tanto por CSS (`index.css`, `theme.css`, o `<style>` do
-// `index.html`) quanto por objetos de estilo JS, onde a mesma propriedade vira
-// camelCase e o parser a devolve em minúsculas: `backdrop-filter` e
-// `backdropfilter` são a MESMA proibição escrita duas vezes, não duas
-// propriedades. Não há lógica de prefixo nem de camelização aqui de propósito:
-// derivar as variantes daria a impressão de completude que uma `Set` de literais
-// não finge ter, e um literal a mais custa uma linha.
-//
-// FALSO POSITIVO CONHECIDO, e a saída correta quando ele acontecer: uma CHAVE DE
-// OBJETO JS que se chame `scale`, `rotate`, `translate` ou `filter` num arquivo
-// da cadeia é acusada, mesmo sem ser declaração de estilo — `{ scale: 1 }` e
-// `{ filter: 'ativos' }` são indistinguíveis de uma declaração para um parser
-// que só olha "nome antes dos dois-pontos". Essa classe NÃO é nova: já existia
-// por causa de `filter` desde a primeira versão da lista; `translate`/`rotate`/
-// `scale` só a alargam. Neste repo o risco é concreto e nomeável:
-// `getVisibleViewport` (utils/fabGeometry.js) documenta `vv.scale !== 1` como
-// ressalva deliberada e `src/test/fakeVisualViewport.js` já constrói o fake com
-// `scale` — nenhum dos dois está na cadeia hoje, mas um deles pode entrar. A
-// saída correta é RENOMEAR A CHAVE (ou destruturar, que não tem `:` e passa
-// batido), NUNCA abrir exceção na lista: o custo de um rename é uma linha, o
-// custo de uma exceção é um buraco permanente na única guarda automática que
-// existe contra esse modo de falha.
-//
-// CRITÉRIO DAS PREFIXADAS (não é produto cartesiano de 4 vendors × 4
-// propriedades — 18 literais dos 32 possíveis): entra a combinação que algum
-// engine REALMENTE embarcou, porque é essa que aparece em snippet copiado de
-// Stack Overflow e é essa que um autoprefixer emite. Ficam de fora as que nunca
-// existiram, para a lista não passar por tabela de suporte de browser:
-//  - `transform` nos 4 vendors — todos embarcaram (Safari/iOS, Firefox < 16,
-//    IE 9, Opera Presto). É a de longe mais provável de reaparecer;
-//  - `filter` em `-webkit-` (Safari/iOS 6-9, ainda emitida por autoprefixer) e
-//    em `-ms-`. O `-ms-filter` é caso especial e entra de propósito: é OUTRA
-//    coisa (o `progid:DXImageTransform` proprietário da IE), mas é um nome real,
-//    é igualmente indesejado num nó da cadeia, e nada legítimo neste repo
-//    (React 18 + Vite, alvo Safari de iPad) tem motivo para declará-lo;
-//  - `backdrop-filter` só em `-webkit-` — o único prefixo que existiu, e o mais
-//    provável de ser digitado AQUI, porque o Safari ainda exige a forma
-//    prefixada para efeito de vidro;
-//  - `perspective` em `-webkit-` e `-moz-` — 3D transforms prefixadas só
-//    existiram nesses dois (IE 11 e Presto nunca tiveram `-ms-`/`-o-`).
-const FORBIDDEN_PROPERTIES = new Set([
-  // O núcleo original: as 4 propriedades que motivaram o teste a existir.
-  'transform',
-  'filter',
-  'backdrop-filter',
-  'backdropfilter',
-  'will-change',
-  'willchange',
-  'contain',
-
-  // Ampliação: mesmo efeito de containing block, nomes diferentes.
-  //  - `perspective` (≠ `none`) cria containing block por si só, sem `transform`;
-  //  - `content-visibility` (`auto`/`hidden`) IMPLICA contenção de paint, e
-  //    contenção de paint é o que cria o containing block — o nome não parece
-  //    ter nada a ver com posicionamento, e é justamente por isso que passaria;
-  //  - `container-type` (≠ `normal`) implica contenção pelo mesmo caminho. É a
-  //    mais perigosa das novas em termos de probabilidade: container queries são
-  //    a resposta idiomática de 2025 para "este painel precisa reagir à própria
-  //    largura", exatamente o problema que o terminal e o painel de atalhos têm;
-  //  - `translate`/`rotate`/`scale` são as propriedades individuais de transform
-  //    (CSS Transforms 2), atalho moderno para o que `transform` fazia — quem as
-  //    usa está deliberadamente evitando escrever `transform` e escaparia da
-  //    lista antiga por isso.
-  'perspective',
-  'content-visibility',
-  'contentvisibility',
-  'container-type',
-  'containertype',
-  'translate',
-  'rotate',
-  'scale',
-
-  // Prefixadas — ver o CRITÉRIO acima. Sempre em par: grafia CSS hifenizada e
-  // a mesma em camelCase de objeto JS, que o parser devolve em minúsculas
-  // (`WebkitTransform` -> `webkittransform`, `msTransform` -> `mstransform`).
-  '-webkit-transform',
-  'webkittransform',
-  '-moz-transform',
-  'moztransform',
-  '-ms-transform',
-  'mstransform',
-  '-o-transform',
-  'otransform',
-  '-webkit-filter',
-  'webkitfilter',
-  '-ms-filter',
-  'msfilter',
-  '-webkit-backdrop-filter',
-  'webkitbackdropfilter',
-  '-webkit-perspective',
-  'webkitperspective',
-  '-moz-perspective',
-  'mozperspective',
-]);
-
-/**
- * Remove comentários de bloco, de linha e de HTML, para a prosa não se
- * autodenunciar.
- *
- * A regra `<!-- -->` entrou junto com `index.html` na lista acima, e contra o
- * `index.html` de HOJE ela é PREVENTIVA — dito assim, sem eufemismo, porque a
- * frase anterior deste parágrafo afirmava o contrário e um comentário que mente
- * é o defeito mais caro deste repo. Os dois comentários multilinha que o arquivo
- * tem hoje (o do manifest PWA e o do fundo pré-JS) não têm palavra proibida no
- * início de nenhuma linha, então apagar esta regra NÃO muda o veredito sobre
- * aquele arquivo.
- *
- * O que ela impede é o comentário seguinte: um `<!-- -->` multilinha com a
- * palavra no início de uma linha (`<!--\n  transform: nunca aqui\n-->`) derruba
- * o teste ACUSANDO UM OFENSOR QUE NÃO EXISTE. A probabilidade não é acadêmica —
- * `index.html` é feito de prosa explicativa, e o motivo de ele estar na lista é
- * ter estilo de dois nós da cadeia, exatamente o assunto sobre o qual alguém vai
- * escrever ali "não declare X aqui".
- *
- * Quem for medir a necessidade desta linha apagando-a: o vermelho vem do caso
- * `reads declarations inside <style> and ignores them inside HTML comments`, que
- * usa FIXTURE justamente para não depender de o arquivo real continuar tendo a
- * forma certa de comentário — e não do `it.each` sobre o `index.html`, que segue
- * verde. Isso é desenho, não lacuna.
- *
- * (Comentário HTML de UMA linha escapa por outro caminho, e por acidente: o
- * `<!--` gruda no nome e o guard de caracteres rejeita o candidato. É sorte, não
- * cobertura — não serve de prova para esta regra.)
- *
- * HTML primeiro, de propósito: o conteúdo de um `<!-- -->` sai inteiro antes das
- * regras de `/* *\/` e `//`, então nada dentro dele pode desbalancear as duas
- * seguintes.
- */
-function stripComments(source) {
-  return source
-    .replace(/<!--[\s\S]*?-->/g, '\n')
-    .replace(/\/\*[\s\S]*?\*\//g, '\n')
-    .replace(/^[ \t]*\/\/.*$/gm, '')
-    .replace(/([^:])\/\/.*$/gm, '$1');
-}
-
-/**
- * Remove blocos `@keyframes … { … }` inteiros (incluindo as chaves internas dos
- * passos). `transform` dentro de um keyframe é legítimo: ele nunca é uma
- * declaração aplicada a um nó da cadeia por si só.
- */
-function stripKeyframes(source) {
-  let out = '';
-  let index = 0;
-  for (;;) {
-    const at = source.indexOf('@keyframes', index);
-    if (at === -1) {
-      out += source.slice(index);
-      return out;
-    }
-    out += source.slice(index, at);
-    const open = source.indexOf('{', at);
-    if (open === -1) return out;
-    let depth = 0;
-    let cursor = open;
-    for (; cursor < source.length; cursor += 1) {
-      if (source[cursor] === '{') depth += 1;
-      else if (source[cursor] === '}') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    index = cursor + 1;
-  }
-}
-
-/**
- * Nomes de propriedade das declarações do arquivo.
- *
- * Serve CSS e objeto de estilo JS com o mesmo algoritmo: quebrar em `; , { } \n`
- * e, de cada pedaço, tomar o que vem antes do primeiro `:`. Um valor de
- * declaração nunca sobrevive a essa quebra como nome — em
- * `transition: opacity 150ms, transform 120ms` o pedaço ` transform 120ms` não
- * tem `:`, logo não é um nome de propriedade. E em `text-transform:` o nome
- * inteiro é `text-transform`, que não está na lista.
- */
-function declaredPropertyNames(source) {
-  const clean = stripKeyframes(stripComments(source));
-  const names = [];
-  for (const chunk of clean.split(/[;,{}\n]/)) {
-    const colon = chunk.indexOf(':');
-    if (colon === -1) continue;
-    const name = chunk.slice(0, colon).trim().replace(/^['"]|['"]$/g, '');
-    if (!name || /[\s()[\]=<>?!&|+*/]/.test(name)) continue;
-    names.push(name.toLowerCase());
-  }
-  return names;
-}
-
-function readChainSource(relativePath) {
-  return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
-}
-
 describe('fixed-positioning invariant on the layout chain', () => {
   it.each(CHAIN_SOURCES)(
     'declares no containing-block-creating property in %s',
     (relativePath) => {
-      const offenders = declaredPropertyNames(readChainSource(relativePath))
+      const offenders = declaredPropertyNames(readSourceRelativeTo(import.meta.url, relativePath))
         .filter((name) => FORBIDDEN_PROPERTIES.has(name));
 
       // A mensagem de falha nomeia a propriedade porque quem esbarrar nisto

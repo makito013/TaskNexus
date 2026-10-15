@@ -1,0 +1,74 @@
+.v3-chip {
+  --v3-chip-bg: transparent;
+  --v3-chip-fg: var(--v3-ink-muted);
+  --v3-chip-dot: var(--v3-ink-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+  background-color: var(--v3-chip-bg);
+  color: var(--v3-chip-fg);
+  white-space: nowrap;
+}
+
+.v3-chip--neutral {
+  height: 24px;
+  padding: 0 var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-pill);
+  font-size: var(--v3-type-micro-size);
+  line-height: var(--v3-type-micro-line);
+  font-weight: var(--v3-type-micro-weight);
+}
+
+.v3-chip--id {
+  --v3-chip-bg: var(--v3-surface-2);
+  --v3-chip-fg: var(--v3-ink);
+  padding: 2px 6px;
+  border-radius: var(--v3-radius-sm);
+  font-family: var(--v3-font-mono);
+  font-size: var(--v3-type-mono-sm-size);
+  line-height: var(--v3-type-mono-sm-line);
+  font-weight: var(--v3-type-mono-sm-weight);
+}
+
+.v3-chip--badge {
+  padding: 3px var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-sm);
+  font-size: var(--v3-type-micro-size);
+  line-height: var(--v3-type-micro-line);
+  font-weight: var(--v3-type-micro-weight);
+}
+.v3-chip--kind-bug {
+  --v3-chip-bg: var(--v3-prio-high-tint);
+  --v3-chip-fg: var(--v3-prio-high);
+  border-color: transparent;
+}
+.v3-chip--kind-hotfix {
+  --v3-chip-bg: var(--v3-danger-tint);
+  --v3-chip-fg: var(--v3-danger-ink);
+  border-color: transparent;
+}
+
+.v3-chip--state {
+  height: 24px;
+  padding: 0 var(--v3-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--v3-radius-pill);
+  font-size: var(--v3-type-micro-size);
+  line-height: var(--v3-type-micro-line);
+  font-weight: var(--v3-type-micro-weight);
+}
+.v3-chip--accent-tiq    { --v3-chip-bg: var(--v3-tiq-tint);    --v3-chip-fg: var(--v3-tiq-ink);    --v3-chip-dot: var(--v3-tiq); }
+.v3-chip--accent-navi   { --v3-chip-bg: var(--v3-navi-tint);   --v3-chip-fg: var(--v3-navi-ink);   --v3-chip-dot: var(--v3-navi); }
+.v3-chip--accent-fin    { --v3-chip-bg: var(--v3-fin-tint);    --v3-chip-fg: var(--v3-fin-ink);    --v3-chip-dot: var(--v3-fin); }
+.v3-chip--accent-kan    { --v3-chip-bg: var(--v3-kan-tint);    --v3-chip-fg: var(--v3-kan-ink);    --v3-chip-dot: var(--v3-kan); }
+.v3-chip--accent-danger { --v3-chip-bg: var(--v3-danger-tint); --v3-chip-fg: var(--v3-danger-ink); --v3-chip-dot: var(--v3-danger-ink); }
+.v3-chip--accent-soon   { border-color: var(--v3-line); }
+
+.v3-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-chip-dot);
+}

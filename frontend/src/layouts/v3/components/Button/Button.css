@@ -1,0 +1,84 @@
+.v3-button {
+  --v3-button-bg: transparent;
+  --v3-button-fg: var(--v3-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-button-bg);
+  color: var(--v3-button-fg);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-sm-size);
+  line-height: var(--v3-type-body-sm-line);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+
+.v3-button--sm { min-height: var(--v3-control-sm); }
+.v3-button--lg { min-height: var(--v3-control-lg); }
+
+/* hover / pressed are a design-system gap: ink overlay at 8% / 14%. */
+.v3-button:hover {
+  background-color: color-mix(in srgb, var(--v3-ink) 8%, var(--v3-button-bg));
+}
+.v3-button:active {
+  background-color: color-mix(in srgb, var(--v3-ink) 14%, var(--v3-button-bg));
+}
+
+.v3-button--primary {
+  --v3-button-bg: var(--v3-action);
+  --v3-button-fg: var(--v3-action-ink);
+}
+.v3-button--primary:hover {
+  background-color: color-mix(in srgb, var(--v3-action-ink) 12%, var(--v3-button-bg));
+}
+.v3-button--primary:active {
+  background-color: color-mix(in srgb, var(--v3-action-ink) 20%, var(--v3-button-bg));
+}
+
+.v3-button--secondary {
+  border-color: var(--v3-line-strong);
+}
+
+.v3-button--text {
+  --v3-button-fg: var(--v3-tiq-ink);
+}
+.v3-button--text:hover {
+  text-decoration: underline;
+}
+
+.v3-button--module,
+.v3-button--island {
+  --v3-button-fg: var(--v3-island-ink);
+}
+.v3-button--module:hover {
+  background-color: color-mix(in srgb, var(--v3-pet-visor) 8%, var(--v3-button-bg));
+}
+.v3-button--module:active {
+  background-color: color-mix(in srgb, var(--v3-pet-visor) 14%, var(--v3-button-bg));
+}
+
+.v3-button--island {
+  --v3-button-bg: var(--v3-island-surface);
+  border-radius: var(--v3-radius-pill);
+}
+.v3-button--island:hover,
+.v3-button--island:active {
+  background-color: color-mix(in srgb, var(--v3-island-ink) 10%, var(--v3-button-bg));
+}
+
+/* Text colour on each module colour (see the contrast notes of the design spec). */
+.v3-button--module-bit  { --v3-button-bg: var(--v3-bit);  --v3-button-fg: var(--v3-bit-on); }
+.v3-button--module-tiq  { --v3-button-bg: var(--v3-tiq);  --v3-button-fg: var(--v3-island-ink); }
+.v3-button--module-fin  { --v3-button-bg: var(--v3-fin);  --v3-button-fg: var(--v3-fin-on); }
+.v3-button--module-kan  { --v3-button-bg: var(--v3-kan);  --v3-button-fg: var(--v3-island-ink); }
+.v3-button--module-navi { --v3-button-bg: var(--v3-navi); --v3-button-fg: var(--v3-navi-on); }
+
+.v3-button[aria-busy="true"] {
+  cursor: progress;
+}
