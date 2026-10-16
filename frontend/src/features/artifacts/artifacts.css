@@ -447,8 +447,8 @@
 .af-modal-title { font-size: 15px; font-weight: 700; color: var(--v2-text); }
 
 .af-modal-close {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: 1px solid var(--v2-border);
   background: transparent;
@@ -463,6 +463,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 12px 18px;
   color: var(--v2-text);
   font-size: 13px;
@@ -472,6 +473,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 12px 18px 16px;
   border-top: 1px solid var(--v2-border);
@@ -527,7 +529,99 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.af-candidate-size { font-size: 11px; color: var(--v2-text-faint); flex-shrink: 0; }
+
+/* Linha de duas linhas: caminho (elipse) e, embaixo, data/hora · tamanho. O
+   metadado usa --v2-text-dim (o --v2-text-faint não passa em 4.5:1). */
+.af-candidate-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.af-candidate-text .af-candidate-path { flex: none; }
+.af-candidate-meta { font-size: 11px; color: var(--v2-text-dim); }
+
+/* "Selecionar todos" fica à mão numa lista de até 300 itens (sticky é
+   permitido pelo invariante do v2; position:fixed/transform não). */
+/* O corpo rolável tem 12px de padding no topo: top:-12px cola a barra rente à
+   borda, e o padding-top de 12px extra mantém o conteúdo no mesmo lugar sem
+   deixar linhas aparecerem por cima dela. */
+.af-select-all {
+  position: sticky;
+  top: -12px;
+  padding-top: 16px;
+  min-height: 56px;
+  box-sizing: border-box;
+  z-index: 1;
+  background: var(--v2-surface);
+  font-weight: 600;
+}
+
+.af-modal .af-group-label {
+  margin: 12px 0 6px;
+  color: var(--v2-text-dim);
+}
+
+.af-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.af-empty .af-more { align-items: center; }
+.af-empty .af-btn { margin-top: 10px; }
+.af-modal .af-hint { color: var(--v2-text-dim); }
+
+.af-modal-foot-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--v2-text-dim);
+}
+
+.af-import-errors { margin-top: 10px; }
+.af-import-errors ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Alvo de toque de 44 px no iPad. */
+.af-modal .af-btn { min-height: 44px; }
+.af-modal .af-btn[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+
+.af-modal .af-btn:focus-visible,
+.af-modal-close:focus-visible,
+.af-modal .af-select:focus-visible,
+.af-candidate input:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+
+/* Esqueleto das linhas do modal. */
+.af-candidate--skeleton { cursor: default; }
+.af-candidate--skeleton:hover { background: transparent; }
+.af-candidate--skeleton span {
+  display: block;
+  border-radius: 6px;
+  background: var(--v2-surface-3);
+  animation: af-pulse 1.2s ease-in-out infinite;
+}
+.af-candidate--skeleton span:nth-child(1) { width: 18px; height: 18px; flex-shrink: 0; }
+.af-candidate--skeleton span:nth-child(2) { width: 36px; height: 18px; flex-shrink: 0; }
+.af-candidate--skeleton span:nth-child(3) { flex: 1; height: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .af-candidate--skeleton span { animation: none; }
+}
+
+.af-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .af-error { color: var(--v2-danger); font-size: 12px; }
 

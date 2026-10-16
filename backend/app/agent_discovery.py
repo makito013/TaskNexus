@@ -64,6 +64,13 @@ def resolve_projeto_alvo(
     return projeto_id_pedido
 
 
+def has_project_marker(folder: str | Path) -> bool:
+    """True when the folder has a .claude/, .gemini/ or .codex/ subdirectory:
+    the eligibility rule `scan_projects` applies to every folder."""
+    base = Path(folder)
+    return any((base / marker).is_dir() for marker in (".claude", ".gemini", ".codex"))
+
+
 def scan_projects(root: str, global_agents: list[Agent] | None = None) -> list[Project]:
     """
     Scan a directory tree and discover all projects, assigning the global
@@ -111,11 +118,7 @@ def scan_projects(root: str, global_agents: list[Agent] | None = None) -> list[P
             cliente_id=cliente_id_from_projeto_id(project_id),
         )
 
-        claude_path = current / ".claude"
-        gemini_path = current / ".gemini"
-        codex_path = current / ".codex"
-
-        elegivel = claude_path.is_dir() or gemini_path.is_dir() or codex_path.is_dir()
+        elegivel = has_project_marker(current)
         proj.elegivel = elegivel
         if elegivel:
             proj.agentes = list(global_agents)

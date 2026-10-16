@@ -10,11 +10,13 @@ import {
   displayPath,
   filterArtifacts,
   footerText,
+  formatModified,
   formatWhen,
   groupByProject,
   groupLabel,
   resolveArtifactLink,
   sortArtifacts,
+  splitCandidatesBySince,
   toViewerItem,
 } from './artifactModel.js';
 
@@ -163,5 +165,66 @@ describe('links e caminhos', () => {
     expect(absolutePathFor(art('a', { project_id: 'outro', path: 'docs/x.md' }), PROJECTS)).toBe('C:\\Projetos\\outro\\docs\\x.md');
     expect(absolutePathFor(art('a', { path: 'docs/x.md' }), [{ id: 'podesubir/site', path: '/home/b/podesubir/site/' }])).toBe('/home/b/podesubir/site/docs/x.md');
     expect(absolutePathFor(art('a', { path: 'docs/x.md' }), [])).toBe('docs/x.md');
+  });
+});
+
+describe('formatModified', () => {
+  const local = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+  const secs = (ms) => ms / 1000;
+  const NOW_MS = local(2026, 10, 16, 15, 0);
+
+  it('says "hoje" for the same local day', () => {
+    expect(formatModified(secs(local(2026, 10, 16, 14, 32)), NOW_MS)).toBe('hoje 14:32');
+  });
+
+  it('says "ontem" for the previous calendar day, even less than 24 h ago', () => {
+    expect(formatModified(secs(local(2026, 10, 15, 23, 59)), NOW_MS)).toBe('ontem 23:59');
+    const justAfterMidnight = local(2026, 10, 16, 0, 5);
+    expect(formatModified(secs(local(2026, 10, 15, 23, 50)), justAfterMidnight)).toBe('ontem 23:50');
+  });
+
+  it('pads hours and minutes', () => {
+    expect(formatModified(secs(local(2026, 10, 16, 9, 5)), NOW_MS)).toBe('hoje 09:05');
+  });
+
+  it('uses day/month in the same year and day/month/year in another year', () => {
+    expect(formatModified(secs(local(2026, 10, 12, 9, 10)), NOW_MS)).toBe('12/10 09:10');
+    expect(formatModified(secs(local(2025, 10, 12, 9, 10)), NOW_MS)).toBe('12/10/2025 09:10');
+  });
+
+  it('treats a future mtime as today instead of breaking', () => {
+    expect(formatModified(secs(local(2026, 10, 17, 8, 0)), NOW_MS)).toBe('hoje 08:00');
+  });
+
+  it('returns an empty string for invalid input', () => {
+    expect(formatModified(0, NOW_MS)).toBe('');
+    expect(formatModified(-5, NOW_MS)).toBe('');
+    expect(formatModified(NaN, NOW_MS)).toBe('');
+    expect(formatModified(undefined, NOW_MS)).toBe('');
+    expect(formatModified(null, NOW_MS)).toBe('');
+  });
+});
+
+describe('splitCandidatesBySince', () => {
+  const list = [
+    { path: 'a.md', mtime: 300 },
+    { path: 'b.md', mtime: 200 },
+    { path: 'c.md', mtime: 100 },
+  ];
+
+  it('splits at the boundary, keeping the received order, with mtime === since as recent', () => {
+    const { recent, older } = splitCandidatesBySince(list, 200);
+    expect(recent.map((c) => c.path)).toEqual(['a.md', 'b.md']);
+    expect(older.map((c) => c.path)).toEqual(['c.md']);
+  });
+
+  it('treats everything as recent when since is null', () => {
+    const { recent, older } = splitCandidatesBySince(list, null);
+    expect(recent).toHaveLength(3);
+    expect(older).toEqual([]);
+  });
+
+  it('handles an empty or missing list', () => {
+    expect(splitCandidatesBySince(undefined, 10)).toEqual({ recent: [], older: [] });
   });
 });
