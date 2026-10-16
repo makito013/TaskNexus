@@ -5,7 +5,8 @@
 #      ./deploy.sh --port 8000      # porta explícita
 #      ./deploy.sh --no-tls         # serve HTTP sem SSL
 #      ./deploy.sh --hook-port 8765 # porta do canal de hooks
-#      SESSIONS_DB=/tmp/tn-v3/sessions-v3.db #        ./deploy.sh --v3 --port 8010 --hook-port 8766   # layout V3 experimental (cópia do banco obrigatória)
+#      SESSIONS_DB=/tmp/tn-v3/sessions-v3.db ./deploy.sh --v3 --port 8010 --hook-port 8766
+#                                   # layout V3 experimental (cópia do banco obrigatória)
 #
 # Suporta macOS, Linux e WSL.
 
@@ -80,7 +81,8 @@ if [[ "$V3" == true ]]; then
       v3_db="$(cd "$(dirname "$v3_db")" && pwd -P)/$(basename "$v3_db")"
     fi
   fi
-  if [[ -z "$v3_db" || "$v3_db" == "$real_db" ]]; then
+  # -ef also catches symlinks and case-insensitive filesystems (APFS, DrvFs).
+  if [[ -z "$v3_db" || "$v3_db" == "$real_db" || ( -e "$v3_db" && "$v3_db" -ef "$real_db" ) ]]; then
     echo "ERRO: --v3 exige SESSIONS_DB apontando para uma CÓPIA do banco, não o backend/sessions.db da produção." >&2
     echo "Exemplo (cópia consistente mesmo com a produção no ar):" >&2
     echo "  mkdir -p /tmp/tn-v3" >&2
@@ -105,6 +107,9 @@ if [[ "$V3" == true ]]; then
   echo "==> Layout V3 (experimental) ativo — servindo frontend/dist-v3 (terminal, board e chat indisponíveis nesta versão)"
 else
   unset FRONTEND_DIST || true
+  if [[ -n "${SESSIONS_DB:-}" ]]; then
+    echo "==> AVISO: SESSIONS_DB=$SESSIONS_DB está setado: este deploy vai usar esse banco, não o backend/sessions.db"
+  fi
   LOG_FILE="uvicorn.log"
 fi
 
