@@ -145,6 +145,39 @@ export function formatWhen(epochSeconds, now = Date.now()) {
   return date.getFullYear() === new Date(now).getFullYear() ? label : `${label} ${date.getFullYear()}`;
 }
 
+const pad2 = (value) => String(value).padStart(2, '0');
+
+/** Data/hora da linha de candidato do "Importar do projeto": "hoje 14:32",
+ * "ontem 09:10", "12/10 09:10" e, em outro ano, "12/10/2025 09:10". Entrada em
+ * SEGUNDOS (o `mtime` do backend). Compara datas de calendário locais (não
+ * diferença de 24 h), então a virada de dia e o horário de verão não mudam o
+ * rótulo. `mtime` no futuro (relógio errado) cai em "hoje". Inválido -> ''. */
+export function formatModified(epochSeconds, now = Date.now()) {
+  if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) return '';
+  const date = new Date(epochSeconds * 1000);
+  const today = new Date(now);
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((dayStart(today) - dayStart(date)) / 86400000);
+  if (dayDiff <= 0) return `hoje ${time}`;
+  if (dayDiff === 1) return `ontem ${time}`;
+  const dayMonth = `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}`;
+  if (date.getFullYear() === today.getFullYear()) return `${dayMonth} ${time}`;
+  return `${dayMonth}/${date.getFullYear()} ${time}`;
+}
+
+/** Divide os candidatos (já em ordem de `mtime` desc) em recentes e antigos
+ * pela fronteira `since` (epoch em segundos; `mtime === since` é recente).
+ * Preserva a ordem recebida. Sem `since`, tudo é recente. */
+export function splitCandidatesBySince(candidates, since) {
+  const list = candidates || [];
+  if (!Number.isFinite(since)) return { recent: list, older: [] };
+  return {
+    recent: list.filter((c) => c.mtime >= since),
+    older: list.filter((c) => !(c.mtime >= since)),
+  };
+}
+
 /** Quem criou: o agente (claude, codex…) ou "você" (importou / salvou). */
 export function authorLabel(artifact) {
   if (artifact?.created_by === 'user') return 'você';

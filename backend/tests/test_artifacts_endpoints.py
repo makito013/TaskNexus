@@ -358,11 +358,10 @@ def test_candidates_list_md_html_pdf_and_skip_ignored_folders(client, projects):
     paths = [c["path"] for c in body["candidates"]]
     # Sem pastas ignoradas, sem denylist (.env.md, id_rsa*), sem o projeto
     # filho (blog/post.md é candidato de podesubir/site/blog), sem .py/.css.
-    assert paths == ["README.md", "docs/antigo.htm", "docs/manual.pdf", "docs/relatorio.html"]
-    first = body["candidates"][0]
-    assert set(first) == {"path", "kind", "size", "mtime"}
-    assert first["kind"] == "markdown"
+    assert sorted(paths) == ["README.md", "docs/antigo.htm", "docs/manual.pdf", "docs/relatorio.html"]
     kinds = {c["path"]: c["kind"] for c in body["candidates"]}
+    assert all(set(c) == {"path", "kind", "size", "mtime"} for c in body["candidates"])
+    assert kinds["README.md"] == "markdown"
     assert kinds["docs/antigo.htm"] == "html"
     assert kinds["docs/manual.pdf"] == "pdf"
     assert [c["path"] for c in _candidates(client, "podesubir/site/blog")["candidates"]] == ["post.md"]
@@ -383,6 +382,261 @@ def test_candidates_are_cut_at_300(client, projects):
     body = _candidates(client)
     assert body["truncated"] is True
     assert len(body["candidates"]) == 300
+
+
+def _touch(path, mtime):
+    """Create a small file and force its mtime (no sleeping in tests)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x", encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+
+
+def _clear_site_files(projects):
+    """Leave podesubir/site with only the files a test creates itself."""
+    site = projects / "podesubir" / "site"
+    for path in list(site.rglob("*")):
+        if path.is_file() and ".claude" not in path.parts and "blog" not in path.parts:
+            path.unlink()
+    return site
+
+
+def test_candidates_are_sorted_by_mtime_desc_with_path_tiebreak(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    _touch(site / "old.md", now - 3000)
+    _touch(site / "b-tie.md", now - 1000)
+    _touch(site / "a-tie.md", now - 1000)
+    _touch(site / "newest.md", now - 10)
+    paths = [c["path"] for c in _candidates(client)["candidates"]]
+    assert paths == ["newest.md", "a-tie.md", "b-tie.md", "old.md"]
+
+
+def test_candidates_cut_at_300_keeps_most_recent(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    for index in range(305):
+        # n000 is the oldest, n304 the newest.
+        _touch(site / "many" / "n{0:03d}.md".format(index), now - 10000 + index)
+    body = _candidates(client)
+    paths = [c["path"] for c in body["candidates"]]
+    assert body["truncated"] is True
+    assert len(paths) == 300
+    assert paths[0] == "many/n304.md"
+    for index in range(5):
+        assert "many/n{0:03d}.md".format(index) not in paths
+    assert "many/n005.md" in paths
+
+
+def _windowed(client, project_id=PROJ, window="5"):
+    r = client.get(f"/api/projects/{project_id}/artifact-candidates", params={"window_days": window})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_candidates_window_returns_only_recent_and_flags_older(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    _touch(site / "fresh.md", now - 3600)
+    _touch(site / "docs" / "week-old.md", now - 6 * 86400)
+    before = time.time()
+    body = _windowed(client)
+    after = time.time()
+    assert [c["path"] for c in body["candidates"]] == ["fresh.md"]
+    assert body["has_older"] is True
+    assert body["truncated"] is False
+    assert before - 5 * 86400 - 2 <= body["since"] <= after - 5 * 86400 + 2
+
+
+def test_candidates_window_without_older_has_no_older_flag(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    _touch(site / "a.md", now - 60)
+    _touch(site / "b.html", now - 2 * 86400)
+    body = _windowed(client)
+    assert sorted(c["path"] for c in body["candidates"]) == ["a.md", "b.html"]
+    assert body["has_older"] is False
+
+
+def test_candidates_window_empty_with_older_items(client, projects):
+    site = _clear_site_files(projects)
+    _touch(site / "ancient.md", time.time() - 30 * 86400)
+    body = _windowed(client)
+    assert body["candidates"] == []
+    assert body["has_older"] is True
+    assert body["truncated"] is False
+
+
+def test_candidates_window_with_no_files_at_all(client, projects):
+    _clear_site_files(projects)
+    body = _windowed(client)
+    assert body["candidates"] == []
+    assert body["has_older"] is False
+
+
+def test_candidates_without_window_omits_since_and_has_older(client):
+    assert set(_candidates(client)) == {"candidates", "truncated"}
+
+
+def test_candidates_window_truncated_only_counts_recent_files(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    for index in range(305):
+        _touch(site / "many" / "n{0:03d}.md".format(index), now - 3600 - index)
+    _touch(site / "ancient.md", now - 40 * 86400)
+    body = _windowed(client)
+    assert body["truncated"] is True
+    assert len(body["candidates"]) == 300
+    assert body["has_older"] is True
+
+
+def test_candidates_window_not_truncated_when_recent_fit_but_total_exceeds_300(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    _touch(site / "recent.md", now - 60)
+    for index in range(305):
+        _touch(site / "old" / "n{0:03d}.md".format(index), now - 20 * 86400)
+    body = _windowed(client)
+    assert body["truncated"] is False
+    assert [c["path"] for c in body["candidates"]] == ["recent.md"]
+    assert body["has_older"] is True
+
+
+def test_candidates_window_boundary_is_inclusive(client, projects, monkeypatch):
+    site = _clear_site_files(projects)
+    frozen = time.time()
+    monkeypatch.setattr("app.artifacts_api.time.time", lambda: frozen)
+    _touch(site / "edge.md", frozen - 5 * 86400)
+    _touch(site / "just-before.md", frozen - 5 * 86400 - 1)
+    body = _windowed(client)
+    assert [c["path"] for c in body["candidates"]] == ["edge.md"]
+    assert body["has_older"] is True
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-1", "99999", "1.5", "", "3651", "٣"])
+def test_candidates_invalid_window_days_is_400(client, value):
+    r = client.get(f"/api/projects/{PROJ}/artifact-candidates", params={"window_days": value})
+    assert r.status_code == 400
+    assert r.json() == {"success": False, "error": "Informe window_days entre 1 e 3650."}
+
+
+def test_candidates_window_has_older_ignores_published_and_denied_old_files(client, projects):
+    site = _clear_site_files(projects)
+    now = time.time()
+    _touch(site / "fresh.md", now - 60)
+    _touch(site / "already-published.md", now - 30 * 86400)
+    _touch(site / ".hidden" / "old.md", now - 30 * 86400)
+    _touch(site / "node_modules" / "pkg" / "old.md", now - 30 * 86400)
+    _create(client, "already-published.md")
+    body = _windowed(client)
+    assert [c["path"] for c in body["candidates"]] == ["fresh.md"]
+    assert body["has_older"] is False
+
+
+@pytest.mark.parametrize("value", ["05", " 5 ", "0005"])
+def test_candidates_window_days_accepts_leading_zeros_and_surrounding_spaces(client, value):
+    assert "since" in _windowed(client, window=value)
+
+
+@pytest.mark.parametrize("value", ["+5", "5e0", "0x5", "٥", "５", "²", "5 5"])
+def test_candidates_window_days_rejects_signs_exponents_and_non_ascii_digits(client, value):
+    r = client.get(f"/api/projects/{PROJ}/artifact-candidates", params={"window_days": value})
+    assert r.status_code == 400
+    assert r.json()["success"] is False
+
+
+def test_candidates_window_since_matches_requested_days(client):
+    one = _windowed(client, window="1")
+    ten = _windowed(client, window="10")
+    assert 9 * 86400 - 5 <= one["since"] - ten["since"] <= 9 * 86400 + 5
+
+
+def test_candidates_window_limits_are_accepted(client):
+    assert "since" in _windowed(client, window="1")
+    assert "since" in _windowed(client, window="3650")
+
+
+def test_candidates_fast_path_lists_folder_without_scan_projects(client, monkeypatch):
+    import app.main as main_mod
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("scan_projects must not run for a valid project id")
+
+    monkeypatch.setattr(main_mod, "scan_projects", _fail)
+    paths = [c["path"] for c in _candidates(client)["candidates"]]
+    assert "README.md" in paths
+
+
+def _import_status(client, project_id):
+    r = client.post("/api/artifacts/import", json={"project_id": project_id, "caminhos": ["note.md"]})
+    return r.status_code
+
+
+def _candidates_status(client, project_id):
+    return client.get(f"/api/projects/{project_id}/artifact-candidates").status_code
+
+
+def test_candidates_and_import_reject_folder_without_project_marker(client, projects):
+    plain = projects / "podesubir" / "site" / "plain-folder"
+    plain.mkdir()
+    (plain / "note.md").write_text("# note", encoding="utf-8")
+    assert _candidates_status(client, "podesubir/site/plain-folder") == 404
+    assert _import_status(client, "podesubir/site/plain-folder") == 404
+
+
+@pytest.mark.parametrize("project_id", [
+    "podesubir/site",       # marked project
+    "podesubir/site/blog",  # marked nested subproject
+    "podesubir",            # unmarked ancestor of marked projects (scan_projects keeps it)
+])
+def test_candidates_and_import_both_accept_scanned_project_ids(client, project_id):
+    assert _candidates_status(client, project_id) == 200
+    assert _import_status(client, project_id) == 200
+
+
+def test_candidates_marked_project_still_skips_scan_projects(client, monkeypatch):
+    import app.main as main_mod
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("scan_projects must not run for a marked project")
+
+    monkeypatch.setattr(main_mod, "scan_projects", _fail)
+    assert _candidates_status(client, "podesubir/site/blog") == 200
+
+
+@pytest.mark.parametrize("segment", ["node_modules.", "node_modules ", "NODE_MODULES", ".claude.", "dist. ."])
+def test_scannable_project_id_normalizes_trailing_dots_spaces_and_case(segment):
+    from app.artifacts_api import _is_scannable_project_id
+
+    assert _is_scannable_project_id(f"podesubir/site/{segment}") is False
+
+
+def test_scannable_project_id_accepts_regular_segments():
+    from app.artifacts_api import _is_scannable_project_id
+
+    assert _is_scannable_project_id("podesubir/site/blog") is True
+    assert _is_scannable_project_id("podesubir/my.project") is True
+
+
+@pytest.mark.parametrize("project_id", ["podesubir/site/.claude", "podesubir/site/node_modules"])
+def test_candidates_hidden_or_excluded_segment_id_falls_back_to_404(client, projects, project_id):
+    folder = projects / project_id
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "inside.md").write_text("# inside", encoding="utf-8")
+    r = client.get(f"/api/projects/{project_id}/artifact-candidates")
+    assert r.status_code == 404
+    assert r.json() == {"success": False, "error": "Projeto não encontrado: " + project_id}
+
+
+def test_candidates_ignore_symlink_pointing_outside_the_project(client, projects, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("outside") / "secret.md"
+    outside.write_text("# outside", encoding="utf-8")
+    link = projects / "podesubir" / "site" / "docs" / "escape.md"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this platform")
+    paths = [c["path"] for c in _candidates(client)["candidates"]]
+    assert "docs/escape.md" not in paths
 
 
 def test_candidates_of_unknown_project_is_404(client):

@@ -92,14 +92,19 @@ export async function removeArtifact(artifactId) {
 
 /** Candidatos do modal "Importar do projeto". O id do projeto vai cru na URL
  * (tem "/" de subprojeto e o backend declara `{project_id:path}`) — mesma
- * convenção de services/api.js. */
-export async function listCandidates(projectId, { signal } = {}) {
-  const response = await fetch(`/api/projects/${projectId}/artifact-candidates`, { signal });
+ * convenção de services/api.js. Com `windowDays` o servidor devolve só os
+ * alterados nesse período (mais `since` e `has_older`); sem ele, todos (até
+ * 300, os mais recentes). */
+export async function listCandidates(projectId, { windowDays = null, signal } = {}) {
+  const query = windowDays ? `?${new URLSearchParams({ window_days: String(windowDays) })}` : '';
+  const response = await fetch(`/api/projects/${projectId}/artifact-candidates${query}`, { signal });
   if (!response.ok) throw await readError(response, 'Não consegui listar os arquivos do projeto.');
   const body = await response.json();
   return {
     candidates: Array.isArray(body?.candidates) ? body.candidates : [],
     truncated: !!body?.truncated,
+    since: Number.isFinite(body?.since) ? body.since : null,
+    hasOlder: !!body?.has_older,
   };
 }
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import unicodedata
 from typing import Any, Awaitable, Callable, Optional
 
@@ -32,7 +33,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app import file_serving
-from app.agent_discovery import cliente_id_from_projeto_id
+from app.agent_discovery import (
+    _EXCLUDED as _EXCLUDED_PROJECT_DIRS,
+    cliente_id_from_projeto_id,
+    has_project_marker,
+)
 from app.artifact_meta import UNSUPPORTED_KIND_ERROR, artifact_kind_for, extract_meta
 from app.artifact_store import ArtifactStore
 from app.viewer_api import (
@@ -183,9 +188,28 @@ def _skip_dir(name: str) -> bool:
     return name.startswith(".") or name in _IGNORED_DIRS
 
 
-def _find_candidates(project_root: str, published: set) -> tuple[list[dict], bool]:
+def _is_scannable_project_id(project_id: str) -> bool:
+    """False when any segment is one `scan_projects` prunes (hidden or
+    excluded). Segments are normalized first: Windows ignores trailing
+    dots/spaces and is case-insensitive, so `node_modules.` is the excluded
+    folder on disk."""
+    for seg in project_id.split("/"):
+        clean = seg.rstrip(". ")
+        if seg.startswith(".") or clean.startswith("."):
+            return False
+        if clean.casefold() in _EXCLUDED_NORMALIZED:
+            return False
+    return True
+
+
+_EXCLUDED_NORMALIZED = {name.casefold() for name in _EXCLUDED_PROJECT_DIRS}
+
+
+def _find_candidates(
+    project_root: str, published: set, *, since: float | None = None,
+) -> tuple[list[dict], bool, bool]:
     """Arquivos .md/.html/.htm/.pdf do projeto que ainda não são artefatos.
-    Devolve `(candidatos, truncated)`. Síncrona: roda em to_thread.
+    Devolve `(candidatos, truncated, has_older)`. Síncrona: roda em to_thread.
 
     - Pastas ocultas e de dependência/build são podadas antes de descer
       (`node_modules` sozinho pode ter dezenas de milhares de .md).
@@ -195,10 +219,15 @@ def _find_candidates(project_root: str, published: set) -> tuple[list[dict], boo
       `podesubir` — senão o mesmo arquivo viraria dois artefatos.
     - Arquivos da denylist e links que apontam para fora do projeto nunca
       aparecem (a importação recusaria de qualquer jeito).
-    - Ordem estável (pastas e arquivos em ordem alfabética) para o corte em
-      300 ser sempre o mesmo."""
+    - Percorre o projeto INTEIRO, ordena por `(-mtime, path)` e só então
+      aplica o corte em `MAX_CANDIDATES`: o teto guarda os mais recentes, não
+      os primeiros em ordem alfabética.
+    - `since` (epoch em segundos): só entram os com `mtime >= since`;
+      `has_older` diz se sobrou algum mais antigo fora da janela. Sem `since`,
+      `has_older` é sempre False."""
     root_real = os.path.realpath(project_root)
     candidates: list[dict] = []
+    has_older = False
     for dirpath, dirnames, filenames in os.walk(root_real):
         kept = []
         for name in sorted(dirnames, key=str.casefold):
@@ -209,7 +238,7 @@ def _find_candidates(project_root: str, published: set) -> tuple[list[dict], boo
                 continue
             kept.append(name)
         dirnames[:] = kept
-        for name in sorted(filenames, key=str.casefold):
+        for name in filenames:
             kind = artifact_kind_for(name)
             if kind is None or name.startswith("."):
                 continue
@@ -223,10 +252,13 @@ def _find_candidates(project_root: str, published: set) -> tuple[list[dict], boo
                 st = os.stat(full)
             except OSError:
                 continue
-            if len(candidates) >= MAX_CANDIDATES:
-                return candidates, True
+            if since is not None and st.st_mtime < since:
+                has_older = True
+                continue
             candidates.append({"path": rel, "kind": kind, "size": st.st_size, "mtime": st.st_mtime})
-    return candidates, False
+    candidates.sort(key=lambda c: (-c["mtime"], c["path"]))
+    truncated = len(candidates) > MAX_CANDIDATES
+    return candidates[:MAX_CANDIDATES], truncated, has_older
 
 
 class ArtifactService:
@@ -382,11 +414,39 @@ class ArtifactService:
         )
         return await self.with_state(artifact), created
 
-    async def candidates(self, project_id: str) -> dict:
-        project_path = await self.find_project_path(project_id)
-        published = await self.store.paths_for_project(project_id.strip())
-        found, truncated = await asyncio.to_thread(_find_candidates, project_path, published)
-        return {"candidates": found, "truncated": truncated}
+    def _fast_project_root(self, project_id: str) -> str | None:
+        """Resolução direta do projeto (sem `scan_projects`, ~3 s num disco
+        grande). Só vale para ids que o `scan_projects` devolveria como
+        projeto elegível: segmento oculto/excluído ou pasta sem marcador
+        (.claude/.gemini/.codex) devolve None e quem chama cai no caminho
+        lento, que decide (404, ou pai de projeto) igual ao import."""
+        if not _is_scannable_project_id(project_id):
+            return None
+        root = self.project_root_for(project_id)
+        if root is None or not has_project_marker(root):
+            return None
+        return root
+
+    async def candidates(self, project_id: str, window_days: int | None = None) -> dict:
+        """Candidatos do "Importar do projeto". Com `window_days`, só os
+        alterados nos últimos N dias (relógio do servidor, o mesmo dono do
+        `mtime`) e a resposta ganha `since` e `has_older`."""
+        project_path = None
+        if isinstance(project_id, str) and project_id.strip():
+            project_path = await asyncio.to_thread(self._fast_project_root, project_id.strip())
+        if project_path is None:
+            project_path = await self.find_project_path(project_id)
+        project_id = project_id.strip()
+        published = await self.store.paths_for_project(project_id)
+        since = None if window_days is None else time.time() - window_days * 86400
+        found, truncated, has_older = await asyncio.to_thread(
+            _find_candidates, project_path, published, since=since,
+        )
+        result: dict = {"candidates": found, "truncated": truncated}
+        if since is not None:
+            result["since"] = since
+            result["has_older"] = has_older
+        return result
 
     async def import_paths(self, project_id: Any, caminhos: Any) -> dict:
         """Publica vários arquivos como o usuário. Um caminho ruim não
@@ -499,6 +559,19 @@ def _parse_bool(value: Any, default: bool) -> bool:
         if text in ("true", "1", "yes", "sim", "s"):
             return True
     return default
+
+
+MAX_WINDOW_DAYS = 3650
+_BAD_WINDOW = "Informe window_days entre 1 e {0}.".format(MAX_WINDOW_DAYS)
+
+
+def _parse_window_days(value: str | None) -> int | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text.isascii() or not text.isdigit() or not 1 <= int(text) <= MAX_WINDOW_DAYS:
+        raise ArtifactError(_BAD_WINDOW, 400)
+    return int(text)
 
 
 def create_artifacts_router(service: ArtifactService) -> APIRouter:
@@ -615,9 +688,13 @@ def create_artifacts_router(service: ArtifactService) -> APIRouter:
             return _error(exc)
 
     @router.get("/api/projects/{project_id:path}/artifact-candidates")
-    async def artifact_candidates(project_id: str):
+    async def artifact_candidates(project_id: str, window_days: Optional[str] = None):
+        """`window_days` opcional (1..3650): só os arquivos alterados nesse
+        período. Recebido como texto para o erro sair no formato
+        `{"success": false, "error": ...}` e não no 422 do FastAPI."""
         try:
-            return await service.candidates(project_id)
+            window = _parse_window_days(window_days)
+            return await service.candidates(project_id, window)
         except ArtifactError as exc:
             return _error(exc)
 
