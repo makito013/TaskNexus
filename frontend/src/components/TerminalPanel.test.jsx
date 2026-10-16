@@ -639,8 +639,9 @@ describe('TerminalPanel — sidebar-toggled re-fit (RF02)', () => {
 // asseveravam essencialmente a mesma coisa (`el.style.height === '500px'`) num
 // jsdom sem engine de layout, ou seja, passavam com o bug 100% presente — a
 // escrita de altura era inerte na renderização real por causa do `flex: 1 1 0%`
-// do nó. Pior: só passavam porque montam sem o bootstrap do main.jsx, o que dá a
-// skin v1 e `frameInsetPx = 0`; no v2 real o valor era 492px e nada cobria.
+// do nó. Pior: só passavam porque montavam sem o bootstrap do main.jsx, o que
+// dava a skin antiga e `frameInsetPx = 0`; no v2 real o valor era 492px e nada
+// cobria.
 // Substituir asserção de valor inline por asserção de AUSÊNCIA de valor inline é
 // o que este bloco pode honestamente provar; que o layout de fato encolha só é
 // verificável em dispositivo.
@@ -926,7 +927,7 @@ describe('TerminalPanel — forceFit() via ref (Ajustar layout button)', () => {
 });
 
 // Repaginação estética da tela de terminal (PLAN-terminal-skin.md, T2): a
-// moldura do v2. A geometria toda vem de resolveTerminalSkin() e já é coberta
+// moldura. A geometria toda vem de resolveTerminalSkin() e já é coberta
 // em terminalSkin.test.js sem DOM nenhum; o que ESTAS suítes cobrem é o que só
 // existe depois de montar — que o skin certo chegou aos nós certos.
 //
@@ -938,7 +939,7 @@ describe('TerminalPanel — forceFit() via ref (Ajustar layout button)', () => {
 // o padding dele para uma classe, o getComputedStyle continuaria devolvendo
 // zero neste ambiente e a regressão passaria batida — só o `className === ''`
 // pega.
-describe('TerminalPanel — terminal frame skin (v1 default)', () => {
+describe('TerminalPanel — terminal viewport node', () => {
   class FakeWebSocket {
     static instances = [];
     static CONNECTING = 0;
@@ -1012,28 +1013,23 @@ describe('TerminalPanel — terminal frame skin (v1 default)', () => {
     expect(viewport.style.border).toBe('0px');
   });
 
-  // O v1 está em produção: nenhuma classe, nenhum padding novo no root, e o
-  // wrapper mantém o `--bg-surface` de sempre.
-  it('adds no frame class under v1', () => {
+  // Sem o bootstrap (nenhum `dataset` no <html>) não existe mais um skin
+  // alternativo: a moldura é a mesma, só a paleta cai no default escuro.
+  it('frames the terminal even without the boot dataset', () => {
+    expect(document.documentElement.dataset.layout).toBeUndefined();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
     const { container } = render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );
     const frame = container.querySelector('[data-terminal-viewport]').parentElement;
-    expect(frame.className).toBe('');
-    expect(frame.style.padding).toBe('12px');
-    expect(frame.style.background).toBe('var(--bg-surface)');
-    expect(frame.style.borderRadius).toBe('');
-  });
-
-  it('leaves the root without padding under v1', () => {
-    const { container } = render(
-      <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
-    );
-    expect(container.firstChild.style.padding).toBe('0px');
+    expect(frame.className).toBe('v2-terminal-frame');
+    expect(frame.style.padding).toBe('8px');
+    expect(frame.style.background).toBe('rgb(20, 23, 30)'); // #14171e
+    expect(container.firstChild.style.padding).toBe('4px');
   });
 });
 
-describe('TerminalPanel — terminal frame skin (v2)', () => {
+describe('TerminalPanel — terminal frame skin', () => {
   class FakeWebSocket {
     static instances = [];
     static CONNECTING = 0;
@@ -1072,18 +1068,15 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
       disconnect() {}
     };
     // O skin é resolvido UMA VEZ no mount a partir do dataset do <html> (que
-    // em produção o main.jsx seta antes do primeiro render) — então isto tem
-    // que estar no lugar ANTES do render, não depois.
-    document.documentElement.dataset.layout = 'v2';
+    // em produção o boot seta antes do primeiro render) — então isto tem que
+    // estar no lugar ANTES do render, não depois.
     document.documentElement.dataset.theme = 'dark';
   });
 
   afterEach(() => {
     cleanup();
-    // Todo o resto deste arquivo depende do default v1 (dataset ausente, que é
-    // também o estado real de qualquer teste que monte o TerminalPanel
-    // isolado) — limpar aqui é o que mantém as outras suítes exercitando o v1.
-    delete document.documentElement.dataset.layout;
+    // Dataset ausente é o estado real de qualquer teste que monte o
+    // TerminalPanel isolado — limpar aqui mantém as outras suítes nesse estado.
     delete document.documentElement.dataset.theme;
     global.WebSocket = originalWebSocket;
     global.ResizeObserver = originalResizeObserver;
@@ -1111,10 +1104,10 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
     expect(frame.style.borderColor).toBe('');
   });
 
-  // O bug que esta entrega corrige por consequência: `--bg-surface` é token do
-  // v1 com valor fixo #111111, e pintava uma auréola quase-preta de 12px em
-  // volta de um terminal creme no v2 tema claro.
-  it('stops painting the wrapper with the v1 --bg-surface token', () => {
+  // O bug que esta entrega corrigiu por consequência: `--bg-surface` é token
+  // legado do index.css com valor fixo #111111, e pintava uma auréola
+  // quase-preta de 12px em volta de um terminal creme no tema claro.
+  it('never paints the wrapper with the legacy --bg-surface token', () => {
     const { container } = render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );
@@ -1130,8 +1123,8 @@ describe('TerminalPanel — terminal frame skin (v2)', () => {
     expect(container.firstChild.style.padding).toBe('4px');
   });
 
-  // INV-TERM-GEOM continua valendo do outro lado do gate.
-  it('keeps the viewport identical to v1 (no padding, no border, no class)', () => {
+  // INV-TERM-GEOM continua valendo com a moldura em volta.
+  it('keeps the viewport free of padding, border and class inside the frame', () => {
     const { container } = render(
       <TerminalPanel sessionKey="projA::claude" projectId="projA" agentId="claude" visible />
     );

@@ -3,8 +3,8 @@
 // Repaginação estética da tela de terminal (PLAN-terminal-skin.md, T1).
 //
 // Função PURA que resolve toda a camada estética do TerminalPanel a partir de
-// (layout, theme, { narrow }). Por que uma função pura num arquivo separado, e
-// não `if (isV2)` espalhado pelo JSX:
+// (theme, { narrow }). Por que uma função pura num arquivo separado, e não
+// estilo espalhado pelo JSX:
 //
 //  1. **Testabilidade.** O Vitest deste repo roda com `css: false`
 //     (vite.config.js não tem `test.css`), então NENHUMA regra de theme.css
@@ -12,25 +12,19 @@
 //     Tudo que morar aqui — geometria, hex, aritmética de inset — é asseverável
 //     sem DOM, sem xterm e sem CSS. Tudo que morar no theme.css só é verificável
 //     por QA manual. Essa é a régua para decidir onde cada coisa vai.
-//  2. **O v1 está em produção e tem que sair pixel-idêntico.** Com o v1
-//     congelado num literal aqui e um `toEqual` contra um literal escrito à mão
-//     no teste (deliberadamente NÃO importado deste módulo — importar tornaria a
-//     asserção tautológica), qualquer deriva do v1 aparece como teste vermelho
-//     em vez de aparecer como screenshot diferente.
-//  3. **Zero `if` de layout no JSX.** O componente só lê chaves do skin.
+//  2. **Zero estilo de moldura no JSX.** O componente lê do skin só a moldura
+//     (`root`, `frameClassName`, `frame`, `viewport`); paleta, fonte e faixas
+//     do skin ainda não estão ligadas ao TerminalPanel (dívida registrada).
 //
-// ⚠️ A pureza aqui NÃO é para reatividade. Troca de layout ou de tema é
-// full-reload (AppearanceSwitch.jsx faz window.location.reload() depois do PUT),
-// e `main.jsx` seta `dataset.layout`/`dataset.theme` ANTES do primeiro render —
-// então o chamador resolve isto UMA VEZ no mount (`useMemo(..., [])`) e pronto.
+// ⚠️ A pureza aqui NÃO é para reatividade. Troca de tema é full-reload
+// (AppearanceSwitch.jsx faz window.location.reload() depois do PUT), e o boot
+// seta `dataset.theme` ANTES do primeiro render — então o chamador resolve isto
+// UMA VEZ no mount (`useMemo(..., [])`) e pronto.
 // (Corrige o motivo declarado no ADR-001 do Arquiteto, que supunha reatividade
 // em runtime; o contrato continua o mesmo, o racional é outro.)
-
-// Stack de fonte do v1 — literal de hoje (TerminalPanel.jsx:199 em git HEAD),
-// congelado. Não deduplicar com as outras 9 ocorrências de string mono do repo:
-// a stack do terminal precisa de `ui-monospace`/`Cascadia Mono` que as de UI não
-// têm, e as de UI têm coisas que aqui atrapalham (ver C3 do plano).
-const V1_FONT_FAMILY = 'SF Mono, Fira Code, Menlo, Monaco, Consolas, monospace';
+//
+// Existe um skin só: o ramo do layout antigo (moldura sem borda sobre
+// `--bg-surface`) saiu junto com aquele layout (7abfd67).
 
 // Stack do v2 (DESIGN §3). IBM Plex Mono é auto-hospedada (theme.css) — advance
 // de 0,600em idêntico em toda plataforma, o que remove a variável "mesma
@@ -45,8 +39,8 @@ const BASE_FONT_SIZE_PX = 14;
 // Abaixo de MOBILE_VIEWPORT_QUERY (640px — C6 do plano; NÃO os 600px do
 // desenho, senão abre uma faixa de 40px onde o botão flutuante "☰ Menu" existe
 // mas a compensação não) o terminal cai para 13px, o que devolve ~6 colunas no
-// celular. Decidido no mount e NÃO reativo à rotação — consistente com `layout`
-// e `theme`, que também são mount-once. Está comentado aqui de propósito para
+// celular. Decidido no mount e NÃO reativo à rotação — consistente com `theme`,
+// que também é mount-once. Está comentado aqui de propósito para
 // não virar ticket (risco 9 do plano).
 const NARROW_FONT_SIZE_PX = 13;
 
@@ -54,17 +48,12 @@ const NARROW_FONT_SIZE_PX = 13;
 // Geometria (INV-TERM-GEOM)
 // ---------------------------------------------------------------------------
 
-// v2: 4px de padding no root + 1px de borda + 8px de padding do frame = 13px
-// até a coluna 0 do texto (hoje o v1 gasta 12px num padding só). Custo real:
+// 4px de padding no root + 1px de borda + 8px de padding do frame = 13px até a
+// coluna 0 do texto (a moldura antiga gastava 12px num padding só). Custo real:
 // 1px por lado ⇒ 0 colunas perdidas na esmagadora maioria das larguras.
 const V2_FRAME_INSET_PX = 4;
 const V2_FRAME_BORDER_PX = 1;
 const V2_FRAME_PADDING_PX = 8;
-
-// v1: nenhum padding no root, 12px no wrapper, sem borda — exatamente o de hoje.
-const V1_FRAME_INSET_PX = 0;
-const V1_FRAME_BORDER_PX = 0;
-const V1_FRAME_PADDING_PX = 12;
 
 // Raio 10px (DESIGN §2.2/§2.3): um degrau acima dos 8px que o v2 usa em botão/
 // linha/pílula — correto, já que a moldura contém todos eles. A condição
@@ -74,10 +63,10 @@ const V2_FRAME_RADIUS_PX = 10;
 
 // INV-TERM-GEOM — o nó do `term.open()`.
 //
-// IDÊNTICO nos dois layouts, de propósito, e por isso é UM ÚNICO objeto
-// congelado compartilhado pelos dois ramos: a invariante fica garantida por
-// construção, não por disciplina. Padding/borda/raio moram todos no wrapper,
-// nunca aqui.
+// IDÊNTICO em todo tema e largura, de propósito, e por isso é UM ÚNICO objeto
+// congelado compartilhado por todo skin resolvido: a invariante fica garantida
+// por construção, não por disciplina. Padding/borda/raio moram todos no
+// wrapper, nunca aqui.
 //
 // O `padding: 0` é o núcleo do fix de .planning/debug/terminal-cursor-desalinhado.md:
 // FitAddon.proposeDimensions() mede `getComputedStyle(parentElement)` e, com o
@@ -220,80 +209,19 @@ function makeV2BannerBase(insetPx) {
 /**
  * Resolve toda a camada estética do TerminalPanel.
  *
- * Os dois primeiros argumentos podem vir `undefined`: todo teste que monta o
- * TerminalPanel isolado o faz SEM o bootstrap do main.jsx, então
- * `document.documentElement.dataset.layout`/`.theme` simplesmente não existem
- * ali. `layout` desconhecido ou ausente ⇒ **v1** (o layout de produção, o mais
- * conservador); `theme` ausente ⇒ **dark**.
+ * `theme` pode vir `undefined`: todo teste que monta o TerminalPanel isolado o
+ * faz SEM o bootstrap do boot, então `document.documentElement.dataset.theme`
+ * simplesmente não existe ali. `theme` ausente ⇒ **dark**.
  *
- * @param {string|undefined} layout  `document.documentElement.dataset.layout`
- * @param {string|undefined} theme   `document.documentElement.dataset.theme`
+ * @param {string|undefined} [theme] `document.documentElement.dataset.theme`
  * @param {{ narrow?: boolean }} [options] `narrow`: viewport abaixo de
- *   MOBILE_VIEWPORT_QUERY (640px). Só afeta o v2.
+ *   MOBILE_VIEWPORT_QUERY (640px).
  */
-export function resolveTerminalSkin(layout, theme, options = {}) {
-  const isV2 = layout === 'v2';
+export function resolveTerminalSkin(theme, options = {}) {
   // `theme_mode` é validado no backend (models.py) como estritamente
   // 'dark'|'light' — nunca 'auto'. Qualquer outra coisa aqui é ausência.
   const resolvedTheme = theme === 'light' ? 'light' : 'dark';
   const narrow = options.narrow === true;
-
-  if (!isV2) {
-    return Object.freeze({
-      layout: 'v1',
-      theme: resolvedTheme,
-      fontFamily: V1_FONT_FAMILY,
-      fontSize: BASE_FONT_SIZE_PX,
-      // O v1 não reage a `narrow`: tem que sair pixel-idêntico, ponto.
-      xtermOptions: Object.freeze({
-        cursorBlink: true,
-        fontFamily: V1_FONT_FAMILY,
-        fontSize: BASE_FONT_SIZE_PX,
-      }),
-      // `null` (e não um objeto de tema) faz o chamador cair no ramo
-      // `resolveTerminalTheme()` legado BYTE A BYTE. Os tokens v1 são hex
-      // literal em index.css, então ali o `getComputedStyle` já devolve algo
-      // que o xterm parseia — não há nada a consertar no v1, e mexer seria
-      // risco puro.
-      xtermTheme: null,
-      root: Object.freeze({
-        flex: 1,
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        padding: 0,
-      }),
-      frameClassName: undefined,
-      frame: Object.freeze({
-        flex: 1,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-        padding: '12px',
-        // Token do v1 (#111111 fixo, index.css), preservado de propósito. É
-        // exatamente este valor que, herdado pelo v2, desenhava uma auréola
-        // quase-preta de 12px em volta de um terminal creme no tema claro — no
-        // v1 ele está certo e fica.
-        background: 'var(--bg-surface)',
-      }),
-      viewport: VIEWPORT_STYLE,
-      frameInsetPx: V1_FRAME_INSET_PX,
-      frameBorderPx: V1_FRAME_BORDER_PX,
-      framePaddingPx: V1_FRAME_PADDING_PX,
-      // ⚠️ LITERAL CONGELADO, NÃO FÓRMULA. A fórmula daria 0+0+12 = 12, mas as
-      // faixas do v1 são `top/left/right: 0` — sangram de ponta a ponta, e é
-      // assim que o v1 é hoje. Se alguém "unificar" isto com a fórmula do v2
-      // para deixar bonito, quebra o v1. Deixe 0.
-      bannerInsetPx: 0,
-      // Mesma convenção do `xtermTheme: null`: `null` significa "o chamador usa
-      // o caminho legado". As 4 faixas do v1 continuam sendo os 4 blocos
-      // inline de hoje, dentro do componente, sem uma vírgula de diferença.
-      banner: null,
-      bannerButton: null,
-    });
-  }
 
   const palette = resolvedTheme === 'light' ? V2_ANSI_LIGHT : V2_ANSI_DARK;
   const fontSize = narrow ? NARROW_FONT_SIZE_PX : BASE_FONT_SIZE_PX;
@@ -301,7 +229,6 @@ export function resolveTerminalSkin(layout, theme, options = {}) {
   const bannerBase = makeV2BannerBase(bannerInsetPx);
 
   return Object.freeze({
-    layout: 'v2',
     theme: resolvedTheme,
     fontFamily: V2_FONT_FAMILY,
     fontSize,
@@ -368,7 +295,8 @@ export function resolveTerminalSkin(layout, theme, options = {}) {
       // de 8px e o canvas têm que ser uma superfície contínua. NÃO pode ser
       // `--v2-surface` (é o fundo do header do ChatV2, encostado logo acima —
       // a moldura sumiria contra o próprio header) e não pode ser
-      // `--bg-surface` (token v1, #111111 fixo: a auréola preta do tema claro).
+      // `--bg-surface` (token legado do index.css, #111111 fixo: a auréola
+      // preta do tema claro).
       background: palette.background,
     }),
     viewport: VIEWPORT_STYLE,
@@ -383,8 +311,9 @@ export function resolveTerminalSkin(layout, theme, options = {}) {
     // borda+padding do frame) a poria 4px antes do texto.
     bannerInsetPx,
     banner: Object.freeze({
-      // Trilho teal: um blip de rede não é um erro. Hoje o v1 pinta
-      // `color:'#ff3333'` — vermelho puro para dizer "estou reconectando".
+      // Trilho teal: um blip de rede não é um erro. A faixa inline do
+      // TerminalPanel ainda pinta `color:'#ff3333'` — vermelho puro para dizer
+      // "estou reconectando".
       accent: Object.freeze({ ...bannerBase, borderLeft: '3px solid var(--v2-accent)' }),
       // Sessão despejada não é erro, é um fato: trilho neutro.
       neutral: Object.freeze({ ...bannerBase, borderLeft: '3px solid var(--v2-text-faint)' }),

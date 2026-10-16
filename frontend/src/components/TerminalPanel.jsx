@@ -48,34 +48,16 @@ export function isControlFrame(data) {
 }
 
 // Milestone 3 (plano Layout v2, 05-TL.md, Tarefa 18): tema do xterm.js
-// derivado dos tokens `--v2-*` (theme.css) quando o layout ativo é v2 —
-// resolvido UMA VEZ no mount, nunca reativo em runtime, porque a troca de
-// layout/tema já é full-reload (decisão fechada do TL em AppearanceSwitch.jsx:
-// window.location.reload() após o PUT resolver) — não existe um cenário em
-// que dataset.layout mude sob um TerminalPanel já montado. `document.
-// documentElement.dataset.layout` já está setado por main.jsx ANTES do
-// primeiro render (fetchAppearance() resolve, dataset é setado, só ENTÃO
-// ReactDOM.createRoot(...).render(<App/>) roda) — então lê-lo de forma
-// síncrona aqui no mount é seguro, sem race.
-//
-// v1 (dataset.layout !== 'v2', incluindo ausente — ex.: testes que montam
-// TerminalPanel isolado sem o bootstrap de main.jsx) mantém EXATAMENTE o
-// tema anterior (--bg-surface/--text-primary/--accent-green, tokens v1) —
-// zero mudança de comportamento pro v1, era o requisito explícito da tarefa.
+// derivado dos tokens `--v2-*` (theme.css) — resolvido UMA VEZ no mount, nunca
+// reativo em runtime, porque a troca de tema já é full-reload (decisão fechada
+// do TL em AppearanceSwitch.jsx: window.location.reload() após o PUT resolver)
+// — não existe um cenário em que o tema mude sob um TerminalPanel já montado.
+// O boot já aplicou os tokens ANTES do primeiro render, então lê-los de forma
+// síncrona aqui no mount é seguro, sem race. Sem o bootstrap (testes que
+// montam o TerminalPanel isolado) os tokens vêm vazios e valem os fallbacks.
 function resolveTerminalTheme() {
-  const isV2 = document.documentElement.dataset.layout === 'v2';
   const style = getComputedStyle(document.documentElement);
   const read = (token, fallback) => style.getPropertyValue(token).trim() || fallback;
-
-  if (!isV2) {
-    return {
-      background: read('--bg-surface', '#111111'),
-      foreground: read('--text-primary', '#e0e0e0'),
-      cursor: read('--accent-green', '#4ade80'),
-      cursorAccent: read('--bg-surface', '#111111'),
-      selectionBackground: 'rgba(255, 255, 255, 0.15)',
-    };
-  }
 
   // Cores ANSI básicas mapeadas a partir da paleta --v2-* (Designer não
   // extraiu uma paleta ANSI de 16 cores dedicada do mockup — este mapeamento
@@ -118,15 +100,16 @@ function resolveTerminalTheme() {
 }
 
 export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, projectId, agentId, visible }, ref) {
-  // Repaginação estética (PLAN-terminal-skin.md, T2): toda a camada visual —
-  // geometria da moldura, paleta, tipografia, faixas — vem de uma função pura
+  // Repaginação estética (PLAN-terminal-skin.md, T2): a geometria da moldura
+  // (root, frame, viewport) vem de uma função pura. Paleta, fonte e faixas
+  // ainda não: saem de resolveTerminalTheme() e dos estilos inline abaixo. A função é
   // resolvida UMA VEZ no mount. `useMemo(..., [])` e não `useState`/efeito
-  // porque nada disto é reativo: troca de layout ou de tema é full-reload
-  // (AppearanceSwitch.jsx chama window.location.reload() depois do PUT), e
-  // main.jsx seta `dataset.layout`/`dataset.theme` antes do primeiro render.
+  // porque nada disto é reativo: troca de tema é full-reload
+  // (AppearanceSwitch.jsx chama window.location.reload() depois do PUT), e o
+  // boot seta `dataset.theme` antes do primeiro render.
   // Consequência aceita e documentada: `narrow` também é mount-once, ou seja o
-  // fontSize NÃO reage a uma rotação do iPad — consistente com layout/theme,
-  // que já se comportam assim. Não é bug, não abrir ticket.
+  // fontSize NÃO reage a uma rotação do iPad — consistente com o tema, que já
+  // se comporta assim. Não é bug, não abrir ticket.
   //
   // A guarda de `typeof window.matchMedia` NÃO é redundante: o jsdom deste
   // repo não implementa matchMedia (mesmo motivo documentado em
@@ -135,7 +118,6 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
   // gate que decide se o botão flutuante "☰ Menu" existe — usar outro valor
   // abriria uma faixa de larguras com o botão presente e a compensação ausente.
   const skin = useMemo(() => resolveTerminalSkin(
-    document.documentElement.dataset.layout,
     document.documentElement.dataset.theme,
     {
       narrow: typeof window.matchMedia === 'function'
@@ -677,15 +659,14 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
     }
 
     // 5d. RF02 Tarefa 3 (plano Layout v2, 06-TL.md): sidebar collapse/expand
-    // toggle animates `width` via CSS transition (v1 Sidebar.jsx: 150ms; v2
-    // SidebarV2.jsx: 180ms) rather than an instant layout jump — the
-    // ResizeObserver above only fires once the transition settles into a new
-    // final size, but xterm's own fit() sampled mid-transition can land on a
-    // stale intermediate width. Re-fitting after a fixed delay long enough to
-    // cover the longest known transition (180ms + margin) is simpler and more
-    // robust than trying to detect `transitionend` on an element this
-    // component doesn't own. useSidebarCollapsed() dispatches this event on
-    // every toggle, from either layout, since both share that hook.
+    // toggle animates `width` via CSS transition (SidebarV2.jsx: 180ms)
+    // rather than an instant layout jump — the ResizeObserver above only fires
+    // once the transition settles into a new final size, but xterm's own fit()
+    // sampled mid-transition can land on a stale intermediate width.
+    // Re-fitting after a fixed delay long enough to cover the transition
+    // (180ms + margin) is simpler and more robust than trying to detect
+    // `transitionend` on an element this component doesn't own.
+    // useSidebarCollapsed() dispatches this event on every toggle.
     let sidebarToggleTimer = null;
     const onSidebarToggled = () => {
       if (sidebarToggleTimer) {
@@ -989,8 +970,7 @@ export const TerminalPanel = forwardRef(function TerminalPanel({ sessionKey, pro
         COR da borda e sua transição moram em `.v2-terminal-frame` no theme.css,
         porque têm estado (`:focus-within`) — e estilo inline vence classe por
         especificidade, então um `border: '1px solid …'` aqui mataria a regra de
-        foco em silêncio. No v1 `frameClassName` é undefined (React não emite o
-        atributo) e o estilo é o literal congelado de sempre.
+        foco em silêncio.
       */}
       <div className={skin.frameClassName} style={skin.frame}>
         {/*
