@@ -65,8 +65,6 @@ export const MODULES = [
 
 export const DEFAULT_MODULE_ID = 'tasks'
 
-export const GALLERY_PATH = '/dev/gallery'
-
 export function moduleById(id) {
   return MODULES.find((module) => module.id === id) || null
 }

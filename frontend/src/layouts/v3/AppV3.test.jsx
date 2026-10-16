@@ -136,16 +136,12 @@ describe('AppV3', () => {
     expect(screen.getByRole('button', { name: 'Tarefas' }).getAttribute('aria-current')).toBe('page')
   })
 
-  it('serves the dev gallery outside the rail, without island or active module', () => {
+  it('treats the removed dev gallery path as unknown and opens the default module', () => {
     startAt('/dev/gallery')
     render(<AppV3 initialTheme="light" />)
-    expect(screen.getByRole('heading', { level: 1, name: 'Galeria de componentes (dev)' })).toBeTruthy()
-    expect(window.location.pathname).toBe('/dev/gallery')
-    expect(screen.queryByRole('region', { name: 'Equipe' })).toBeNull()
-    expect(document.querySelectorAll('[aria-current]')).toHaveLength(0)
-    const railLabels = screen.getAllByRole('button').filter((b) => b.classList.contains('v3-rail__item'))
-    expect(railLabels).toHaveLength(5)
-    expect(screen.queryByRole('button', { name: /galeria/i })).toBeNull()
+    expect(window.location.pathname).toBe('/tasks')
+    expect(screen.getByRole('heading', { level: 1, name: 'Tarefas' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: /galeria/i })).toBeNull()
   })
 
   it('keeps one island element across module switches so the status phrase is announced', () => {

@@ -33,7 +33,7 @@ function SunIcon() {
 // The module navigation of the v3 shell. Modules without a screen stay clickable
 // (they lead to the "coming soon" screen) and say so in text, never only by tint.
 //   modules:  entries of modules.js
-//   activeId: id of the open module, or null (e.g. on the dev gallery)
+//   activeId: id of the open module, or null when none is open
 export default function ModuleRail({ modules, activeId, onSelect, theme, onToggleTheme }) {
   const nextTheme = theme === 'dark' ? 'claro' : 'escuro'
 
