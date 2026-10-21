@@ -1,8 +1,10 @@
 # backend/app/pty_manager.py
 from __future__ import annotations
 import os, subprocess, asyncio, errno, sys
+import socket
 import struct
 import signal
+import threading
 import time
 import logging
 
@@ -118,6 +120,106 @@ def _schedule_reap(loop: asyncio.AbstractEventLoop, proc: subprocess.Popen, pgid
     task.add_done_callback(_PENDING_REAPS.discard)
 
 
+# How long the Windows output pump keeps reading after pywinpty reports EOF.
+# Conhost renders output in asynchronous frames, so a child that writes and
+# exits right away can still have its last frame pending when iseof() turns
+# true. The grace period only delays EOF delivery; it never truncates output
+# that is already readable.
+_EOF_DRAIN_SECONDS = 0.25
+
+
+def _send_all(client: socket.socket, text: str) -> bool:
+    try:
+        client.sendall(text.encode("utf-8"))
+        return True
+    except OSError:
+        return False
+
+
+def _pump_winpty_output(address, pty, blocking: bool,
+                        drain_seconds: float = _EOF_DRAIN_SECONDS) -> None:
+    """Thread body that copies a winpty PTY's output into the loopback socket
+    that `winpty.PtyProcess.read()` consumes.
+
+    Replaces pywinpty 2.0.14's `winpty.ptyprocess._read_in_thread`, which
+    loses output in two ways:
+
+    - It stops at the first `pty.iseof()` that follows a read. The child may
+      have already exited while conhost still holds its last frame (e.g. the
+      final line a CLI prints before exiting), and that frame is dropped.
+    - An empty read turns into the `b'0011Ignore'` sentinel, and
+      `bytes(b'...', 'utf-8')` raises TypeError. The thread ends and the
+      parent sees a premature EOF.
+
+    Here an empty read is just skipped. Once EOF is reported, non-blocking
+    reads continue for `drain_seconds` before the socket is closed. Closing
+    the socket is what the parent's `PtyProcess.read()` turns into EOFError.
+    """
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect(address)
+    try:
+        while True:
+            try:
+                data = pty.read(4096, blocking=blocking)
+            except Exception:
+                return
+            if data and not _send_all(client, data):
+                return
+            if pty.iseof():
+                deadline = time.monotonic() + drain_seconds
+                while time.monotonic() < deadline:
+                    try:
+                        tail = pty.read(4096, blocking=False)
+                    except Exception:
+                        return
+                    if tail:
+                        if not _send_all(client, tail):
+                            return
+                    else:
+                        time.sleep(0.005)
+                return
+            time.sleep(1e-3)
+    finally:
+        client.close()
+
+
+if sys.platform == "win32":
+    class _DrainingPtyProcess(winpty.PtyProcess):
+        """`winpty.PtyProcess` whose reader thread is `_pump_winpty_output`.
+
+        `PtyProcess.spawn()` builds the instance through `cls(pty)`, so only
+        `__init__` changes. It mirrors pywinpty 2.0.14's `__init__`
+        (requirements.txt pins that version) except for the thread target.
+        Everything else (read/write/close/isalive/setwinsize/pid) is
+        inherited unchanged.
+        """
+
+        def __init__(self, pty):
+            assert isinstance(pty, winpty.PTY)
+            self.pty = pty
+            self.pid = pty.pid
+            self.read_blocking = bool(int(os.environ.get("PYWINPTY_BLOCK", 1)))
+            self.closed = False
+            self.flag_eof = False
+            self.delayafterterminate = 0.1
+            self.delayafterclose = 0.1
+
+            self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._server.bind(("127.0.0.1", 0))
+            address = self._server.getsockname()
+            self._server.listen(1)
+
+            self._thread = threading.Thread(
+                target=_pump_winpty_output,
+                args=(address, self.pty, self.read_blocking),
+            )
+            self._thread.daemon = True
+            self._thread.start()
+
+            self.fileobj, _ = self._server.accept()
+            self.fd = self.fileobj.fileno()
+
+
 class PTYProcess:
     # Bounds the server-side scrollback ring buffer to a "last ~64KB" window —
     # a best-effort screen/scrollback replay, not a byte-perfect terminal-state
@@ -221,7 +323,7 @@ class PTYProcess:
         env["TERM"] = "xterm-256color"
         env.update(self._resolved_extra_env())
         try:
-            self._winpty_proc = winpty.PtyProcess.spawn(
+            self._winpty_proc = _DrainingPtyProcess.spawn(
                 self.cmd, cwd=self.cwd, env=env,
                 dimensions=(self.rows, self.cols),
             )
