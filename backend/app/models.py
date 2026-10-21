@@ -667,3 +667,49 @@ class TaskGlobal(Task):
     projeto_id: str
     agent_id: str
     session_display_name: str | None = None
+
+
+# -- Workspace registry (V3, trilha 1) -----------------------------------------
+#
+# Response shapes of GET /api/workspaces. Routes live in app/workspaces_api.py.
+
+
+class WorkspaceFolderOut(BaseModel):
+    id: int
+    path: str
+    is_primary: bool
+    position: int
+    exists: bool  # os.path.isdir at response time
+
+
+class WorkspaceProjectOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    origin: str  # 'legacy_seed' | 'legacy_adopted' | 'manual'
+    archived: bool
+    # True for legacy keys: the V2 resolves them by scanning, so the primary
+    # folder must keep matching the scan until the cut-over.
+    primary_locked: bool
+    folders: list[WorkspaceFolderOut]
+
+
+class WorkspaceOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    origin: str
+    archived: bool
+    projects: list[WorkspaceProjectOut]
+
+
+class SeedInfo(BaseModel):
+    at: float
+    root: str
+    workspaces: int
+    projects: int
+
+
+class WorkspacesResponse(BaseModel):
+    seeded: SeedInfo | None = None
+    workspaces: list[WorkspaceOut]

@@ -30,6 +30,8 @@ from app.viewer_store import ViewerStore
 from app.viewer_api import ViewerService, create_viewer_router
 from app.artifact_store import ArtifactStore
 from app.artifacts_api import ArtifactService, create_artifacts_router
+from app.workspace_store import WorkspaceStore
+from app.workspaces_api import WorkspaceService, create_workspaces_router
 from app.push_store import PushSubscriptionStore, TooManySubscriptionsError
 from app.push_payload import build_push_payload
 from app.push_service import send_push_to_all
@@ -143,6 +145,8 @@ push_store = PushSubscriptionStore(db_path=SESSIONS_DB)
 viewer_store = ViewerStore(db_path=SESSIONS_DB)
 # Galeria de artefatos por projeto (Fase A, Parte 7) — ver artifact_store.py.
 artifact_store = ArtifactStore(db_path=SESSIONS_DB)
+# Workspace registry (workspaces, projects, folders) for V3 track 1 -- see workspace_store.py.
+workspace_store = WorkspaceStore(db_path=SESSIONS_DB)
 pty_manager = PTYManager()
 
 # VAPID keypair provisioned at boot (decision G-1). None = push unavailable
@@ -456,6 +460,28 @@ async def _stop_hook_loopback_listener() -> None:
         print(f"==> AVISO: canal de hooks terminou com erro: {exc!r}", flush=True)
 
 
+async def _seed_workspace_registry() -> None:
+    """One-time additive seed of the workspace registry (ADR-22). Never blocks boot."""
+    try:
+        # Marker first: every boot after the first skips the scan entirely.
+        if await workspace_store.get_seed_marker():
+            return
+        projects = None
+        if os.path.isdir(PROJECTS_ROOT):
+            try:
+                projects = await asyncio.to_thread(scan_projects, PROJECTS_ROOT)
+            except Exception as exc:
+                print(f"==> AVISO: varredura para o seed falhou: {exc!r}", flush=True)
+        result = await workspace_store.seed_from_legacy_once(projects, PROJECTS_ROOT)
+        print(
+            f"==> Cadastro de workspaces: {result.status} "
+            f"({result.workspaces} workspaces, {result.projects} projetos)",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"==> AVISO: seed do cadastro de workspaces falhou: {exc!r}", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await store.initialize()
@@ -466,6 +492,7 @@ async def lifespan(app: FastAPI):
     await push_store.initialize()
     await viewer_store.initialize()
     await artifact_store.initialize()
+    await workspace_store.initialize()
     # Generates the VAPID keypair on the very first boot and reuses it from
     # then on (G-1). Never raises — a failure here leaves _vapid_keys as
     # None, which every push path treats as "push unavailable" (R-2).
@@ -474,6 +501,7 @@ async def lifespan(app: FastAPI):
     await _reload_projects_root()
     await _reload_global_agents_cache()
     _pretrust_projects()
+    await _seed_workspace_registry()
     await _start_hook_loopback_listener()
     # print(), não logging: --log-level warning (uso em produção, deploy.sh)
     # suprime até o banner "Uvicorn running on..." do próprio uvicorn, deixando
@@ -493,6 +521,7 @@ async def lifespan(app: FastAPI):
     await push_store.close()
     await viewer_store.close()
     await artifact_store.close()
+    await workspace_store.close()
 
 
 # Two Windows-only workarounds for an abruptly disconnecting client (the
@@ -2830,6 +2859,16 @@ app.include_router(create_viewer_router(
     viewer_service, on_agent_open=artifact_service.publish_opened_item,
 ))
 app.include_router(create_artifacts_router(artifact_service))
+
+# Workspace registry (V3 track 1): kept out of /api/projects/... (the
+# `{project_id:path}` catch-all would swallow suffixes) and before the SPA catch-all.
+workspace_service = WorkspaceService(
+    store=workspace_store,
+    get_projects_root=lambda: PROJECTS_ROOT,
+    scan=lambda: scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache),
+    get_global_agents=lambda: _global_agents_cache,
+)
+app.include_router(create_workspaces_router(workspace_service))
 
 
 @app.websocket("/ws/pty/{session_key:path}")
