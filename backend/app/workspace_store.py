@@ -36,7 +36,7 @@ import aiosqlite
 from app.agent_discovery import cliente_id_from_projeto_id
 from app.models import Project
 from app.workspace_keys import (
-    is_synthetic_key,
+    has_reserved_segment,
     make_project_key,
     make_workspace_key,
     validate_key,
@@ -490,7 +490,7 @@ class WorkspaceStore:
                 raise RegistryValidationError(
                     [{"code": "invalid_key", "message": str(exc)}]
                 ) from exc
-            if is_synthetic_key(adopt_key) or "/" in adopt_key:
+            if has_reserved_segment(adopt_key) or "/" in adopt_key:
                 raise RegistryValidationError([{
                     "code": "invalid_key",
                     "message": "A chave adotada precisa ser a de um cliente legado.",
@@ -585,7 +585,7 @@ class WorkspaceStore:
                     raise RegistryValidationError(
                         [{"code": "invalid_key", "message": str(exc)}]
                     ) from exc
-                if is_synthetic_key(adopt_key):
+                if has_reserved_segment(adopt_key):
                     raise RegistryValidationError([{
                         "code": "invalid_key",
                         "message": "A chave adotada precisa ser a de um projeto legado.",

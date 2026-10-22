@@ -160,11 +160,42 @@ def prepare_cards_db(db_path: str, projeto_ids) -> list[int]:
 
     async def _init():
         store = CardStore(db_path=db_path)
-        await store.initialize()
-        await store.close()
+        try:
+            await store.initialize()
+        finally:
+            await store.close()
 
     asyncio.run(_init())
     return [
         insert_card_direct(db_path, titulo=f"Card {i}", projeto_id=projeto_id)
         for i, projeto_id in enumerate(projeto_ids)
     ]
+
+
+def prepare_artifacts_db(db_path: str, rows) -> None:
+    """Create the legacy `artifacts` schema and insert one artifact per
+    (project_id, path) pair, BEFORE the app boots."""
+    from app.artifact_store import ArtifactStore
+
+    async def _init():
+        store = ArtifactStore(db_path=db_path)
+        try:
+            await store.initialize()
+        finally:
+            await store.close()
+
+    asyncio.run(_init())
+    now = time.time()
+    conn = sqlite3.connect(db_path)
+    try:
+        for project_id, path in rows:
+            conn.execute(
+                "INSERT INTO artifacts (artifact_id, project_id, cliente_id, path, kind, "
+                "title, created_by, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'markdown', ?, 'agent', ?, ?)",
+                (uuid_mod.uuid4().hex, project_id, project_id.split("/", 1)[0], path,
+                 path, now, now),
+            )
+        conn.commit()
+    finally:
+        conn.close()

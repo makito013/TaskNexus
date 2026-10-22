@@ -5,11 +5,12 @@ from __future__ import annotations
 import functools
 import json
 import shutil
+import sqlite3
 
 import pytest
 
 from app.workspace_store import SeedResult
-from registry_helpers import make_client, make_tree, prepare_cards_db
+from registry_helpers import make_client, make_tree, prepare_artifacts_db, prepare_cards_db
 
 
 @pytest.fixture
@@ -175,6 +176,8 @@ def test_v2_endpoints_are_identical_with_and_without_a_registry(tmp_path, tree):
 
 def test_cards_of_a_client_missing_on_disk_do_not_create_a_workspace(tmp_path, tree):
     prepare_cards_db(str(tmp_path / "sessions.db"), V2_CARD_PROJECTS)
+    # Artifacts of a client that no longer exists on disk must not create one either.
+    prepare_artifacts_db(str(tmp_path / "sessions.db"), [("Sumiu/x", "gone.md")])
     with make_client(tmp_path, root=tree) as (client, main_mod):
         body = client.get("/api/workspaces").json()
         snapshot = main_mod.workspace_store.snapshot
@@ -182,6 +185,14 @@ def test_cards_of_a_client_missing_on_disk_do_not_create_a_workspace(tmp_path, t
     assert keys == {"Pessoal", "podesubir", "projeto_2"}
     assert "Sumiu" not in snapshot.workspace_by_key
     assert "Sumiu/x" not in snapshot.project_by_key
+    # The seed leaves the legacy artifact alone (and does not read it).
+    conn = sqlite3.connect(str(tmp_path / "sessions.db"))
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM artifacts WHERE project_id = 'Sumiu/x'"
+        ).fetchone() == (1,)
+    finally:
+        conn.close()
 
 
 def test_include_archived_toggles_archived_workspaces_with_their_projects(tmp_path, tree):

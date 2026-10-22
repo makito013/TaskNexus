@@ -466,6 +466,15 @@ async def test_concurrent_writes_keep_keys_unique_and_one_primary_per_project(st
     )
     assert len({p.key for p in created}) == 20
     assert all("__pending__" not in p.key for p in created)
+    # The interleaved reader must never see a half-written project: a pending
+    # key, or a project without exactly one primary folder.
+    assert len(reads) == 10
+    for registry in reads:
+        for workspace in registry["workspaces"]:
+            assert "__pending__" not in workspace["key"]
+            for project in workspace["projects"]:
+                assert "__pending__" not in project["key"]
+                assert sum(1 for f in project["folders"] if f["is_primary"]) == 1
 
     await asyncio.gather(*[store.update_project(p.id, archived=True) for p in created])
     assert all(store.snapshot.project_by_id[p.id].archived for p in created)
@@ -541,3 +550,36 @@ async def test_list_registry_hides_archived_unless_asked(store, dirs):
     shown = await store.list_registry(include_archived=True)
     assert {p["key"] for p in shown["workspaces"][0]["projects"]} == {keep.key, gone.key}
     assert hidden["seeded"] is None
+
+
+# -- adoption never accepts a key with a reserved ("." prefixed) segment ----------------
+
+
+@pytest.mark.asyncio
+async def test_workspace_adoption_refuses_dot_prefixed_keys(store):
+    with pytest.raises(RegistryValidationError) as excinfo:
+        await store.create_workspace("Evil", adopt_key=".p5")
+    assert excinfo.value.problems[0]["code"] == "invalid_key"
+    assert store.snapshot.workspaces == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workspace_name, adopt_workspace, key", [
+    ("W", None, ".w1/x"),
+    ("W", None, ".w1/.p2/x"),
+    ("W", None, ".w1/.hidden"),
+    ("Pessoal", "Pessoal", "Pessoal/.p3/x"),
+    ("Pessoal", "Pessoal", "Pessoal/x/.p3"),
+    ("Pessoal", "Pessoal", "Pessoal/.w3"),
+    ("Pessoal", "Pessoal", "Pessoal/.p3"),
+])
+async def test_project_adoption_refuses_keys_with_a_reserved_segment(
+    store, dirs, workspace_name, adopt_workspace, key,
+):
+    workspace = await store.create_workspace(workspace_name, adopt_key=adopt_workspace)
+    with pytest.raises(RegistryValidationError) as excinfo:
+        await store.create_project(
+            workspace.id, "P", [folder_spec(dirs["a"], primary=True)], adopt_key=key,
+        )
+    assert excinfo.value.problems[0]["code"] == "invalid_key"
+    assert store.snapshot.projects == ()

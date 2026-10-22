@@ -26,6 +26,9 @@ if TYPE_CHECKING:  # the store imports this module; avoid the cycle at runtime
 SYNTHETIC_WORKSPACE_PREFIX = ".w"
 SYNTHETIC_PROJECT_PREFIX = ".p"
 _SYNTHETIC_SEGMENT = re.compile(r"^\.(w|p)\d+$")
+# Exactly what make_workspace_key / make_project_key produce. The workspace part
+# of a project key is ".wN" or a legacy workspace key (never starts with ".").
+_MINTED_KEY = re.compile(r"(?:\.w\d+|(?:\.w\d+|[^./][^/]*)/\.p\d+)")
 MAX_KEY_LENGTH = 512
 
 
@@ -38,9 +41,25 @@ def first_segment(key: str) -> str:
     return key.split("/", 1)[0]
 
 
-def is_synthetic_key(key: str) -> bool:
-    """True when any segment starts with "." (the reserved namespace)."""
+def has_reserved_segment(key: str) -> bool:
+    """True when ANY segment starts with "." (the whole reserved namespace).
+
+    Wider than `is_synthetic_key`: use it to REFUSE keys (adoption guards), where
+    "." segments that are not minted shapes must still be rejected. Do not use
+    it to route resolution: that is `is_synthetic_key`'s job."""
     return any(segment.startswith(".") for segment in key.split("/"))
+
+
+def is_synthetic_key(key: str) -> bool:
+    """True only for the key shapes the registry mints: ".w12" (workspace),
+    ".w12/.p38" and "Pessoal/.p37" (project: workspace key + ".pN").
+
+    Deliberately narrow, for RESOLUTION and scope: any other key, even one with
+    a "." segment such as "Pessoal/.hidden" or ".w1/.hidden", is NOT synthetic
+    and follows the legacy path byte for byte (the V2 never refused it). The
+    scan prunes every folder starting with ".", so the minted shapes are still
+    disjoint from every scan id. To REFUSE keys use `has_reserved_segment`."""
+    return _MINTED_KEY.fullmatch(key) is not None
 
 
 def make_workspace_key(workspace_id: int) -> str:
@@ -103,7 +122,9 @@ def same_workspace(a: str, b: str, snapshot: "RegistrySnapshot") -> bool:
 
 def scope_workspace_key(key: str, snapshot: "RegistrySnapshot") -> str:
     """Key of the workspace a key belongs to (project -> its workspace,
-    workspace -> itself, anything else -> its first segment)."""
+    workspace -> itself, unregistered synthetic key -> itself, anything else ->
+    its first segment). The third case mirrors the "unknown:" scope: an orphan
+    synthetic key must not list the cards of the workspace its prefix names."""
     project = snapshot.project_by_key.get(key)
     if project is not None:
         workspace = snapshot.workspace_by_id.get(project.workspace_id)
@@ -112,4 +133,6 @@ def scope_workspace_key(key: str, snapshot: "RegistrySnapshot") -> str:
     workspace = snapshot.workspace_by_key.get(key)
     if workspace is not None:
         return workspace.key
+    if is_synthetic_key(key):
+        return key
     return first_segment(key)

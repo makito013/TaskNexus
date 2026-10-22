@@ -31,13 +31,20 @@ from app.viewer_api import ViewerService, create_viewer_router
 from app.artifact_store import ArtifactStore
 from app.artifacts_api import ArtifactService, create_artifacts_router
 from app.workspace_store import WorkspaceStore
+from app.workspace_keys import (
+    is_synthetic_key,
+    same_workspace,
+    scope_workspace_key,
+    workspace_key_of,
+    workspace_scope_of,
+)
 from app.workspaces_api import WorkspaceService, create_workspaces_router
 from app.push_store import PushSubscriptionStore, TooManySubscriptionsError
 from app.push_payload import build_push_payload
 from app.push_service import send_push_to_all
 from app.vapid_keys import load_or_create_vapid_keys
 from app.image_validation import sniff_image_type, UploadTooLargeError, validate_upload_stream
-from app.agent_discovery import scan_projects, resolve_projeto_alvo, cliente_id_from_projeto_id
+from app.agent_discovery import scan_projects, resolve_projeto_alvo
 from app.asyncio_patches import install_proactor_connection_lost_patch
 from app.attachments import list_attachments, save_attachments, delete_attachment
 from app.logging_filters import install_benign_transfer_error_filter
@@ -666,9 +673,50 @@ async def _reload_global_agents_cache() -> None:
     _global_agents_cache = await agent_store.list_all()
 
 
+def _registry_project(key: str) -> Project | None:
+    """Project view of a registry row (synthetic keys only, ADR-23).
+
+    The primary folder is the cwd and every global agent is offered, whatever
+    marker the folder has (a registry project is eligible by registration, not
+    by `.claude`). Archived rows still resolve (S-4): old sessions keep their
+    cwd. Returns None for a legacy key (even a seeded one: the registry never
+    answers for those, ADR-23) or a row without a primary folder."""
+    if not is_synthetic_key(key):
+        return None
+    snapshot = workspace_store.snapshot
+    row = snapshot.project_by_key.get(key)
+    if row is None:
+        return None
+    primary = snapshot.primary_folder(row.id)
+    if primary is None:
+        return None
+    return Project(
+        id=key,
+        nome=row.name,
+        path=primary.path,
+        agentes=list(_global_agents_cache),
+        sub_projetos=[],
+        cliente_id=workspace_key_of(key),
+        elegivel=True,
+    )
+
+
+def _registry_root_for(key: str) -> str | None:
+    """Primary folder of a registry project, for the viewer/artifact services.
+    None for a legacy key (they keep the PROJECTS_ROOT + id join) and when the
+    folder is gone."""
+    project = _registry_project(key)
+    if project is None or not os.path.isdir(project.path):
+        return None
+    return project.path
+
+
 def _resolve_agent(project_id: str, agent_id: str | None):
-    projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
-    proj = next((p for p in projects if p.id == project_id), None)
+    if is_synthetic_key(project_id):
+        proj = _registry_project(project_id)
+    else:
+        projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
+        proj = next((p for p in projects if p.id == project_id), None)
     if not proj:
         return None, None, PROJECTS_ROOT
     cwd = proj.path
@@ -1515,8 +1563,17 @@ def _resolve_project_or_404(project_id: str) -> Project:
     """Same project_id -> Project resolution used by _resolve_agent, pulled
     out for the attachments routes below (which don't need an agent, just
     the project's `path` on disk)."""
-    all_projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
-    project = next((p for p in all_projects if p.id == project_id), None)
+    if is_synthetic_key(project_id):
+        project = _registry_project(project_id)
+        # Same outcome as the legacy scan, which never lists a missing folder:
+        # 404 instead of letting the attachment code recreate the folder.
+        # (The isdir lives here and not in _registry_project: _resolve_agent
+        # must keep reaching the controlled provisioning_failed path.)
+        if project is not None and not os.path.isdir(project.path):
+            project = None
+    else:
+        all_projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
+        project = next((p for p in all_projects if p.id == project_id), None)
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
     return project
@@ -1911,13 +1968,37 @@ async def _resolve_hook_projeto_alvo(own_projeto_id: str, projeto_id_pedido: str
     possível conectar ao backend". A lista só é necessária quando o agente
     pede um projeto explícito; sem pedido, resolve_projeto_alvo devolve o
     projeto da conversa sem olhar `projects`. Quando precisa, o scan roda numa
-    thread para não travar o event loop."""
+    thread para não travar o event loop.
+
+    Regra "mesmo workspace" (ADR-24): o escopo vem de `workspace_scope_of`
+    (cadastro; para chave legada equivale ao 1º segmento). Existência: chave
+    sintética -> cadastro (projeto ou workspace NÃO arquivado, sem scan);
+    chave legada -> scan, como sempre."""
     if not projeto_id_pedido:
         return own_projeto_id
+    snapshot = workspace_store.snapshot
+
+    def scope_of(key: str) -> str:
+        return workspace_scope_of(key, snapshot)
+
+    if is_synthetic_key(projeto_id_pedido):
+        project_row = snapshot.project_by_key.get(projeto_id_pedido)
+        if project_row is not None:
+            # A project inside an archived workspace inherits the archive (S-4):
+            # it still resolves cwd/root/scope, but is no target for new writes.
+            workspace_row = snapshot.workspace_by_id.get(project_row.workspace_id)
+            exists = not project_row.archived and not (workspace_row and workspace_row.archived)
+        else:
+            workspace_row = snapshot.workspace_by_key.get(projeto_id_pedido)
+            exists = workspace_row is not None and not workspace_row.archived
+        return resolve_projeto_alvo(
+            own_projeto_id, projeto_id_pedido, [],
+            scope_of=scope_of, exists=lambda _key: exists,
+        )
     projects = await asyncio.to_thread(
         scan_projects, PROJECTS_ROOT, global_agents=_global_agents_cache
     )
-    return resolve_projeto_alvo(own_projeto_id, projeto_id_pedido, projects)
+    return resolve_projeto_alvo(own_projeto_id, projeto_id_pedido, projects, scope_of=scope_of)
 
 
 @app.post("/api/hooks/task")
@@ -1970,7 +2051,7 @@ async def hook_task_delete(body: HookTaskDeleteRequest):
 
     own_projeto_id = session_key.partition("::")[0]
     task_projeto_id = task["projeto_id"] or task["session_key"].partition("::")[0]
-    if cliente_id_from_projeto_id(task_projeto_id) != cliente_id_from_projeto_id(own_projeto_id):
+    if not same_workspace(task_projeto_id, own_projeto_id, workspace_store.snapshot):
         return {"success": False, "error": f"Tarefa {body.task_id} pertence a outro cliente"}
 
     await task_store.delete(body.task_id)
@@ -2397,8 +2478,11 @@ def _agent_same_cliente(card: dict, own_projeto_id: str) -> bool:
 
     A ÚNICA restrição que sobra é a mesma regra "mesmo cliente" já usada em
     resolve_projeto_alvo / hook_cards_create: o card precisa pertencer ao
-    mesmo cliente do projeto da sessão atual do agente. cliente_id derivado
-    via cliente_id_from_projeto_id (reaproveitada, não duplicada). Não há
+    mesmo cliente do projeto da sessão atual do agente. Desde o cadastro de
+    workspaces (V3) "mesmo cliente" é "mesmo workspace": a comparação é
+    `same_workspace` (workspace_keys), que lê o cadastro para chave sintética
+    e, para chave legada, equivale ao 1º segmento de antes (teste de
+    propriedade em test_workspace_scope_equivalence.py). Não há
     mais regra extra para o status 'feito' — mover para 'feito' segue a
     mesma regra de qualquer outro status (o Gemini que terminou o card do
     Claude precisa conseguir concluí-lo).
@@ -2407,10 +2491,7 @@ def _agent_same_cliente(card: dict, own_projeto_id: str) -> bool:
     operação (nunca depois): responder "pertence a outro cliente" só quando o
     card existe já é informação demais, mas aplicar a regra depois do
     update/delete alteraria dados de outro cliente antes de recusar."""
-    return (
-        cliente_id_from_projeto_id(card["projeto_id"])
-        == cliente_id_from_projeto_id(own_projeto_id)
-    )
+    return same_workspace(card["projeto_id"], own_projeto_id, workspace_store.snapshot)
 
 
 def _validate_card_tipo(tipo: str | None) -> str | None:
@@ -2471,9 +2552,9 @@ async def hook_cards_create(body: HookCardCreateRequest):
                 "error": f"Card pai {body.parent_id} não existe ou foi removido",
             }
         parent_projeto_id = parent["projeto_id"]
-        # Mesmo padrão de comparação de cliente usado dentro de
-        # resolve_projeto_alvo — reaproveitado, não duplicado.
-        if cliente_id_from_projeto_id(parent_projeto_id) != cliente_id_from_projeto_id(own_projeto_id):
+        # Mesma comparação de workspace usada em resolve_projeto_alvo
+        # (workspace_scope_of) — reaproveitada, não duplicada.
+        if not same_workspace(parent_projeto_id, own_projeto_id, workspace_store.snapshot):
             return {
                 "success": False,
                 "error": f"Card pai {body.parent_id} pertence a outro cliente",
@@ -2668,15 +2749,14 @@ async def hook_cards_list(body: HookCardListRequest):
     # "usa o projeto atual" — silenciosamente estreitando uma listagem que
     # deveria abranger o cliente inteiro.
     if body.projeto_id:
-        projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
         try:
-            projeto_id = resolve_projeto_alvo(own_projeto_id, body.projeto_id, projects)
+            projeto_id = await _resolve_hook_projeto_alvo(own_projeto_id, body.projeto_id)
         except ValueError as e:
             return {"success": False, "error": str(e)}
         cards = await card_store.list_top_level([projeto_id])
     else:
         cards = await card_store.list_by_cliente(
-            cliente_id_from_projeto_id(own_projeto_id)
+            scope_workspace_key(own_projeto_id, workspace_store.snapshot)
         )
 
     return {"success": True, "cards": cards, "total": len(cards)}
@@ -2813,6 +2893,7 @@ viewer_service = ViewerService(
     get_projects_root=lambda: PROJECTS_ROOT,
     session_key_for_claude_id=store.get_session_key_by_claude_id,
     notify=notify_viewer_open,
+    registry_root_for=_registry_root_for,
 )
 
 
@@ -2850,6 +2931,7 @@ artifact_service = ArtifactService(
     session_key_for_claude_id=store.get_session_key_by_claude_id,
     agent_label_for=_agent_label_for_session,
     viewer=viewer_service,
+    registry_root_for=_registry_root_for,
 )
 
 # Antes do catch-all do SPA no fim do arquivo (ver o comentário de lá).
