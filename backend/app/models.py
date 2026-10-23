@@ -6,7 +6,7 @@ import re
 from typing import Literal, get_args
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # Card tipo — an informational field (bug/hotfix/historia), kept in PT-BR by
@@ -713,3 +713,119 @@ class SeedInfo(BaseModel):
 class WorkspacesResponse(BaseModel):
     seeded: SeedInfo | None = None
     workspaces: list[WorkspaceOut]
+
+
+# -- Workspace registry: write routes and folder discovery (V3, trilha 1, F3) --
+#
+# Request bodies of the PATCH routes forbid unknown fields: `workspace_id` on a
+# project PATCH must be a 422 (a project never changes workspace, I2).
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str
+    adopt_legacy_key: str | None = None
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    archived: bool | None = None
+
+
+class ProjectFolderIn(BaseModel):
+    path: str
+    is_primary: bool = False
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+    folders: list[ProjectFolderIn]
+
+
+class ProjectUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    folders: list[ProjectFolderIn] | None = None
+    archived: bool | None = None
+
+
+class FolderInspectRequest(BaseModel):
+    # Bounded: each path costs a realpath() on the server.
+    paths: list[str] = Field(max_length=50)
+    exclude_project_id: int | None = None
+
+
+class RegistryProjectRef(BaseModel):
+    """A registered project that holds (or overlaps) a folder."""
+    project_id: int
+    project_name: str
+    workspace_id: int
+    workspace_name: str
+    archived: bool = False
+
+
+class NestedRef(RegistryProjectRef):
+    # "inside": the typed folder is inside the registered one;
+    # "contains": the typed folder contains the registered one.
+    relation: Literal["inside", "contains"]
+
+
+class FolderWarning(BaseModel):
+    # `path` is the folder as typed; None for project-level warnings
+    # (`name_in_use`).
+    path: str | None = None
+    code: str  # 'already_used' | 'nested' | 'name_in_use'
+    relation: Literal["inside", "contains"] | None = None
+    projects: list[RegistryProjectRef] = []
+
+
+class WorkspaceResponse(BaseModel):
+    workspace: WorkspaceOut
+
+
+class ProjectMutationResponse(BaseModel):
+    project: WorkspaceProjectOut
+    adopted_legacy_key: str | None = None
+    warnings: list[FolderWarning] = []
+
+
+class ProjectUpdateResponse(BaseModel):
+    project: WorkspaceProjectOut
+    warnings: list[FolderWarning] = []
+
+
+class DiscoverEntry(BaseModel):
+    legacy_key: str
+    name: str
+    path: str
+    client_key: str
+    used_by: list[RegistryProjectRef]
+    adoptable_into_workspace_id: int | None = None
+
+
+class DiscoverResponse(BaseModel):
+    root: str
+    scanned_in_ms: int
+    entries: list[DiscoverEntry]
+
+
+class InspectProblem(BaseModel):
+    code: str
+    message: str
+
+
+class InspectResult(BaseModel):
+    input: str
+    path: str | None = None
+    ok: bool
+    problems: list[InspectProblem] = []
+    used_by: list[RegistryProjectRef] = []
+    in_this_project: bool = False
+    nested_in: list[NestedRef] = []
+    has_marker: bool = False
+
+
+class InspectResponse(BaseModel):
+    results: list[InspectResult]

@@ -5,6 +5,7 @@ import pytest
 
 from app.workspace_keys import (
     first_segment,
+    has_reserved_segment,
     is_synthetic_key,
     make_project_key,
     make_workspace_key,
@@ -126,3 +127,13 @@ def test_scope_workspace_key(snapshot):
     assert scope_workspace_key("Pessoal", snapshot) == "Pessoal"
     assert scope_workspace_key("Pessoal/unknown", snapshot) == "Pessoal"
     assert scope_workspace_key("NewCo/a", snapshot) == "NewCo"
+
+
+@pytest.mark.parametrize("key", [".p5", "a/.b", ".w1/x", ".w1/.p2/x", "Pessoal/.hidden", "Pessoal/.p3", ".w1"])
+def test_has_reserved_segment_is_true_for_any_dot_segment(key):
+    assert has_reserved_segment(key) is True
+
+
+@pytest.mark.parametrize("key", ["meu.projeto", "Pessoal", "Pessoal/tn-sandbox", "a.b/c.d", "podesubir/site"])
+def test_has_reserved_segment_is_false_for_legacy_shaped_keys(key):
+    assert has_reserved_segment(key) is False

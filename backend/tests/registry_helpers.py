@@ -53,6 +53,10 @@ def make_client(tmp_path: Path, *, env_extra: dict | None = None, before_boot=No
     env.update(env_extra or {})
     with patch.dict("os.environ", env):
         os.environ.pop("HOOK_CALLBACK_BASE_URL", None)
+        # The developer shell may carry the production hook port; never let a
+        # test boot try to open it (an explicit env_extra value still wins).
+        if "HOOK_LOOPBACK_PORT" not in env:
+            os.environ.pop("HOOK_LOOPBACK_PORT", None)
         from fastapi.testclient import TestClient
         import app.main as main_mod
         importlib.reload(main_mod)
