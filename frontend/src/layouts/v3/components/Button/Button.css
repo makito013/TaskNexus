@@ -100,3 +100,25 @@
 .v3-button[aria-busy="true"] {
   cursor: progress;
 }
+
+/*
+ * Visually disabled but still focusable and announced: the caller passes
+ * aria-disabled="true" and NO onClick (so nothing happens), plus an
+ * aria-describedby pointing at the reason. Deliberately no pointer-events: none,
+ * so the cursor and the focus ring keep working. Hover/pressed are neutralised
+ * (a more specific selector than every variant's :hover/:active).
+ * A busy button (aria-busy="true", e.g. "Salvando..." on the Tarefas screen, which
+ * sets aria-disabled while saving) is NOT styled as disabled: it keeps its fill,
+ * text colour and the progress cursor. Busy is not disabled.
+ */
+.v3-button[aria-disabled="true"]:not([aria-busy="true"]) {
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink-muted);
+  border: 1px dashed var(--v3-line-strong);
+  cursor: not-allowed;
+}
+.v3-button[aria-disabled="true"]:not([aria-busy="true"]):hover,
+.v3-button[aria-disabled="true"]:not([aria-busy="true"]):active {
+  background-color: var(--v3-surface-2);
+  text-decoration: none;
+}

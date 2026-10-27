@@ -43,6 +43,19 @@ const V3_CHAIN_SOURCES = [
   './modules/tasks/TaskRow.jsx',
   './modules/tasks/TaskDetail.jsx',
   './modules/tasks/SituationFilters.jsx',
+  './modules/projects/ProjectsScreen.jsx',
+  './modules/projects/ProjectsScreen.css',
+  './modules/projects/ProjectTabs.jsx',
+  './modules/projects/WorkspaceFilter.jsx',
+  './modules/projects/WaitingStrip.jsx',
+  './modules/projects/WorkspaceGroupView.jsx',
+  './modules/projects/ProjectGroupView.jsx',
+  './modules/projects/UnregisteredBucket.jsx',
+  './modules/projects/UnassignedBucket.jsx',
+  './modules/projects/SilentProjects.jsx',
+  './modules/projects/AgentCard.jsx',
+  './modules/projects/SessionList.jsx',
+  './modules/projects/BoardSummary.jsx',
 ]
 
 const offendersIn = (source) =>

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act, cleanup, waitFor, within } from '@testing-library/react'
 import { api } from '../../services/api.js'
+import { workspacesApi } from '../../services/workspacesApi.js'
 import AppV3 from './AppV3.jsx'
 
 function startAt(pathname) {
@@ -20,6 +21,11 @@ describe('AppV3', () => {
     vi.spyOn(api, 'fetchCards').mockResolvedValue([])
     vi.spyOn(api, 'fetchBoardColumns').mockResolvedValue([])
     vi.spyOn(api, 'fetchProjects').mockResolvedValue([])
+    // The Projetos e agentes screen reads the registry, the agents and both session lists.
+    vi.spyOn(api, 'fetchAgents').mockResolvedValue([])
+    vi.spyOn(api, 'fetchActiveSessions').mockResolvedValue({})
+    vi.spyOn(api, 'fetchPersistedSessions').mockResolvedValue({})
+    vi.spyOn(workspacesApi, 'fetchWorkspaces').mockResolvedValue({ seeded: null, workspaces: [] })
   })
 
   afterEach(() => {
@@ -100,7 +106,7 @@ describe('AppV3', () => {
     render(<AppV3 initialTheme="light" />)
     fireEvent.click(screen.getByRole('button', { name: 'Abrir Projetos com Kan' }))
     expect(window.location.pathname).toBe('/projects')
-    expect(screen.getByRole('heading', { level: 1, name: 'Projetos' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Projetos e agentes' })).toBeTruthy()
   })
 
   it('does not push a duplicate history entry when the active module is selected again', () => {

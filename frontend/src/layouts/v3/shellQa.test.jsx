@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { api } from '../../services/api.js'
+import { workspacesApi } from '../../services/workspacesApi.js'
 import AppV3 from './AppV3.jsx'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -24,12 +25,6 @@ const SPEC_COPY = {
     pet: 'fin',
     name: 'Fin',
   },
-  '/projects': {
-    island: 'Ainda não abri minha tela.',
-    panel: 'Ainda não abri minha tela. Por enquanto, seus projetos e agentes ficam no layout atual: inicie o TaskNexus sem --v3 pra usá-los.',
-    pet: 'kan',
-    name: 'Kan',
-  },
   '/browser': {
     island: 'Ainda estou me preparando.',
     panel: 'Ainda estou me preparando. Quando eu acordar, pesquiso, leio a página inteira e volto com resumo e links.',
@@ -46,6 +41,11 @@ describe('v3 shell QA', () => {
     vi.spyOn(api, 'fetchCards').mockResolvedValue([])
     vi.spyOn(api, 'fetchBoardColumns').mockResolvedValue([])
     vi.spyOn(api, 'fetchProjects').mockResolvedValue([])
+    // The Projetos e agentes screen reads the registry, the agents and both session lists.
+    vi.spyOn(api, 'fetchAgents').mockResolvedValue([])
+    vi.spyOn(api, 'fetchActiveSessions').mockResolvedValue({})
+    vi.spyOn(api, 'fetchPersistedSessions').mockResolvedValue({})
+    vi.spyOn(workspacesApi, 'fetchWorkspaces').mockResolvedValue({ seeded: null, workspaces: [] })
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -78,12 +78,12 @@ describe('v3 shell QA', () => {
     ])
   })
 
-  it('the four modules without a screen say "Em breve" as text in the rail', () => {
+  it('the three modules without a screen say "Em breve" as text in the rail', () => {
     window.history.replaceState({}, '', '/tasks')
     render(<AppV3 initialTheme="light" />)
     const rail = screen.getByRole('navigation', { name: 'Módulos' })
     const soon = rail.querySelectorAll('.v3-rail__soon')
-    expect(soon).toHaveLength(4)
+    expect(soon).toHaveLength(3)
     soon.forEach((node) => expect(node.textContent).toBe('Em breve'))
     expect(screen.getByRole('button', { name: 'Tarefas' }).querySelector('.v3-rail__soon')).toBeNull()
   })
@@ -99,7 +99,7 @@ describe('v3 shell QA', () => {
       'Início, em breve',
       'Tarefas',
       'Finanças, em breve',
-      'Projetos e agentes, em breve',
+      'Projetos e agentes',
       'Navegador, em breve',
       'Mudar para tema escuro',
     ])

@@ -24,7 +24,8 @@ describe('ComingSoon', () => {
   })
 
   it('tells where to find projects and agents while the module is not ready', () => {
-    render(<ComingSoon module={moduleById('projects')} />)
+    const module = { label: 'X', pet: 'kan', comingSoonCopy: 'Ainda não abri. Por enquanto, inicie o TaskNexus sem --v3 pra usar.' }
+    render(<ComingSoon module={module} />)
     expect(screen.getByText(/sem --v3/)).toBeTruthy()
   })
 })

@@ -44,11 +44,10 @@ export const MODULES = [
     pet: 'kan',
     path: '/projects',
     label: 'Projetos',
-    ariaLabel: 'Projetos e agentes, em breve',
-    ready: false,
-    islandMessage: 'Ainda não abri minha tela.',
-    comingSoonCopy:
-      'Ainda não abri minha tela. Por enquanto, seus projetos e agentes ficam no layout atual: inicie o TaskNexus sem --v3 pra usá-los.',
+    ariaLabel: 'Projetos e agentes',
+    ready: true,
+    islandMessage: 'Estou olhando as mesas dos agentes. Um instante.',
+    comingSoonCopy: null,
   },
   {
     id: 'browser',
