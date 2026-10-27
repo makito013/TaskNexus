@@ -452,6 +452,10 @@ class WorkspaceService:
                 self._find_adoptable_key, prepared.primary_canonical, workspace.key
             )
             if candidate is not None:
+                # Re-read after the scan: the owner may have been archived or
+                # unarchived while it ran, and this decision must match the
+                # sequential order.
+                snapshot = self.store.snapshot
                 existing = snapshot.project_by_key.get(candidate)
                 if existing is None:
                     adopt_key = candidate

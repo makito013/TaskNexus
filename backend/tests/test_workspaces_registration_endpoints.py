@@ -882,3 +882,69 @@ def test_a_workspace_adoption_losing_to_an_archived_owner_says_archived(env):
     assert exc.detail["code"] == "adopt_conflict"
     assert exc.detail["archived"] is True
     assert exc.detail["message"].startswith("Esse workspace já existe arquivado")
+
+
+# -- the owner of the legacy key changes state while the scan runs -----------------------
+
+
+def _adopt_owner(client, world):
+    folder = _mark(world["root"] / "Pessoal" / "Y")
+    pessoal = _workspace_id(client, "Pessoal")
+    owner = _new_project(client, pessoal, "Y", folder)["project"]
+    assert owner["key"] == "Pessoal/Y"
+    return folder, pessoal, owner["id"]
+
+
+def _create_project_with_owner_change(client, main_mod, pessoal, folder, owner_id, archived):
+    """Call create_project and flip the owner's `archived` flag inside the scan
+    thread, i.e. after the pre-scan snapshot and before the decision."""
+    service = main_mod.workspace_service
+    real_find = service._find_adoptable_key
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+
+        def find_then_change_owner(*args):
+            found = real_find(*args)
+            asyncio.run_coroutine_threadsafe(
+                service.store.update_project(owner_id, archived=archived), loop
+            ).result()
+            return found
+
+        body = ProjectCreateRequest(name="Y2", folders=[{"path": str(folder)}])
+        with patch.object(service, "_find_adoptable_key", find_then_change_owner):
+            try:
+                return "201", await service.create_project(pessoal, body)
+            except HTTPException as exc:
+                return str(exc.status_code), exc.detail
+
+    return client.portal.call(scenario)
+
+
+def test_an_owner_unarchived_during_the_scan_gets_a_synthetic_key_and_a_warning(env):
+    client, main_mod, world = env
+    folder, pessoal, owner_id = _adopt_owner(client, world)
+    client.patch(f"/api/workspace-projects/{owner_id}", json={"archived": True})
+    status, payload = _create_project_with_owner_change(
+        client, main_mod, pessoal, folder, owner_id, archived=False
+    )
+    assert status == "201", payload  # sequential order: owner active -> synthetic key
+    assert payload["adopted_legacy_key"] is None
+    assert payload["project"]["key"].startswith("Pessoal/.p")
+    warning = payload["warnings"][0]
+    assert warning.code == "already_used"
+    assert [p.project_id for p in warning.projects] == [owner_id]
+    assert _project(client, "Pessoal/Y")["archived"] is False
+
+
+def test_an_owner_archived_during_the_scan_is_a_409_with_its_id(env):
+    client, main_mod, world = env
+    folder, pessoal, owner_id = _adopt_owner(client, world)
+    status, detail = _create_project_with_owner_change(
+        client, main_mod, pessoal, folder, owner_id, archived=True
+    )
+    assert status == "409", detail  # sequential order: owner archived -> 409
+    assert detail["code"] == "adopt_conflict"
+    assert detail["archived_project_id"] == owner_id
+    keys = [p["key"] for w in _workspaces(client, True) for p in w["projects"]]
+    assert not any(key.startswith("Pessoal/.p") for key in keys)  # no synthetic sibling
