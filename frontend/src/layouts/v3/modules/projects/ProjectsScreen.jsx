@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
 import { useIslandReport } from '../../IslandContext.jsx'
@@ -10,12 +10,16 @@ import {
   stateRank,
 } from './agentBoard.js'
 import BoardSummary from './BoardSummary.jsx'
+import ProjectDialog from './ProjectDialog.jsx'
 import ProjectTabs, { TABPANEL_ID, tabId } from './ProjectTabs.jsx'
+import { describeRequestError } from './folderRules.js'
 import { NO_WORKSPACE_VALUE, workspaceOptions } from './registryIndex.js'
 import SessionList from './SessionList.jsx'
 import UnassignedBucket from './UnassignedBucket.jsx'
 import { useProjectsOverview } from './useProjectsOverview.js'
+import { useRegistryMutations } from './useRegistryMutations.js'
 import WaitingStrip from './WaitingStrip.jsx'
+import WorkspaceDialog from './WorkspaceDialog.jsx'
 import WorkspaceFilter from './WorkspaceFilter.jsx'
 import WorkspaceGroupView, { WorkspaceHead } from './WorkspaceGroupView.jsx'
 import './ProjectsScreen.css'
@@ -23,19 +27,30 @@ import './ProjectsScreen.css'
 const SKELETON_CARDS = 6
 
 // Projetos e agentes (Kan): the workspace registry with the agents that have a
-// session in each project, READ-ONLY. Only GETs; the registry write dialogs, the
-// board and the chat arrive later. The shell (AppV3) moves focus to the h1 when
-// the module changes; this is the only h1, and it renders in every state.
+// session in each project, and the dialogs that register workspaces and projects
+// (the only writes, all through useRegistryMutations). The board and the chat
+// arrive later. The shell (AppV3) moves focus to the h1 when the module changes;
+// this is the only h1, and it renders in every state.
 export default function ProjectsScreen() {
   const [tab, setTab] = useState('agents')
   const [workspaceKey, setWorkspaceKey] = useState('')
   const [onlyWaiting, setOnlyWaiting] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [waitingFocusRequest, setWaitingFocusRequest] = useState(0)
+  // The open registration dialog: { type: 'workspace', adoptKey?, name?, trigger } |
+  // { type: 'project', mode: 'create' | 'edit' | 'register', ..., trigger }. It is
+  // mounted only while open, so its form starts clean every time.
+  const [dialog, setDialog] = useState(null)
+  const [busyProjectId, setBusyProjectId] = useState(null)
+  const [busyWorkspaceId, setBusyWorkspaceId] = useState(null)
+  const [actionError, setActionError] = useState(null)
+  const [restoreFocus, setRestoreFocus] = useState(null)
+  const h1Ref = useRef(null)
 
   const { registry, board, sessions, boardSummary, loading, errors, liveAvailable, refetch } = useProjectsOverview({
     workspaceKey,
   })
+  const mutations = useRegistryMutations({ onDone: refetch })
 
   useEffect(() => {
     document.title = 'Projetos · TaskNexus'
@@ -74,11 +89,15 @@ export default function ProjectsScreen() {
   }, [waitingFocusRequest])
 
   const waitingCount = board ? board.waiting.length : 0
-  const emptyWorkspaceName = filteredBoard && workspaceKey && !onlyWaiting
+  const emptyGroup = filteredBoard && workspaceKey && !onlyWaiting
     && filteredBoard.groups.length === 1 && filteredBoard.groups[0].empty
-    ? filteredBoard.groups[0].workspace.name
+    ? filteredBoard.groups[0]
     : null
-  const island = projectsIslandMessage({
+  // "Empty" with archived projects behind it is not "no projects": the island says so
+  // here because its phrase for the truly empty workspace lives in agentBoard.js.
+  const emptyAllArchived = Boolean(emptyGroup && emptyGroup.workspace.projects.length > 0)
+  const emptyWorkspaceName = emptyGroup && !emptyAllArchived ? emptyGroup.workspace.name : null
+  const baseIsland = projectsIslandMessage({
     loading,
     failed: totalFailure,
     liveAvailable,
@@ -86,6 +105,12 @@ export default function ProjectsScreen() {
     running: board ? board.counts.running : 0,
     emptyWorkspaceName,
   })
+  const island = emptyAllArchived && !loading && !totalFailure
+    ? {
+      text: `O workspace ${emptyGroup.workspace.name} só tem projetos arquivados. Marque "Mostrar arquivados" ou adicione um projeto novo.`,
+      state: 'idle',
+    }
+    : baseIsland
   const islandContent = useMemo(() => {
     let actions = []
     if (totalFailure) actions = [{ label: 'Tentar de novo', onClick: refetch }]
@@ -103,14 +128,80 @@ export default function ProjectsScreen() {
   if (workspaceKey === NO_WORKSPACE_VALUE) scopeLabel = 'Sem workspace'
   else if (workspaceKey && registry) scopeLabel = registry.workspaceByKey.get(workspaceKey)?.name ?? workspaceKey
 
+  // ---- registration ----------------------------------------------------------
+  // Focus goes back to the button that opened a dialog; when that button is gone
+  // (its row moved or was archived) it goes to the h1.
+  const returnFocusTo = (trigger) => () => (trigger && trigger.isConnected ? trigger : h1Ref.current)
+  const closeDialog = useCallback(() => setDialog(null), [])
+
+  const actions = useMemo(() => {
+    const openProject = (spec, trigger) => setDialog({ type: 'project', ...spec, trigger })
+    return {
+      busyProjectId,
+      busyWorkspaceId,
+      onNewWorkspace: (trigger) => setDialog({ type: 'workspace', trigger }),
+      onAddProject: (workspace, trigger) => openProject({ mode: 'create', workspaceId: workspace ? workspace.id : null }, trigger),
+      onEditProject: (project, trigger) => openProject({ mode: 'edit', project }, trigger),
+      onRegisterBucket: (bucket, workspace, trigger) => openProject({ mode: 'register', bucketKey: bucket.key, workspaceId: workspace.id }, trigger),
+      onCreateWorkspaceFrom: (clientKey, trigger) => setDialog({ type: 'workspace', adoptKey: clientKey, name: clientKey, trigger }),
+      onSetArchived: async (project, archived, trigger) => {
+        if (busyProjectId !== null) return
+        setBusyProjectId(project.id)
+        setActionError(null)
+        try {
+          await mutations.updateProject(project.id, { archived })
+          setRestoreFocus({ trigger })
+        } catch (error) {
+          setActionError({ name: project.name, archived, message: describeRequestError(error) })
+        } finally {
+          setBusyProjectId(null)
+        }
+      },
+      onSetWorkspaceArchived: async (workspace, archived, trigger) => {
+        if (busyWorkspaceId !== null) return
+        setBusyWorkspaceId(workspace.id)
+        setActionError(null)
+        try {
+          await mutations.updateWorkspace(workspace.id, { archived })
+          setRestoreFocus({ trigger })
+        } catch (error) {
+          setActionError({ name: workspace.name, archived, message: describeRequestError(error) })
+        } finally {
+          setBusyWorkspaceId(null)
+        }
+      },
+    }
+  }, [busyProjectId, busyWorkspaceId, mutations])
+
+  // After an archive the row may be gone with the refetched registry: look at the
+  // DOM once the render is committed.
+  useEffect(() => {
+    if (!restoreFocus) return
+    const { trigger } = restoreFocus
+    const target = trigger && trigger.isConnected ? trigger : h1Ref.current
+    target?.focus()
+    setRestoreFocus(null)
+  }, [restoreFocus])
+
   const showFilters = ready
   const showAside = ready && tab === 'agents' && Boolean(filteredBoard && (filteredBoard.hasContent || filteredBoard.waiting.length > 0))
 
   return (
     <div className="v3-screen v3-projects">
       <header className="v3-projects__header">
-        <h1 tabIndex={-1} className="v3-type-title-lg v3-screen__title">Projetos e agentes</h1>
+        <h1 ref={h1Ref} tabIndex={-1} className="v3-type-title-lg v3-screen__title">Projetos e agentes</h1>
         <ProjectTabs tab={tab} onSelect={setTab} />
+        {ready && (
+          <div className="v3-projects__actions">
+            <Button variant="secondary" onClick={(event) => actions.onNewWorkspace(event.currentTarget)}>Novo workspace</Button>
+            <Button
+              variant="primary"
+              onClick={(event) => actions.onAddProject(registry.workspaceByKey.get(workspaceKey) ?? null, event.currentTarget)}
+            >
+              Adicionar projeto
+            </Button>
+          </div>
+        )}
       </header>
 
       {showFilters && (
@@ -136,8 +227,19 @@ export default function ProjectsScreen() {
           {ready && (
             <>
               <PartialNotices errors={errors} liveAvailable={liveAvailable} />
+              {actionError && (
+                <Panel notice="fin" role="alert">
+                  <b>Não foi possível {actionError.archived ? 'arquivar' : 'desarquivar'} {actionError.name}.</b> {actionError.message}
+                </Panel>
+              )}
               {tab === 'agents' && (
-                <AgentsBody filtered={filteredBoard} onlyWaiting={onlyWaiting} onClearFilters={clearFilters} />
+                <AgentsBody
+                  filtered={filteredBoard}
+                  onlyWaiting={onlyWaiting}
+                  onClearFilters={clearFilters}
+                  registry={registry}
+                  actions={actions}
+                />
               )}
               {tab === 'sessions' && <SessionsBody filtered={filteredBoard} rows={visibleSessions} />}
             </>
@@ -149,6 +251,28 @@ export default function ProjectsScreen() {
           </aside>
         )}
       </div>
+
+      {dialog && dialog.type === 'workspace' && (
+        <WorkspaceDialog
+          mutations={mutations}
+          onClose={closeDialog}
+          initialName={dialog.name || ''}
+          adoptLegacyKey={dialog.adoptKey || null}
+          returnFocusTo={returnFocusTo(dialog.trigger)}
+        />
+      )}
+      {dialog && dialog.type === 'project' && registry && (
+        <ProjectDialog
+          mode={dialog.mode}
+          mutations={mutations}
+          workspaces={registry.workspaces}
+          project={dialog.project || null}
+          workspaceId={dialog.workspaceId ?? null}
+          bucketKey={dialog.bucketKey || null}
+          onClose={closeDialog}
+          returnFocusTo={returnFocusTo(dialog.trigger)}
+        />
+      )}
     </div>
   )
 }
@@ -221,24 +345,36 @@ function FilterEmpty({ onClear }) {
   )
 }
 
-function AgentsBody({ filtered, onlyWaiting, onClearFilters }) {
+function AgentsBody({ filtered, onlyWaiting, onClearFilters, registry, actions }) {
   const { waiting, groups, unassigned, unknown, hasContent } = filtered
+  const allArchived = registry.workspaces.length > 0 && registry.workspaces.every((workspace) => workspace.archived)
   return (
     <>
       {waiting.length > 0 && <WaitingStrip cards={waiting} />}
       {!hasContent && waiting.length === 0 && (
         onlyWaiting
           ? <FilterEmpty onClear={onClearFilters} />
-          : (
-            <div className="v3-state-box">
-              <h2 className="v3-type-title-md v3-state-box__title">Nenhum workspace cadastrado</h2>
-              <p className="v3-type-body v3-state-box__text">
-                Quando houver workspaces e projetos cadastrados, eles aparecem aqui.
-              </p>
-            </div>
-          )
+          : allArchived
+            ? (
+              <div className="v3-state-box">
+                <h2 className="v3-type-title-md v3-state-box__title">Todos os workspaces estão arquivados</h2>
+                <p className="v3-type-body v3-state-box__text">
+                  Marque &quot;Mostrar arquivados&quot; para vê-los ou crie um workspace novo.
+                </p>
+                <Button variant="primary" onClick={(event) => actions.onNewWorkspace(event.currentTarget)}>Novo workspace</Button>
+              </div>
+            )
+            : (
+              <div className="v3-state-box">
+                <h2 className="v3-type-title-md v3-state-box__title">Nenhum workspace cadastrado</h2>
+                <p className="v3-type-body v3-state-box__text">
+                  Quando houver workspaces e projetos cadastrados, eles aparecem aqui.
+                </p>
+                <Button variant="primary" onClick={(event) => actions.onNewWorkspace(event.currentTarget)}>Novo workspace</Button>
+              </div>
+            )
       )}
-      {groups.map((group) => <WorkspaceGroupView key={group.workspace.key} group={group} />)}
+      {groups.map((group) => <WorkspaceGroupView key={group.workspace.key} group={group} actions={actions} />)}
       {unassigned.length > 0 && (
         <section aria-label="Sem workspace" className="v3-workspace">
           <WorkspaceHead
@@ -247,7 +383,13 @@ function AgentsBody({ filtered, onlyWaiting, onClearFilters }) {
             meta="clientes que a V2 criou depois da migração"
           />
           {unassigned.map((bucket) => (
-            <UnassignedBucket key={bucket.clientKey} title={bucket.clientKey} paths={bucket.keys} cards={bucket.cards} />
+            <UnassignedBucket
+              key={bucket.clientKey}
+              title={bucket.clientKey}
+              paths={bucket.keys}
+              cards={bucket.cards}
+              actions={actions}
+            />
           ))}
         </section>
       )}

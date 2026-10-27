@@ -36,6 +36,17 @@ const FORBIDDEN_IMPORTS = [
   'hooks/useNotificationSettings',
   'hooks/useCards',
   'hooks/useProjects',
+  // Hooks of hooks/ that WRITE through the V2 api (tasks, agents, board columns) or
+  // persist to web storage (the storage ban above only sees the word, not an import).
+  // Importing one would reach exactly what the rules above forbid by name.
+  'hooks/useAgentSettings',
+  'hooks/useTasks',
+  'hooks/useGlobalTasks',
+  'hooks/useColumns',
+  'hooks/useFabPosition',
+  'hooks/useKeyboardSuppressed',
+  'hooks/useNavScope',
+  'hooks/useSidebarCollapsed',
 ]
 
 function stripComments(source) {
@@ -116,6 +127,10 @@ describe('read-only guard of modules/projects', () => {
     ]))
   })
 
+  it('scans the file that owns the registry writes (positive control)', () => {
+    expect(SOURCE_FILES).toEqual(expect.arrayContaining(['useRegistryMutations.js', 'ProjectDialog.jsx', 'WorkspaceDialog.jsx']))
+  })
+
   it.each(SOURCE_FILES)('%s only uses the read-only calls', (name) => {
     const source = readFileSync(path.join(HERE, name), 'utf8')
     expect(scanProjectsModuleSource(name, source), name).toEqual([])
@@ -159,6 +174,43 @@ describe('scanProjectsModuleSource (fixtures prove the detector goes red)', () =
     const problems = scan(source)
     expect(problems.length).toBeGreaterThan(0)
     expect(problems.join('\n')).toMatch(expected)
+  })
+
+  it.each([
+    ['useAgentSettings', 'hooks/useAgentSettings.js'],
+    ['useTasks', 'hooks/useTasks.js'],
+    ['useGlobalTasks', 'hooks/useGlobalTasks.js'],
+    ['useColumns', 'hooks/useColumns.js'],
+    ['useFabPosition (web storage)', 'hooks/useFabPosition.js'],
+    ['useKeyboardSuppressed (web storage)', 'hooks/useKeyboardSuppressed.js'],
+    ['useNavScope (web storage)', 'hooks/useNavScope.js'],
+    ['useSidebarCollapsed (web storage)', 'hooks/useSidebarCollapsed.js'],
+  ])('goes red for importing the writing hook %s', (_label, specifier) => {
+    const hookName = specifier.replace('hooks/', '').replace('.js', '')
+    const problems = scan(`import { ${hookName} } from '../../../../${specifier}'`)
+    expect(problems.join('\n')).toMatch(new RegExp(specifier.replace('.js', '').replace('/', '\\/')))
+    // ...also without the extension, and from the file that owns the registry writes
+    expect(scan(`import { x } from '../../../../${specifier.replace('.js', '')}'`)).not.toEqual([])
+    expect(scan(`import { x } from '../../../../${specifier}'`, 'useRegistryMutations.js')).not.toEqual([])
+  })
+
+  it('goes red for a dynamic or re-exported import of a writing hook', () => {
+    expect(scan("const mod = await import('../../../../hooks/useTasks.js')")).not.toEqual([])
+    expect(scan("export { useColumns } from '../../../../hooks/useColumns.js'")).not.toEqual([])
+  })
+
+  it('stays green for the real shape of useRegistryMutations.js and for read-only hooks', () => {
+    const source = [
+      "import { useCallback, useEffect, useMemo, useRef, useState } from 'react'",
+      "import { workspacesApi } from '../../../../services/workspacesApi.js'",
+      "import { useMediaQuery } from '../../../../hooks/useMediaQuery.js'",
+      "import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion.js'",
+      'const createProject = (workspaceId, input) => workspacesApi.createProject(workspaceId, input)',
+      'const inspect = (input) => workspacesApi.inspectFolders(input)',
+    ].join('\n')
+    expect(scan(source, 'useRegistryMutations.js')).toEqual([])
+    // a similarly named identifier is not an import of the hook
+    expect(scan("const useTasksLabel = 'x'")).toEqual([])
   })
 
   it('goes green for the allowed reads, refetch and a plain document title', () => {

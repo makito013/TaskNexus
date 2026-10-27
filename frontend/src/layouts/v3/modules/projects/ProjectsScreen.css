@@ -14,6 +14,13 @@
   gap: var(--v3-space-3) var(--v3-space-5);
 }
 
+.v3-projects__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+  margin-left: auto;
+}
+
 .v3-projects__sr-only {
   position: absolute;
   width: 1px;
@@ -161,6 +168,16 @@
 .v3-workspace__dot--muted {
   background-color: var(--v3-line-strong);
 }
+.v3-workspace__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-left: auto;
+}
+.v3-workspace__ask {
+  color: var(--v3-ink-muted);
+}
 .v3-workspace__meta {
   color: var(--v3-ink-muted);
 }
@@ -189,6 +206,12 @@
 .v3-project__path {
   color: var(--v3-ink-muted);
   overflow-wrap: anywhere;
+}
+.v3-project__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
 }
 .v3-project__free {
   color: var(--v3-ink-muted);
@@ -370,6 +393,26 @@
 }
 .v3-bucket__path {
   overflow-wrap: anywhere;
+}
+.v3-bucket__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+}
+.v3-bucket__main {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.v3-bucket__note {
+  margin: 0;
+}
+/* The bucket sits on the warning tint: its buttons keep a surface fill to read. */
+.v3-bucket .v3-button--secondary {
+  --v3-button-bg: var(--v3-surface);
 }
 
 /* ---- projects without sessions ---- */

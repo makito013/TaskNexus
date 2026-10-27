@@ -1,0 +1,286 @@
+/*
+ * Content of the project dialog: origin selector, folder rows, "Adicionar pasta" row,
+ * discover map, archive zone. The dialog shell and the shared field/callout/message
+ * styles are in components/Dialog/Dialog.css. Only --v3-* tokens, and nothing here
+ * declares transform, filter, will-change or contain (position: fixed invariant).
+ */
+.v3-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--v3-space-4);
+}
+
+/* ---- origin ---- */
+.v3-seg {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  gap: 2px;
+  padding: var(--v3-space-1);
+  border: 1px solid var(--v3-line);
+  border-radius: 14px;
+  background-color: var(--v3-surface-2);
+}
+.v3-seg__option {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-sm-size);
+  cursor: pointer;
+}
+.v3-seg__option[aria-checked="true"] {
+  background-color: var(--v3-surface);
+  box-shadow: 0 0 0 1px var(--v3-line-strong);
+  color: var(--v3-ink);
+  font-weight: 600;
+}
+.v3-seg__option[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* ---- folder rows ---- */
+.v3-folders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v3-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+}
+.v3-folder--err {
+  border-color: var(--v3-danger-ink);
+}
+.v3-folder__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.v3-folder__path {
+  flex: 1;
+  min-width: 220px;
+  font-family: var(--v3-font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.v3-folder__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--v3-control-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+.v3-folder__radio input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--v3-action);
+}
+.v3-folder__lock {
+  gap: 4px;
+}
+.v3-folder__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* warning / ok chips (the shared Chip has neither tone); doubled class beats the
+   Chip's own single-class rules whatever the stylesheet order */
+.v3-chip.v3-folder-chip {
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+}
+.v3-chip.v3-folder-chip--warn {
+  --v3-chip-bg: var(--v3-fin-tint);
+  --v3-chip-fg: var(--v3-fin-ink);
+  border-color: var(--v3-fin-line);
+}
+.v3-chip.v3-folder-chip--ok {
+  --v3-chip-bg: var(--v3-ok-tint);
+  --v3-chip-fg: var(--v3-ok-ink);
+  border-color: transparent;
+}
+
+/* ---- add row ---- */
+.v3-addrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+.v3-addrow .v3-input {
+  flex: 1;
+  min-width: 260px;
+  width: auto;
+}
+.v3-add-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v3-add-msgs:empty {
+  display: none;
+}
+
+/* ---- discover map ---- */
+.v3-discover {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-xl);
+  background-color: var(--v3-surface-2);
+}
+.v3-discover__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-discover__title {
+  font-size: var(--v3-type-body-sm-size);
+}
+.v3-discover__meta {
+  color: var(--v3-ink-muted);
+}
+.v3-discover__spacer {
+  flex: 1;
+}
+.v3-discover__search {
+  width: 200px;
+  height: var(--v3-control-sm);
+}
+.v3-discover__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+  margin: 0;
+  padding: var(--v3-space-4);
+  color: var(--v3-ink-muted);
+}
+.v3-discover__tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 290px;
+  padding: 6px 6px 10px;
+  overflow: auto;
+}
+.v3-discover__client {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.v3-discover__legend {
+  padding: 8px 8px 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.v3-discover__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--v3-control-sm);
+  margin-left: var(--v3-space-4);
+  padding: 4px 8px;
+  border-radius: var(--v3-radius-md);
+}
+.v3-discover__entry:hover {
+  background-color: var(--v3-surface);
+}
+.v3-discover__label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 230px;
+  cursor: pointer;
+}
+.v3-discover__label input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--v3-action);
+}
+.v3-discover__name {
+  font-size: var(--v3-type-body-sm-size);
+  font-weight: 500;
+}
+.v3-discover__path {
+  color: var(--v3-ink-muted);
+}
+.v3-discover__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--v3-line);
+}
+.v3-discover__note {
+  flex: 1;
+  color: var(--v3-ink-muted);
+  font-size: var(--v3-type-caption-size);
+}
+
+/* ---- archive zone ---- */
+.v3-danger-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+}
+.v3-danger-zone__title {
+  margin: 0;
+  font-size: var(--v3-type-body-sm-size);
+  font-weight: 600;
+}
+.v3-danger-zone__text {
+  margin: 0;
+  color: var(--v3-ink-muted);
+  font-size: 13px;
+}
+.v3-danger-zone__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+.v3-danger-zone__ask {
+  font-size: 13px;
+  font-weight: 500;
+}
+.v3-danger-zone__ask-button {
+  align-self: flex-start;
+}
+/* destructive-looking secondary button (the shared Button has no danger variant) */
+.v3-button.v3-button--danger-outline {
+  border-color: var(--v3-danger-ink);
+  color: var(--v3-danger-ink);
+}

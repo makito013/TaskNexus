@@ -266,8 +266,6 @@ describe('Projetos e agentes: Agentes tab', () => {
     expect(within(noWorkspace).getByText('clientes que a V2 criou depois da migração')).toBeTruthy()
     expect(within(noWorkspace).getByRole('group', { name: 'NewCo sem workspace' })).toBeTruthy()
     expect(within(noWorkspace).getByText('Ainda não existe workspace com este nome.')).toBeTruthy()
-    // Registration buttons arrive with the dialogs, not in this phase.
-    expect(screen.queryByRole('button', { name: /Cadastrar como projeto|Criar workspace|Novo workspace|Adicionar projeto|Editar|Arquivar/ })).toBeNull()
   })
 
   it('collapses the projects without sessions in a <details> "Sem sessões (N)" with the missing-folder badge', async () => {

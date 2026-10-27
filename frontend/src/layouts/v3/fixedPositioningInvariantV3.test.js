@@ -56,6 +56,13 @@ const V3_CHAIN_SOURCES = [
   './modules/projects/AgentCard.jsx',
   './modules/projects/SessionList.jsx',
   './modules/projects/BoardSummary.jsx',
+  './components/Dialog/Dialog.jsx',
+  './components/Dialog/Dialog.css',
+  './modules/projects/WorkspaceDialog.jsx',
+  './modules/projects/FolderList.jsx',
+  './modules/projects/DiscoverPanel.jsx',
+  './modules/projects/ProjectDialog.jsx',
+  './modules/projects/ProjectDialog.css',
 ]
 
 const offendersIn = (source) =>
