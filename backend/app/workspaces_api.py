@@ -193,6 +193,17 @@ class WorkspaceService:
         self.get_projects_root = get_projects_root
         self.scan = scan
         self.get_global_agents = get_global_agents
+        # S-6: every folder scan (~3 s, worker thread) goes through this gate,
+        # so concurrent requests cannot pile up scans on the executor that the
+        # viewer also uses. Adoption scans are serialized (each needs a scan
+        # that started after its own validation); discover also shares the
+        # in-flight result, see `discover`.
+        self._scan_gate = asyncio.Lock()
+        self._discover_scan: asyncio.Future | None = None
+
+    async def _gated(self, fn):
+        async with self._scan_gate:
+            return await asyncio.to_thread(fn)
 
     # -- policy -------------------------------------------------------------
 
@@ -364,7 +375,7 @@ class WorkspaceService:
                     _WORKSPACE_ADOPT_ARCHIVED if existing.archived else _WORKSPACE_ADOPT_EXISTS,
                     archived=existing.archived, workspace_id=existing.id,
                 )
-            scanned = await asyncio.to_thread(self._scan_blocking)
+            scanned = await self._gated(self._scan_blocking)
             if not any(p.elegivel and workspace_key_of(p.id) == adopt_key for p in scanned):
                 raise _http_409(
                     "adopt_conflict", _WORKSPACE_ADOPT_UNKNOWN, reason="not_in_scan"
@@ -448,8 +459,8 @@ class WorkspaceService:
             not has_reserved_segment(workspace.key)
             and is_or_inside(prepared.primary_canonical, prepared.projects_root)
         ):
-            candidate = await asyncio.to_thread(
-                self._find_adoptable_key, prepared.primary_canonical, workspace.key
+            candidate = await self._gated(
+                lambda: self._find_adoptable_key(prepared.primary_canonical, workspace.key)
             )
             if candidate is not None:
                 # Re-read after the scan: the owner may have been archived or
@@ -549,7 +560,15 @@ class WorkspaceService:
         return scanned, canonical, int((time.perf_counter() - started) * 1000)
 
     async def discover(self) -> dict:
-        scanned, canonical, elapsed_ms = await asyncio.to_thread(self._discover_blocking)
+        # Single flight: callers arriving while a scan runs await that same
+        # scan instead of starting another. Shared (not queued) because the
+        # result is read-only and at most a scan old; `shield` keeps one
+        # client's disconnect from cancelling the scan for the others.
+        scan = self._discover_scan
+        if scan is None or scan.done():
+            scan = asyncio.ensure_future(self._gated(self._discover_blocking))
+            self._discover_scan = scan
+        scanned, canonical, elapsed_ms = await asyncio.shield(scan)
         snapshot = self.store.snapshot  # read AFTER the scan: the freshest view
         entries = []
         for project in sorted(scanned, key=lambda p: p.id):

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 # Card tipo — an informational field (bug/hotfix/historia), kept in PT-BR by
@@ -721,39 +721,51 @@ class WorkspacesResponse(BaseModel):
 # project PATCH must be a 422 (a project never changes workspace, I2).
 
 
+# Request-size bounds (S-6). They sit ABOVE the semantic limits enforced by
+# folder_validation (name 80, path 1024, 10 folders), which answer 400 with a
+# friendly message; these only stop an oversized field from being validated (422).
+# They bound validation work and object construction, NOT body parsing: FastAPI
+# reads the whole JSON body before Pydantic runs, and there is no global
+# body-size limit (pre-existing).
+REQUEST_MAX_NAME = 320
+REQUEST_MAX_PATH = 4096
+REQUEST_MAX_KEY = 512
+REQUEST_MAX_FOLDERS = 50
+
+
 class WorkspaceCreateRequest(BaseModel):
-    name: str
-    adopt_legacy_key: str | None = None
+    name: str = Field(max_length=REQUEST_MAX_NAME)
+    adopt_legacy_key: str | None = Field(default=None, max_length=REQUEST_MAX_KEY)
 
 
 class WorkspaceUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=REQUEST_MAX_NAME)
     archived: bool | None = None
 
 
 class ProjectFolderIn(BaseModel):
-    path: str
+    path: str = Field(max_length=REQUEST_MAX_PATH)
     is_primary: bool = False
 
 
 class ProjectCreateRequest(BaseModel):
-    name: str
-    folders: list[ProjectFolderIn]
+    name: str = Field(max_length=REQUEST_MAX_NAME)
+    folders: list[ProjectFolderIn] = Field(max_length=REQUEST_MAX_FOLDERS)
 
 
 class ProjectUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
-    folders: list[ProjectFolderIn] | None = None
+    name: str | None = Field(default=None, max_length=REQUEST_MAX_NAME)
+    folders: list[ProjectFolderIn] | None = Field(default=None, max_length=REQUEST_MAX_FOLDERS)
     archived: bool | None = None
 
 
 class FolderInspectRequest(BaseModel):
     # Bounded: each path costs a realpath() on the server.
-    paths: list[str] = Field(max_length=50)
+    paths: list[Annotated[str, StringConstraints(max_length=REQUEST_MAX_PATH)]] = Field(max_length=50)
     exclude_project_id: int | None = None
 
 

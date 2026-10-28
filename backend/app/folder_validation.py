@@ -51,7 +51,10 @@ MESSAGES: dict[str, str] = {
     "multiple_primary": "Marque só uma pasta como principal.",
 }
 
-# Folders under the profile that hold keys or credentials.
+# Named credential folders under the profile. Since S-2r EVERY dot-folder
+# directly under the home is refused by `_is_home_dot_folder` (a profile dot-folder
+# is always a tool's config or credentials: .config, .docker, .kube, .azure,
+# .cargo, ...), so this list is kept only as an explicit, documented core.
 _SENSITIVE_HOME_DIRS = (".ssh", ".claude", ".codex", ".gemini", ".aws", ".gnupg")
 _SENSITIVE_HOME_NAME_PREFIXES = (".claude-",)
 
@@ -97,6 +100,9 @@ class FolderPolicy:
     home: str                                # canonical ~
     system_roots: tuple[str, ...] = ()       # canonical
     profile_roots: tuple[str, ...] = ()      # canonical; the folder or an ancestor is denied
+    # Canonical; the folder, an ancestor OR any descendant is denied (AppData
+    # holds browser profiles and CLI tokens at every depth).
+    profile_subtrees: tuple[str, ...] = ()
     sensitive_prefixes: tuple[str, ...] = ()  # canonical; the folder or a descendant
     # Canonical STRING prefixes (e.g. "<home>\\.claude-"): the folder, a sibling
     # sharing the prefix, or any descendant of those.
@@ -120,8 +126,15 @@ def default_policy(projects_root: str, env: Mapping[str, str] | None = None) -> 
         if env.get(var):
             profile.append(_canon(env[var]))
 
+    # AppData (Roaming, Local, LocalLow) is denied as a whole subtree. The
+    # environment variables cover a relocated profile; "<home>\AppData" covers
+    # the default layout even when they are unset.
+    subtrees = [_canon(os.path.join(home, "AppData"))]
+    subtrees.extend(_canon(env[var]) for var in ("APPDATA", "LOCALAPPDATA") if env.get(var))
+
     return FolderPolicy(
         projects_root=_canon(projects_root),
+        profile_subtrees=tuple(dict.fromkeys(subtrees)),
         home=home,
         system_roots=tuple(dict.fromkeys(system)),
         profile_roots=tuple(dict.fromkeys(profile)),
@@ -140,6 +153,15 @@ def _is_drive_root(path: str) -> bool:
     return os.path.dirname(path) == path
 
 
+def _is_home_dot_folder(path: str, home: str) -> bool:
+    """True for a dot-folder directly under the home and everything below it (S-2r). Dot-folders
+    OUTSIDE the home (a project's own `.vscode`, say) are not affected."""
+    if not home or path == home or not path.startswith(home.rstrip(os.sep) + os.sep):
+        return False
+    first = path[len(home.rstrip(os.sep)) + 1:].split(os.sep, 1)[0]
+    return first.startswith(".")
+
+
 def _denied_code(path: str, policy: FolderPolicy) -> str | None:
     """Denylist verdict for ONE normcased path (lexical or canonical)."""
     if _is_drive_root(path):
@@ -152,6 +174,20 @@ def _denied_code(path: str, policy: FolderPolicy) -> str | None:
     # ancestor would expose the credential folders that live below it.
     if any(is_or_inside(base, path) for base in (policy.home, *policy.profile_roots) if base):
         return "home_root"
+    for root in policy.profile_subtrees:
+        if not root:
+            continue
+        if path == root or is_or_inside(root, path):
+            return "home_root"  # AppData itself or an ancestor: "pick a subfolder" is true
+        if is_or_inside(path, root):
+            return "sensitive_folder"  # strictly below: every subfolder is refused too
+    if _is_home_dot_folder(path, policy.home):
+        return "sensitive_folder"
+    # A `.git` component (exact name; `.github` or `a.gitx` are fine): registering a
+    # repository's internals as the root would bypass the viewer's `.git/` denylist,
+    # which is evaluated relative to the root.
+    if ".git" in path.split(os.sep):
+        return "sensitive_folder"
     if any(
         is_or_inside(path, prefix) or is_or_inside(prefix, path)
         for prefix in policy.sensitive_prefixes

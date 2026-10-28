@@ -701,12 +701,26 @@ def _registry_project(key: str) -> Project | None:
     )
 
 
+def _registry_folder_available(key: str, project: Project) -> bool:
+    """True when the primary folder exists AND still resolves to the canonical
+    path validated at registration (S-5). A folder swapped for a junction or
+    symlink after registration (to the home, a denied folder, ...) is treated
+    like a missing one, so it never becomes an HTTP root or a write target."""
+    if not os.path.isdir(project.path):
+        return False
+    row = workspace_store.snapshot.project_by_key.get(key)
+    primary = workspace_store.snapshot.primary_folder(row.id) if row is not None else None
+    if primary is None:
+        return False
+    return os.path.normcase(os.path.realpath(project.path)) == primary.canonical_path
+
+
 def _registry_root_for(key: str) -> str | None:
     """Primary folder of a registry project, for the viewer/artifact services.
     None for a legacy key (they keep the PROJECTS_ROOT + id join) and when the
-    folder is gone."""
+    folder is gone or no longer resolves to its validated canonical path."""
     project = _registry_project(key)
-    if project is None or not os.path.isdir(project.path):
+    if project is None or not _registry_folder_available(key, project):
         return None
     return project.path
 
@@ -1357,6 +1371,15 @@ async def _ensure_pty_locked(session_key: str, project_id: str, agent_id: str | 
         return proc, False, False, None
 
     proj, agent, cwd = _resolve_agent(project_id, agent_id)
+    if (
+        is_synthetic_key(project_id)
+        and proj is not None
+        and not _registry_folder_available(project_id, proj)
+    ):
+        # S-5r: the folder is gone or no longer resolves to the canonical path
+        # validated at registration (junction/symlink swap). Never spawn there;
+        # OSError lands on spawn_failed / provisioning_failed.
+        raise OSError(f"Project folder is unavailable: {project_id}")
     if agent_id and (agent is None or agent.id != agent_id):
         # Um agent_id explícito foi pedido mas _resolve_agent não achou (projeto
         # não "elegível" — sem .claude/.gemini/.codex, então proj.agentes vem vazio —
@@ -1569,7 +1592,7 @@ def _resolve_project_or_404(project_id: str) -> Project:
         # 404 instead of letting the attachment code recreate the folder.
         # (The isdir lives here and not in _registry_project: _resolve_agent
         # must keep reaching the controlled provisioning_failed path.)
-        if project is not None and not os.path.isdir(project.path):
+        if project is not None and not _registry_folder_available(project_id, project):
             project = None
     else:
         all_projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)

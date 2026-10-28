@@ -34,10 +34,27 @@ def make_tree(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def fake_profile_env(home: Path) -> dict:
+    """Environment variables of a fabricated user profile rooted at `home`."""
+    return {
+        "USERPROFILE": str(home),
+        "HOME": str(home),
+        "APPDATA": str(home / "AppData" / "Roaming"),
+        "LOCALAPPDATA": str(home / "AppData" / "Local"),
+    }
+
+
 @contextmanager
 def make_client(tmp_path: Path, *, env_extra: dict | None = None, before_boot=None,
-                db_name: str = "sessions.db", root: Path | None = None):
+                db_name: str = "sessions.db", root: Path | None = None,
+                fake_home: bool = True):
     """Boot the app (lifespan included) against an isolated tree and database.
+
+    `fake_home` (default) points the user profile variables at a fabricated
+    `<tmp_path>/fake_home`, so the registry folder policy (and `expanduser`)
+    read it instead of the real profile. pytest's `tmp_path` lives under the
+    real home's AppData/Local/Temp, which the policy denies as a whole subtree
+    (S-2): without this, every folder under `tmp_path` would be refused.
 
     `before_boot(main_mod)` runs after the module reload and before the
     lifespan starts, so tests can patch things the boot depends on.
@@ -50,6 +67,10 @@ def make_client(tmp_path: Path, *, env_extra: dict | None = None, before_boot=No
         "CLAUDE_CONFIG_PATH": str(tmp_path / "claude.json"),
         "CLEANUP_DELAY": "0.1",
     }
+    if fake_home:
+        home = tmp_path / "fake_home"
+        home.mkdir(exist_ok=True)
+        env.update(fake_profile_env(home))
     env.update(env_extra or {})
     with patch.dict("os.environ", env):
         os.environ.pop("HOOK_CALLBACK_BASE_URL", None)
