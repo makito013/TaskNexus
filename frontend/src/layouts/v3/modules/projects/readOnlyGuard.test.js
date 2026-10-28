@@ -47,6 +47,12 @@ const FORBIDDEN_IMPORTS = [
   'hooks/useKeyboardSuppressed',
   'hooks/useNavScope',
   'hooks/useSidebarCollapsed',
+  // Hooks of OTHER V3 modules/themes that write, reachable from modules/projects/ by
+  // the specifier WITHOUT "modules/" ('../tasks/useTaskItems.js'):
+  //   tasks/useTaskItems - composes hooks/useGlobalTasks (completes/reopens tasks) and hooks/useProjects
+  //   theme/useV3Theme   - persists the theme to localStorage
+  'tasks/useTaskItems',
+  'theme/useV3Theme',
 ]
 
 function stripComments(source) {
@@ -192,6 +198,16 @@ describe('scanProjectsModuleSource (fixtures prove the detector goes red)', () =
     // ...also without the extension, and from the file that owns the registry writes
     expect(scan(`import { x } from '../../../../${specifier.replace('.js', '')}'`)).not.toEqual([])
     expect(scan(`import { x } from '../../../../${specifier}'`, 'useRegistryMutations.js')).not.toEqual([])
+  })
+
+  it.each([
+    ['useTaskItems (composes the task writers)', "import { useTaskItems } from '../tasks/useTaskItems.js'", /tasks\/useTaskItems/],
+    ['useTaskItems without the extension', "import { useTaskItems } from '../tasks/useTaskItems'", /tasks\/useTaskItems/],
+    ['useV3Theme (web storage)', "import { useV3Theme } from '../../theme/useV3Theme.js'", /theme\/useV3Theme/],
+    ['useV3Theme without the extension', "import { useV3Theme } from '../../theme/useV3Theme'", /theme\/useV3Theme/],
+  ])('goes red for importing the writing hook of another V3 module: %s', (_label, source, expected) => {
+    expect(scan(source).join('\n')).toMatch(expected)
+    expect(scan(source, 'useRegistryMutations.js')).not.toEqual([])
   })
 
   it('goes red for a dynamic or re-exported import of a writing hook', () => {

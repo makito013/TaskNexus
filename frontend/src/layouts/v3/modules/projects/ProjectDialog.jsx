@@ -230,9 +230,11 @@ export default function ProjectDialog({
     }
   }, [inspectFolders, excludeProjectId])
 
-  const inspectTyped = useCallback((text) => {
+  // `claimed` marks an inspect already owned by an "Adicionar" call, so a second
+  // call (double Enter, double click) while it is in flight does not reuse it.
+  const inspectTyped = useCallback((text, claimed = false) => {
     const promise = runInspect(text)
-    previewRef.current = { text, promise }
+    previewRef.current = { text, promise, claimed }
     return promise
   }, [runInspect])
 
@@ -255,7 +257,14 @@ export default function ProjectDialog({
     // click inspects again, so a folder fixed on disk is seen.
     const pending = previewRef.current
     previewRef.current = null
-    let check = pending && pending.text === text ? await pending.promise : await inspectTyped(text)
+    if (pending && pending.text === text && pending.claimed) return
+    let check
+    if (pending && pending.text === text) {
+      pending.claimed = true
+      check = await pending.promise
+    } else {
+      check = await inspectTyped(text, true)
+    }
     if (check && check.errors.length === 0 && findDuplicate(foldersRef.current, text, check.canonical) !== -1) {
       check = { ...check, errors: [{ code: 'duplicate_in_project', message: MESSAGES.duplicate_in_project }] }
       setAddPreview({ text, check, failure: '' })

@@ -163,7 +163,7 @@ describe('header buttons and the workspace dialog', () => {
 })
 
 describe('workspace filter and the header "Adicionar projeto"', () => {
-  it('preselects the workspace chosen in the filter, and none when the filter is "all"', async () => {
+  it('preselects the workspace chosen in the filter, and the first active one when the filter is "all"', async () => {
     await renderLoaded()
     fireEvent.click(headerButton('Adicionar projeto'))
     expect(within(document.querySelector('dialog')).getByLabelText('Workspace').value).toBe('1')

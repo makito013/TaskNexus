@@ -66,6 +66,13 @@ describe('DiscoverPanel', () => {
     expect(screen.getByText('Nenhuma pasta encontrada com esse nome.')).toBeTruthy()
   })
 
+  it('the search also matches the path alone (not the name nor the client)', () => {
+    setup()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar pasta' }), { target: { value: 'projetos\\old' } })
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+    expect(screen.getByRole('checkbox', { name: /arch/ })).toBeTruthy()
+  })
+
   it('a folder already in the list is checked, disabled and says "já neste projeto"', () => {
     setup({ folders: [makeFolder({ path: 'd:/projetos/pessoal/tn-sandbox/', isPrimary: true })] })
     const box = screen.getByRole('checkbox', { name: /tn-sandbox/ })

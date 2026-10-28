@@ -291,6 +291,55 @@ describe('ProjectDialog: adding folders', () => {
   })
 })
 
+describe('ProjectDialog: racing and repeated adds', () => {
+  const deferred = () => {
+    let resolve
+    const promise = new Promise((done) => { resolve = done })
+    return { promise, resolve }
+  }
+
+  it('a late answer for an older text never replaces the check of the text in the field', async () => {
+    const first = deferred()
+    const inspectFolders = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementation(async ({ paths }) => ({ results: paths.map((path) => okResult(path, { used_by: [REF] })) }))
+    open({ mutations: makeMutations({ inspectFolders }) })
+    fireEvent.change(addField(), { target: { value: 'D:\\old-text' } })
+    fireEvent.blur(addField())
+    fireEvent.change(addField(), { target: { value: 'D:\\new-text' } })
+    fireEvent.blur(addField())
+    await screen.findByText('já está em QA A › qa-a')
+    await act(async () => {
+      first.resolve({
+        results: [{
+          input: 'D:\\old-text', path: null, ok: false, used_by: [], in_this_project: false, nested_in: [], has_marker: false,
+          problems: [{ code: 'not_found', message: 'A pasta não existe nesta máquina.' }],
+        }],
+      })
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(addField().getAttribute('aria-invalid')).toBeNull()
+    expect(screen.getByText('já está em QA A › qa-a')).toBeTruthy()
+  })
+
+  it('a double Enter while the check is in flight adds the folder once and leaves the empty field clean', async () => {
+    const pending = deferred()
+    const inspectFolders = vi.fn(() => pending.promise)
+    open({ mutations: makeMutations({ inspectFolders }) })
+    fireEvent.change(addField(), { target: { value: 'D:\\twice' } })
+    fireEvent.keyDown(addField(), { key: 'Enter' })
+    fireEvent.keyDown(addField(), { key: 'Enter' })
+    await act(async () => { pending.resolve({ results: [okResult('D:\\twice')] }) })
+    await screen.findByText('D:\\twice', { selector: '.v3-folder__path' })
+    expect(inspectFolders).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByRole('radio', { name: 'Principal' })).toHaveLength(1)
+    expect(addField().value).toBe('')
+    expect(addField().getAttribute('aria-invalid')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText(/Esta pasta já está neste projeto/)).toBeNull()
+  })
+})
+
 describe('ProjectDialog: "Procurar…"', () => {
   it('puts the picked path in the field and inspects it', async () => {
     const browseFolder = vi.fn(async () => ({ path: 'D:\\picked\\app' }))
@@ -334,6 +383,16 @@ describe('ProjectDialog: saving a new project', () => {
     await addTyped('D:\\a')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(save().hasAttribute('aria-disabled')).toBe(false)
+  })
+
+  it('asks to choose the workspace when there is no active one, and does not create', async () => {
+    const { mutations } = open({ workspaces: [], workspaceId: null })
+    fireEvent.change(nameField(), { target: { value: 'qa-a' } })
+    await addTyped('D:\\a')
+    fireEvent.click(save())
+    expect(screen.getByRole('alert').textContent).toBe('Escolha o workspace.')
+    expect(save().getAttribute('aria-disabled')).toBe('true')
+    expect(mutations.createProject).not.toHaveBeenCalled()
   })
 
   it('creates with the typed name, the workspace and the folders (primary flag in the payload)', async () => {
@@ -662,6 +721,19 @@ describe('ProjectDialog: editing', () => {
     expect(screen.queryByText('já está em QA A › qa-a')).toBeNull()
   })
 
+  it('a map folder used by this very project and by another one lists only the other in the row', async () => {
+    const own = { ...REF, project_id: 11 }
+    const other = { ...REF, project_id: 77, project_name: 'other' }
+    const discoverFolders = vi.fn(async () => ({ ...DISCOVER, entries: [{ ...DISCOVER.entries[1], used_by: [own, other] }] }))
+    edit('Pessoal/.p11', { mutations: makeMutations({ discoverFolders }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Analisar automático' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /ymci/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Usar selecionadas (1)' }))
+    await screen.findByText(DISCOVER.entries[1].path, { selector: '.v3-folder__path' })
+    expect(screen.getAllByText('já está em QA A › other').length).toBeGreaterThan(0)
+    expect(screen.queryByText('já está em QA A › qa-a')).toBeNull()
+  })
+
   describe('archiving', () => {
     it('asks for confirmation inline and archives with only { archived: true }', async () => {
       const { mutations, onClose } = edit('Pessoal/.p11')
@@ -698,6 +770,18 @@ describe('ProjectDialog: editing', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Sim, arquivar' }))
       expect((await screen.findByRole('alert')).textContent).toBe('Não foi possível concluir agora. Nada foi alterado.')
       expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('a failed archive closes the confirmation and gives the focus back to "Arquivar projeto"', async () => {
+      const failure = Object.assign(new Error('boom'), { status: 500 })
+      edit('Pessoal/.p11', { mutations: makeMutations({ updateProject: vi.fn().mockRejectedValue(failure) }) })
+      fireEvent.click(screen.getByRole('button', { name: 'Arquivar projeto' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Sim, arquivar' }))
+      await screen.findByRole('alert')
+      expect(screen.queryByRole('button', { name: 'Sim, arquivar' })).toBeNull()
+      expect(screen.queryByText('Arquivar "qa-a"?')).toBeNull()
+      const ask = screen.getByRole('button', { name: 'Arquivar projeto' })
+      expect(document.activeElement).toBe(ask)
     })
 
     it('an archived project has no archive zone', () => {
