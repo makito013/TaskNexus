@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Callable
 from app.models import Agent, Project
 
 
@@ -38,6 +39,9 @@ def resolve_projeto_alvo(
     own_projeto_id: str,
     projeto_id_pedido: str | None,
     projects: list[Project],
+    *,
+    scope_of: Callable[[str], str] | None = None,
+    exists: Callable[[str], bool] | None = None,
 ) -> str:
     """Resolve o projeto-alvo de uma criação (tarefa/card) feita por um agente
     que pode opcionalmente pedir um projeto diferente do da conversa atual.
@@ -53,13 +57,19 @@ def resolve_projeto_alvo(
     - projeto_id_pedido inexistente -> ValueError.
     - projeto_id_pedido de outro cliente -> ValueError.
     - caso contrário -> retorna projeto_id_pedido.
+
+    `scope_of` e `exists` são opcionais e só existem para o cadastro de
+    workspaces (V3): `exists(key)` substitui "o id está em `projects`" e
+    `scope_of(key)` substitui o 1º segmento como escopo de comparação. Sem
+    eles o comportamento é exatamente o de antes (a V2 não os passa).
     """
     if not projeto_id_pedido:
         return own_projeto_id
-    existe = any(p.id == projeto_id_pedido for p in projects)
-    if not existe:
+    exists_fn = exists or (lambda key: any(p.id == key for p in projects))
+    scope_fn = scope_of or cliente_id_from_projeto_id
+    if not exists_fn(projeto_id_pedido):
         raise ValueError(f"Projeto '{projeto_id_pedido}' não existe")
-    if cliente_id_from_projeto_id(projeto_id_pedido) != cliente_id_from_projeto_id(own_projeto_id):
+    if scope_fn(projeto_id_pedido) != scope_fn(own_projeto_id):
         raise ValueError(f"Projeto '{projeto_id_pedido}' pertence a outro cliente")
     return projeto_id_pedido
 

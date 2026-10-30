@@ -12,11 +12,12 @@ import {
   moduleById,
   moduleForPath,
 } from './modules.js'
+import ProjectsScreen from './modules/projects/ProjectsScreen.jsx'
 import TasksScreen from './modules/tasks/TasksScreen.jsx'
 import { useV3Theme } from './theme/useV3Theme.js'
 import './AppV3.css'
 
-const SCREENS = { tasks: TasksScreen }
+const SCREENS = { tasks: TasksScreen, projects: ProjectsScreen }
 
 // The v3 shell (desktop): module rail | content column with the sticky island on
 // top and the screen of the open module below. The route table is modules.js;

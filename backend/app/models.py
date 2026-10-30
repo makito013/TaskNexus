@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 # Card tipo — an informational field (bug/hotfix/historia), kept in PT-BR by
@@ -667,3 +667,177 @@ class TaskGlobal(Task):
     projeto_id: str
     agent_id: str
     session_display_name: str | None = None
+
+
+# -- Workspace registry (V3, trilha 1) -----------------------------------------
+#
+# Response shapes of GET /api/workspaces. Routes live in app/workspaces_api.py.
+
+
+class WorkspaceFolderOut(BaseModel):
+    id: int
+    path: str
+    is_primary: bool
+    position: int
+    exists: bool  # os.path.isdir at response time
+
+
+class WorkspaceProjectOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    origin: str  # 'legacy_seed' | 'legacy_adopted' | 'manual'
+    archived: bool
+    # True for legacy keys: the V2 resolves them by scanning, so the primary
+    # folder must keep matching the scan until the cut-over.
+    primary_locked: bool
+    folders: list[WorkspaceFolderOut]
+
+
+class WorkspaceOut(BaseModel):
+    id: int
+    key: str
+    name: str
+    origin: str
+    archived: bool
+    projects: list[WorkspaceProjectOut]
+
+
+class SeedInfo(BaseModel):
+    at: float
+    root: str
+    workspaces: int
+    projects: int
+
+
+class WorkspacesResponse(BaseModel):
+    seeded: SeedInfo | None = None
+    workspaces: list[WorkspaceOut]
+
+
+# -- Workspace registry: write routes and folder discovery (V3, trilha 1, F3) --
+#
+# Request bodies of the PATCH routes forbid unknown fields: `workspace_id` on a
+# project PATCH must be a 422 (a project never changes workspace, I2).
+
+
+# Request-size bounds (S-6). They sit ABOVE the semantic limits enforced by
+# folder_validation (name 80, path 1024, 10 folders), which answer 400 with a
+# friendly message; these only stop an oversized field from being validated (422).
+# They bound validation work and object construction, NOT body parsing: FastAPI
+# reads the whole JSON body before Pydantic runs, and there is no global
+# body-size limit (pre-existing).
+REQUEST_MAX_NAME = 320
+REQUEST_MAX_PATH = 4096
+REQUEST_MAX_KEY = 512
+REQUEST_MAX_FOLDERS = 50
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str = Field(max_length=REQUEST_MAX_NAME)
+    adopt_legacy_key: str | None = Field(default=None, max_length=REQUEST_MAX_KEY)
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=REQUEST_MAX_NAME)
+    archived: bool | None = None
+
+
+class ProjectFolderIn(BaseModel):
+    path: str = Field(max_length=REQUEST_MAX_PATH)
+    is_primary: bool = False
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(max_length=REQUEST_MAX_NAME)
+    folders: list[ProjectFolderIn] = Field(max_length=REQUEST_MAX_FOLDERS)
+
+
+class ProjectUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=REQUEST_MAX_NAME)
+    folders: list[ProjectFolderIn] | None = Field(default=None, max_length=REQUEST_MAX_FOLDERS)
+    archived: bool | None = None
+
+
+class FolderInspectRequest(BaseModel):
+    # Bounded: each path costs a realpath() on the server.
+    paths: list[Annotated[str, StringConstraints(max_length=REQUEST_MAX_PATH)]] = Field(max_length=50)
+    exclude_project_id: int | None = None
+
+
+class RegistryProjectRef(BaseModel):
+    """A registered project that holds (or overlaps) a folder."""
+    project_id: int
+    project_name: str
+    workspace_id: int
+    workspace_name: str
+    archived: bool = False
+
+
+class NestedRef(RegistryProjectRef):
+    # "inside": the typed folder is inside the registered one;
+    # "contains": the typed folder contains the registered one.
+    relation: Literal["inside", "contains"]
+
+
+class FolderWarning(BaseModel):
+    # `path` is the folder as typed; None for project-level warnings
+    # (`name_in_use`).
+    path: str | None = None
+    code: str  # 'already_used' | 'nested' | 'name_in_use'
+    relation: Literal["inside", "contains"] | None = None
+    projects: list[RegistryProjectRef] = []
+
+
+class WorkspaceResponse(BaseModel):
+    workspace: WorkspaceOut
+
+
+class ProjectMutationResponse(BaseModel):
+    project: WorkspaceProjectOut
+    adopted_legacy_key: str | None = None
+    warnings: list[FolderWarning] = []
+
+
+class ProjectUpdateResponse(BaseModel):
+    project: WorkspaceProjectOut
+    warnings: list[FolderWarning] = []
+
+
+class DiscoverEntry(BaseModel):
+    legacy_key: str
+    name: str
+    path: str
+    client_key: str
+    used_by: list[RegistryProjectRef]
+    adoptable_into_workspace_id: int | None = None
+
+
+class DiscoverResponse(BaseModel):
+    root: str
+    scanned_in_ms: int
+    entries: list[DiscoverEntry]
+
+
+class InspectProblem(BaseModel):
+    code: str
+    message: str
+
+
+class InspectResult(BaseModel):
+    input: str
+    path: str | None = None
+    ok: bool
+    problems: list[InspectProblem] = []
+    used_by: list[RegistryProjectRef] = []
+    in_this_project: bool = False
+    nested_in: list[NestedRef] = []
+    has_marker: bool = False
+
+
+class InspectResponse(BaseModel):
+    results: list[InspectResult]

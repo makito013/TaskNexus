@@ -40,7 +40,7 @@ describe('ModuleRail', () => {
     expect(finance.textContent).toContain('Em breve')
     // The ready module has no coming-soon line.
     expect(screen.getByRole('button', { name: 'Tarefas' }).textContent).not.toContain('Em breve')
-    expect(screen.getByRole('button', { name: 'Projetos e agentes, em breve' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Projetos e agentes' })).toBeTruthy()
   })
 
   it('renders the modules in rail order inside a labelled nav', () => {
@@ -51,7 +51,7 @@ describe('ModuleRail', () => {
       'Início, em breve',
       'Tarefas',
       'Finanças, em breve',
-      'Projetos e agentes, em breve',
+      'Projetos e agentes',
       'Navegador, em breve',
       'Mudar para tema escuro',
     ])
@@ -81,7 +81,7 @@ describe('ModuleRail', () => {
   it('uses decorative pets, with the sleeping state for modules without a screen', () => {
     renderRail()
     expect(document.querySelectorAll('.v3-rail svg[role="img"]')).toHaveLength(0)
-    expect(document.querySelectorAll('.v3-rail__item .v3-pet--sleeping')).toHaveLength(4)
-    expect(document.querySelectorAll('.v3-rail__item .v3-pet--idle')).toHaveLength(1)
+    expect(document.querySelectorAll('.v3-rail__item .v3-pet--sleeping')).toHaveLength(3)
+    expect(document.querySelectorAll('.v3-rail__item .v3-pet--idle')).toHaveLength(2)
   })
 })

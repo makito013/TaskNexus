@@ -25,8 +25,8 @@ describe('modules', () => {
     expect(moduleForPath('/dev/gallery')).toBeNull()
   })
 
-  it('only tasks is ready and the default module', () => {
-    expect(MODULES.filter((module) => module.ready).map((module) => module.id)).toEqual(['tasks'])
+  it('only tasks and projects are ready, and tasks is the default module', () => {
+    expect(MODULES.filter((module) => module.ready).map((module) => module.id)).toEqual(['tasks', 'projects'])
     expect(DEFAULT_MODULE_ID).toBe('tasks')
     expect(moduleById(DEFAULT_MODULE_ID).ready).toBe(true)
   })

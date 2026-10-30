@@ -39,6 +39,7 @@ from app.file_access import (
     to_relative_posix,
 )
 from app.viewer_store import MAX_ITEMS_PER_SESSION, ViewerStore
+from app.workspace_keys import is_synthetic_key
 
 # Mensagens que o agente lê como resultado da tool (6.4.6) ou a tela mostra.
 SESSION_NOT_FOUND = "Sessão do TaskNexus não encontrada"
@@ -96,6 +97,7 @@ class ViewerService:
         notify: NotifyFn | None = None,
         max_items: int = MAX_ITEMS_PER_SESSION,
         reuse: bool = True,
+        registry_root_for: Callable[[str], str | None] | None = None,
     ):
         self.store = store
         self._find_project_path = find_project_path
@@ -106,6 +108,10 @@ class ViewerService:
         # "O mesmo arquivo pedido de novo reaproveita a aba" (6.1). A
         # alternativa "uma aba nova toda vez" é só trocar para False.
         self._reuse = reuse
+        # Pasta principal de um projeto do cadastro (chave sintética). Sem
+        # ela, chave sintética não resolve (None): os testes antigos constroem
+        # o serviço assim e só usam chaves legadas.
+        self._registry_root_for = registry_root_for
 
     async def session_key_for_claude_id(self, claude_session_id: str) -> str | None:
         if not claude_session_id:
@@ -113,7 +119,14 @@ class ViewerService:
         return await self._session_key_for_claude_id(claude_session_id)
 
     def project_root_for(self, project_id: str) -> str | None:
-        """Pasta do projeto de uma aba já gravada (caminho rápido, sem varrer)."""
+        """Pasta do projeto de uma aba já gravada (caminho rápido, sem varrer).
+
+        Chave sintética (projeto do cadastro): SÓ o cadastro responde, nunca a
+        junção PROJECTS_ROOT + id, senão uma pasta real chamada `.p37` dentro
+        da raiz sequestraria a raiz do projeto (ADR-23). Chave legada: a
+        junção de sempre."""
+        if is_synthetic_key(project_id):
+            return self._registry_root_for(project_id) if self._registry_root_for else None
         return project_dir_from_id(self._get_projects_root(), project_id)
 
     async def open_path(

@@ -40,6 +40,7 @@ from app.agent_discovery import (
 )
 from app.artifact_meta import UNSUPPORTED_KIND_ERROR, artifact_kind_for, extract_meta
 from app.artifact_store import ArtifactStore
+from app.workspace_keys import is_synthetic_key
 from app.viewer_api import (
     SESSION_NOT_FOUND,
     ViewerOpenError,
@@ -157,20 +158,30 @@ def _inspect_file(project_root: str, caminho: Any) -> dict:
     }
 
 
-def _current_state(projects_root: str, artifacts: list[dict]) -> list[dict]:
+def _current_state(
+    projects_root: str,
+    artifacts: list[dict],
+    registry_root_for: Callable[[str], Optional[str]] | None = None,
+) -> list[dict]:
     """`exists`, `mtime` e `size` atuais de cada artefato, em lote (uma
     thread para a lista toda). Síncrona: roda em to_thread.
 
     Passa por `resolve_safe_path` e não por um `os.stat` cru: um arquivo
     trocado por um link para fora do projeto (ou que caiu na denylist)
     aparece como "não encontrado", igual ao que a rota `f/` vai responder.
-    Sem o arquivo, `mtime`/`size` ficam os da última publicação."""
+    Sem o arquivo, `mtime`/`size` ficam os da última publicação.
+
+    `registry_root_for`: raiz dos projetos do cadastro (chave sintética).
+    Chave sintética nunca cai na junção `projects_root + id` (ADR-23)."""
     roots: dict[str, str | None] = {}
     result = []
     for artifact in artifacts:
         project_id = artifact["project_id"]
         if project_id not in roots:
-            roots[project_id] = project_dir_from_id(projects_root, project_id)
+            if is_synthetic_key(project_id):
+                roots[project_id] = registry_root_for(project_id) if registry_root_for else None
+            else:
+                roots[project_id] = project_dir_from_id(projects_root, project_id)
         root = roots[project_id]
         current = dict(artifact)
         current["exists"] = False
@@ -288,6 +299,7 @@ class ArtifactService:
         session_key_for_claude_id: Optional[Callable[[str], Awaitable[Optional[str]]]] = None,
         agent_label_for: Optional[Callable[[str], Optional[str]]] = None,
         viewer: Optional[ViewerService] = None,
+        registry_root_for: Optional[Callable[[str], Optional[str]]] = None,
     ):
         self.store = store
         self._find_project_path = find_project_path
@@ -295,6 +307,7 @@ class ArtifactService:
         self._session_key_for_claude_id = session_key_for_claude_id
         self._agent_label_for = agent_label_for
         self.viewer = viewer
+        self._registry_root_for = registry_root_for
 
     async def session_key_for_claude_id(self, claude_session_id: Any) -> str | None:
         if not isinstance(claude_session_id, str) or not claude_session_id:
@@ -369,6 +382,10 @@ class ArtifactService:
         return None
 
     def project_root_for(self, project_id: str) -> str | None:
+        """Raiz do projeto de um artefato. Chave sintética: só o cadastro
+        (nunca a junção, ADR-23); chave legada: a junção de sempre."""
+        if is_synthetic_key(project_id):
+            return self._registry_root_for(project_id) if self._registry_root_for else None
         return project_dir_from_id(self._get_projects_root(), project_id)
 
     async def find_project_path(self, project_id: Any) -> str:
@@ -483,7 +500,9 @@ class ArtifactService:
     async def with_state_many(self, artifacts: list[dict]) -> list[dict]:
         if not artifacts:
             return []
-        return await asyncio.to_thread(_current_state, self._get_projects_root(), artifacts)
+        return await asyncio.to_thread(
+            _current_state, self._get_projects_root(), artifacts, self._registry_root_for,
+        )
 
     async def list_artifacts(
         self,

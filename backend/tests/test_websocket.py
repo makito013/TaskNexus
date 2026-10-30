@@ -117,7 +117,9 @@ def test_projects_endpoint(client):
 
 def test_pty_websocket_streams_raw_bytes_bidirectionally(client):
     """init frame spawns a PTY; raw binary stdin/stdout are bridged with no JSON envelope."""
-    fake_cmd = [sys.executable, "-c", "import sys,os; data=os.read(0,4096); os.write(1, b'GOT:'+data)"]
+    # The child lingers after writing: one that exits right away races
+    # ConPTY's last output frame against EOF (see _pump_winpty_output).
+    fake_cmd = [sys.executable, "-c", "import sys,os,time; data=os.read(0,4096); os.write(1, b'GOT:'+data); time.sleep(0.5)"]
     with patch("app.main._build_pty_cmd", return_value=fake_cmd):
         with client.websocket_connect("/ws/pty/echo-test") as ws:
             ws.send_text(json.dumps({
@@ -132,9 +134,19 @@ def test_pty_websocket_streams_raw_bytes_bidirectionally(client):
             # itself (real interactive TUIs like the claude CLI do; this bare
             # echo script doesn't, so it needs the explicit \r here).
             ws.send_bytes(b"hi\r\n")
+            # ws.receive_bytes() has no timeout, so only read once the PTY has
+            # really produced the marker (bounded wait on its scrollback):
+            # lost output then fails the assertion instead of hanging.
+            from app.main import pty_manager
+
+            def _marker_produced():
+                proc = pty_manager.get("echo-test")
+                return proc is not None and b"GOT:hi" in proc.snapshot()
+
+            marker_produced = _poll_until(_marker_produced, timeout=5.0)
             output = b""
             start = time.time()
-            while b"GOT:hi" not in output and time.time() - start < 2.0:
+            while marker_produced and b"GOT:hi" not in output and time.time() - start < 2.0:
                 try:
                     chunk = ws.receive_bytes()
                     output += chunk
