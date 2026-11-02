@@ -42,8 +42,10 @@ const styles = {
  * @param {string} [props.surface]
  * @param {string} [props.emptyHint]
  * @param {Function} [props.onOpenPath]  links relativos (ver ViewerPanel)
+ * @param {number} [props.zIndex]  overrides the default stacking (58) when the
+ *   viewer must open above another modal (e.g. the board's card modal, 60/61)
  */
-export function ViewerFullscreen({ scope, open, closeEverything = false, surface, emptyHint, onOpenPath }) {
+export function ViewerFullscreen({ scope, open, closeEverything = false, surface, emptyHint, onOpenPath, zIndex }) {
   const viewer = useViewer();
   const panelRef = useRef(null);
   const target = surface || surfaceForScope(scope);
@@ -75,7 +77,7 @@ export function ViewerFullscreen({ scope, open, closeEverything = false, surface
 
   return createPortal(
     <div
-      style={styles.overlay}
+      style={zIndex === undefined ? styles.overlay : { ...styles.overlay, zIndex }}
       className="vw-fade-enter"
       role="dialog"
       aria-modal="true"
@@ -87,7 +89,7 @@ export function ViewerFullscreen({ scope, open, closeEverything = false, surface
         scope={scope}
         variant="fullscreen"
         emptyHint={emptyHint}
-          onOpenPath={onOpenPath}
+        onOpenPath={onOpenPath}
         onClose={close}
       />
     </div>,

@@ -169,6 +169,19 @@ class CardImage(BaseModel):
     criado_em: float
 
 
+class CardAttachment(BaseModel):
+    """File attached to a card/subcard (any type). Stored outside the static
+    board_uploads/ mount and served only through
+    /api/card-attachments/{id}/... (sandbox CSP, see file_serving), so there
+    is no `url` field: the client builds it from `id` and `filename`."""
+    id: int
+    card_id: int
+    filename: str
+    mime_type: str
+    size_bytes: int
+    created_at: float
+
+
 class Card(BaseModel):
     """Card de board, persistente por projeto — DESACOPLADO de Task (tarefas
     de validação por sessão). `parent_id` NULL = card de topo. `subcards` e
@@ -207,6 +220,7 @@ class Card(BaseModel):
     subcards: list["Card"] = []
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
+    attachments: list[CardAttachment] = []
 
 
 # Necessário em Pydantic v2 quando o módulo usa `from __future__ import
