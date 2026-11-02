@@ -14,6 +14,9 @@ import { encodePathForUrl } from './viewerPaths.js';
 
 export const SOURCE_VIEWER = 'viewer';
 export const SOURCE_ARTIFACT = 'artifact';
+// A file attached to a board card (`/api/card-attachments/{id}/…`, same
+// response shapes, also built on backend/app/file_serving.py).
+export const SOURCE_CARD_ATTACHMENT = 'card_attachment';
 
 // Escopos: cada conjunto de abas tem um id. `session:<session_key>` são as abas
 // de uma conversa (persistidas no backend, tabela viewer_items); a Fase A usa
@@ -37,14 +40,31 @@ export function sessionKeyFromScope(scope) {
 export function normalizeItem(raw, source = SOURCE_VIEWER) {
   if (!raw || typeof raw !== 'object') return null;
   const src = raw.source || source;
-  const id = src === SOURCE_ARTIFACT ? raw.artifact_id ?? raw.id : raw.item_id ?? raw.id;
+  let id;
+  if (src === SOURCE_ARTIFACT) id = raw.artifact_id ?? raw.id;
+  else if (src === SOURCE_CARD_ATTACHMENT) id = raw.attachment_id ?? raw.id;
+  else id = raw.item_id ?? raw.id;
   if (!id) return null;
   return { ...raw, source: src, id };
 }
 
 function baseUrl(item) {
   const id = encodeURIComponent(item.id);
-  return item.source === SOURCE_ARTIFACT ? `/api/artifacts/${id}` : `/api/viewer/${id}`;
+  if (item.source === SOURCE_ARTIFACT) return `/api/artifacts/${id}`;
+  if (item.source === SOURCE_CARD_ATTACHMENT) return `/api/card-attachments/${id}`;
+  return `/api/viewer/${id}`;
+}
+
+/** Viewer item for a card attachment (`CardAttachment` from the backend).
+ * `path` is the file name: the backend serves it relative to the
+ * attachment's own folder. `updated_at` feeds the content cache and the
+ * iframe `?v=` (an attachment never changes, so its creation time is enough). */
+export function cardAttachmentItem(attachment) {
+  return normalizeItem({
+    attachment_id: attachment.id,
+    path: attachment.filename,
+    updated_at: attachment.created_at,
+  }, SOURCE_CARD_ATTACHMENT);
 }
 
 export function contentUrl(item) {

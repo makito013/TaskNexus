@@ -47,6 +47,7 @@ from app.image_validation import sniff_image_type, UploadTooLargeError, validate
 from app.agent_discovery import scan_projects, resolve_projeto_alvo
 from app.asyncio_patches import install_proactor_connection_lost_patch
 from app.attachments import list_attachments, save_attachments, delete_attachment
+from app import card_attachment_files, file_serving
 from app.logging_filters import install_benign_transfer_error_filter
 from app.pty_manager import PTYManager
 from app.session_provisioner import provision_session_id
@@ -64,6 +65,7 @@ from app.models import (
     HookTaskDeleteRequest,
     HookTaskRequest,
     Card,
+    CardAttachment,
     CardImage,
     CardCreateRequest,
     SubcardCreateRequest,
@@ -118,6 +120,15 @@ BOARD_UPLOADS_ROOT = os.getenv(
     "BOARD_UPLOADS_ROOT",
     os.path.join(os.path.dirname(__file__), "..", "board_uploads"),
 )
+# Card file attachments (any type: .md, .pdf, .html…). Deliberately NOT under
+# BOARD_UPLOADS_ROOT, which is a plain StaticFiles mount: an uploaded .html
+# there would run same-origin. These are served only through
+# /api/card-attachments/{id}/..., which adds the sandbox CSP (file_serving).
+BOARD_ATTACHMENTS_ROOT = os.getenv(
+    "BOARD_ATTACHMENTS_ROOT",
+    os.path.join(os.path.dirname(__file__), "..", "board_attachments"),
+)
+CARD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 
 # --- Canal de callback dos hooks (Fase 0) -----------------------------------
 #
@@ -2371,6 +2382,90 @@ async def delete_card_image(card_id: int, image_id: int):
     return {"status": "deleted", "card_id": card_id, "image_id": image_id}
 
 
+# -- Card file attachments ----------------------------------------------------
+#
+# Any file type. The board opens .md/.pdf/.html (and anything else the viewer
+# knows) in the file viewer through the routes below, which reuse
+# file_serving exactly like /api/viewer and /api/artifacts do.
+
+
+@app.post("/api/cards/{card_id}/attachments", response_model=CardAttachment, status_code=201)
+async def upload_card_attachment(card_id: int, file: UploadFile = File(...)):
+    card = await card_store.get(card_id)
+    if card is None or card["deleted_at"] is not None:
+        raise HTTPException(status_code=404, detail=f"Card not found: {card_id}")
+
+    filename = card_attachment_files.clean_filename(file.filename)
+    if filename is None:
+        raise HTTPException(status_code=400, detail="Nome de arquivo não permitido")
+
+    try:
+        attachment = await card_store.add_attachment(
+            card_id, filename, card_attachment_files.guess_mime_type(filename)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    folder = card_attachment_files.attachment_dir(
+        BOARD_ATTACHMENTS_ROOT, card_id, attachment["id"]
+    )
+    try:
+        size = await card_attachment_files.save_upload(
+            file, os.path.join(folder, filename), CARD_ATTACHMENT_MAX_BYTES
+        )
+    except Exception as exc:
+        # Undo the row too: a listed attachment without its file would only
+        # ever show "Este arquivo não existe mais".
+        await card_store.delete_attachment(card_id, attachment["id"])
+        card_attachment_files.remove_attachment_dir(
+            BOARD_ATTACHMENTS_ROOT, card_id, attachment["id"]
+        )
+        if isinstance(exc, UploadTooLargeError):
+            limit_mb = CARD_ATTACHMENT_MAX_BYTES // (1024 * 1024)
+            raise HTTPException(
+                status_code=413, detail=f"Arquivo excede o limite de {limit_mb}MB"
+            )
+        raise
+
+    await card_store.set_attachment_size(attachment["id"], size)
+    return CardAttachment(**{**attachment, "size_bytes": size})
+
+
+@app.delete("/api/cards/{card_id}/attachments/{attachment_id}")
+async def delete_card_attachment(card_id: int, attachment_id: int):
+    deleted = await card_store.delete_attachment(card_id, attachment_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Attachment not found: {attachment_id}")
+    card_attachment_files.remove_attachment_dir(BOARD_ATTACHMENTS_ROOT, card_id, attachment_id)
+    return {"status": "deleted", "card_id": card_id, "attachment_id": attachment_id}
+
+
+async def _card_attachment_or_404(attachment_id: int) -> tuple[dict, str]:
+    attachment = await card_store.get_attachment(attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado")
+    root = card_attachment_files.attachment_dir(
+        BOARD_ATTACHMENTS_ROOT, attachment["card_id"], attachment_id
+    )
+    return attachment, root
+
+
+@app.get("/api/card-attachments/{attachment_id}/content")
+async def card_attachment_content(attachment_id: int):
+    attachment, root = await _card_attachment_or_404(attachment_id)
+    payload = await file_serving.content_payload(root, attachment["filename"])
+    return {"attachment_id": attachment_id, **payload}
+
+
+@app.get("/api/card-attachments/{attachment_id}/f/{file_path:path}")
+async def card_attachment_file(attachment_id: int, file_path: str, download: bool = False):
+    """The attachment's bytes (iframe preview, PDF, download). `file_path` is
+    resolved inside the attachment's own folder, so it can only ever reach
+    this one file."""
+    _, root = await _card_attachment_or_404(attachment_id)
+    return await file_serving.file_response(root, file_path, download)
+
+
 @app.get("/api/cards/limpar-concluidos/preview", response_model=LimparConcluidosResult)
 async def preview_limpar_concluidos(projeto_id: str):
     result = await card_store.preview_limpar_concluidos(projeto_id)
@@ -2388,6 +2483,8 @@ async def executar_limpar_concluidos(projeto_id: str):
             os.remove(os.path.join(BOARD_UPLOADS_ROOT, str(affected_card_id), filename))
         except (FileNotFoundError, OSError):
             imagens_com_falha += 1
+    for affected_card_id in result["attachment_card_ids"]:
+        card_attachment_files.remove_card_dir(BOARD_ATTACHMENTS_ROOT, affected_card_id)
     return LimparConcluidosResult(
         cards=result["cards"],
         imagens=result["imagens"],

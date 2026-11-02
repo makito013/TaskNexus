@@ -424,6 +424,36 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     }
   }, [doneSlug]);
 
+  // Card file attachments. Same mutation pattern as the images above: apply
+  // the server's answer to local state, alert() on failure and re-throw so
+  // the component can reset its own "uploading" state.
+  const uploadCardAttachment = useCallback(async (cardId, file) => {
+    try {
+      const attachment = await api.uploadCardAttachment(cardId, file);
+      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+        ...card,
+        attachments: [...(card.attachments || []), attachment],
+      }), doneSlug));
+      return attachment;
+    } catch (e) {
+      alert(`${e?.message || 'Falha ao enviar anexo'}. Tente novamente.`);
+      throw e;
+    }
+  }, [doneSlug]);
+
+  const deleteCardAttachment = useCallback(async (cardId, attachmentId) => {
+    try {
+      await api.deleteCardAttachment(cardId, attachmentId);
+      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+        ...card,
+        attachments: (card.attachments || []).filter((a) => a.id !== attachmentId),
+      }), doneSlug));
+    } catch (e) {
+      alert('Falha ao remover anexo. Tente novamente.');
+      throw e;
+    }
+  }, [doneSlug]);
+
   // Leitura sob demanda (não é poll de fundo) — ver nota no topo do arquivo
   // sobre por que não tem alert() aqui: o erro propaga pro chamador
   // (ClearFinishedModal, Tarefa 25) decidir sua própria UI de erro.
@@ -462,6 +492,8 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     deleteCard,
     uploadCardImage,
     deleteCardImage,
+    uploadCardAttachment,
+    deleteCardAttachment,
     previewClearFinished,
     clearFinished,
   };

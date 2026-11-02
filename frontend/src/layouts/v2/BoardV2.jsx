@@ -152,6 +152,9 @@ import {
 } from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { useViewer } from '../../features/viewer/ViewerContext.jsx';
+import { ViewerFullscreen } from '../../features/viewer/ViewerFullscreen.jsx';
+import { cardAttachmentItem, fileUrl } from '../../features/viewer/viewerApi.js';
 import {
   resolveCardTags,
   resolveProjectName,
@@ -219,6 +222,11 @@ export const BOARD_DRAG_TOLERANCE_PX = 8;
 // the card's title button and status select), because a plain click never
 // travels far enough to arm anything. While this fed PointerSensor it also
 // governed every TOUCH, which is the bug `boardDragSensors` documents.
+// Viewer scope (and surface) for files attached to cards. It opens full
+// screen ABOVE the card modal (zIndex 60/61), hence its own stacking.
+const SCOPE_CARD_ATTACHMENTS = 'card-attachments';
+const CARD_ATTACHMENT_VIEWER_Z_INDEX = 70;
+
 const BOARD_DRAG_POINTER_DISTANCE_PX = 6;
 
 // dnd-kit ships English screen-reader strings and mounts its live region
@@ -806,6 +814,8 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     deleteCard,
     uploadCardImage,
     deleteCardImage,
+    uploadCardAttachment,
+    deleteCardAttachment,
     previewClearFinished,
     clearFinished,
   } = useCards(fetchProjectIds, doneSlug);
@@ -847,6 +857,38 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
   // já estiver digitando.
   const [editingCardId, setEditingCardId] = useState(null);
   const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
+
+  // Card attachments open in the same file viewer used by the chat and
+  // Artefatos (markdown, PDF, sandboxed HTML…), full screen over the modal.
+  // `viewer` is null outside ViewerProvider: the "Ver" button then falls back
+  // to opening the file in a new browser tab.
+  const viewer = useViewer();
+  const attachmentViewerOpen = !!viewer?.getSurface(SCOPE_CARD_ATTACHMENTS).fullscreen;
+  const handleViewAttachment = useCallback((attachment) => {
+    const item = cardAttachmentItem(attachment);
+    if (!item) return;
+    if (!viewer) {
+      window.open(fileUrl(item), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    viewer.openItem(SCOPE_CARD_ATTACHMENTS, item);
+    viewer.setFullscreen(SCOPE_CARD_ATTACHMENTS, true);
+  }, [viewer]);
+  const handleDeleteAttachment = useCallback(async (attachmentId) => {
+    if (editingCardId == null) return;
+    try {
+      await deleteCardAttachment(editingCardId, attachmentId);
+    } catch {
+      return; // useCards already alerted
+    }
+    // A tab left open for a deleted file would only say "não existe mais".
+    viewer?.closeItem(SCOPE_CARD_ATTACHMENTS, cardAttachmentItem({ id: attachmentId })?.id);
+  }, [editingCardId, deleteCardAttachment, viewer]);
+  // A relative link inside an attached markdown has nowhere to go: the
+  // attachment is a single file, not a project folder.
+  const handleAttachmentOpenPath = useCallback(() => {
+    viewer?.showToast('Links para outros arquivos não funcionam em anexos.', 'error');
+  }, [viewer]);
 
   // "Limpar concluídos" — ported from the v1 board, the only surface this
   // action used to have. The endpoint deletes by ONE `projeto_id` at a time,
@@ -1628,8 +1670,21 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
           onClose={() => setEditingCardId(null)}
           onUploadImage={(file) => uploadCardImage(editingCardId, file)}
           onDeleteImage={(imageId) => deleteCardImage(editingCardId, imageId)}
+          onUploadAttachment={(file) => uploadCardAttachment(editingCardId, file)}
+          onDeleteAttachment={handleDeleteAttachment}
+          onViewAttachment={handleViewAttachment}
+          escapeSuspended={attachmentViewerOpen}
         />
       )}
+
+      <ViewerFullscreen
+        scope={SCOPE_CARD_ATTACHMENTS}
+        open={attachmentViewerOpen}
+        closeEverything
+        zIndex={CARD_ATTACHMENT_VIEWER_Z_INDEX}
+        emptyHint="Nenhum anexo aberto."
+        onOpenPath={handleAttachmentOpenPath}
+      />
 
       {/* `clearTargetId` is re-checked here, not just on the button: the
           filter can drop back to "Todos" (sidebar change, client reset) while

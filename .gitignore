@@ -95,3 +95,6 @@ certs/
 # Anexos de card do Board (uploads reais do usuário, ex.: imagens) — dado de
 # runtime, não faz parte do produto. Escopo mínimo: só attachments/.
 .escritorio/attachments/
+
+# Card file attachments from the Board (real user uploads, runtime data).
+backend/board_attachments/

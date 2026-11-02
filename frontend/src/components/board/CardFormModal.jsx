@@ -59,6 +59,7 @@ import { resolveProjectLabel } from '../../utils/projects.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { CardIdBadge } from './CardIdBadge.jsx';
 import { ImageAttachments } from './ImageAttachments.jsx';
+import { CardAttachments } from './CardAttachments.jsx';
 
 const NARROW_QUERY = '(max-width: 720px)';
 
@@ -309,6 +310,14 @@ export function CardFormModal({
   onClose,
   onUploadImage,
   onDeleteImage,
+  // File attachments (optional: without `onUploadAttachment` the section is
+  // not rendered). `onViewAttachment(attachment)` opens it in the viewer.
+  onUploadAttachment,
+  onDeleteAttachment,
+  onViewAttachment,
+  // While something is stacked on top of the modal (the attachment viewer),
+  // Esc belongs to that layer and must not also close the card.
+  escapeSuspended = false,
 }) {
   const isEdit = mode === 'edit';
   const isNarrow = useMediaQuery(NARROW_QUERY);
@@ -365,11 +374,11 @@ export function CardFormModal({
   // unmount — the classic leak of this pattern is a modal that keeps
   // answering ESC after it is gone.
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || escapeSuspended) return undefined;
     const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, escapeSuspended]);
 
   // In `edit` the panel itself takes focus instead of an input: autofocusing a
   // text field raises the iPad keyboard over a modal the user only opened to
@@ -562,6 +571,19 @@ export function CardFormModal({
                     onUpload={onUploadImage}
                     onDelete={onDeleteImage}
                     size={48}
+                  />
+                </div>
+              )}
+
+              {isEdit && onUploadAttachment && (
+                <div style={styles.field}>
+                  <span style={styles.label}>Anexos</span>
+                  <CardAttachments
+                    cardId={card.id}
+                    attachments={card.attachments}
+                    onUpload={onUploadAttachment}
+                    onDelete={onDeleteAttachment}
+                    onView={onViewAttachment}
                   />
                 </div>
               )}

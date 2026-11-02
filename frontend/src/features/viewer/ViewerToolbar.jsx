@@ -17,7 +17,7 @@
 // sozinho. A regra e a consulta moram em features/artifacts/useSaveToArtifacts.
 import { useEffect, useRef, useState } from 'react';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
-import { fileUrl } from './viewerApi.js';
+import { fileUrl, SOURCE_VIEWER } from './viewerApi.js';
 import { basenameOf, formatBytes, formatRelativeSeconds } from './viewerPaths.js';
 import { openerLabel, useViewerActions } from './ViewerContext.jsx';
 import { useSaveToArtifacts } from '../artifacts/useSaveToArtifacts.js';
@@ -72,7 +72,9 @@ export function ViewerToolbar({ item, content, onCloseAll }) {
   const size = Number.isFinite(content?.size) ? formatBytes(content.size) : null;
   const opener = openerLabel(item, item.session_key);
   const when = formatRelativeSeconds(item.updated_at);
-  const openedBy = item.source === 'artifact'
+  // "aberto por…" only means something for a chat tab; an artifact or a card
+  // attachment was not opened by anyone in particular.
+  const openedBy = (item.source || SOURCE_VIEWER) !== SOURCE_VIEWER
     ? null
     : `aberto ${item.opened_by === 'user' ? 'por você' : `pelo ${opener}`}${when ? ` ${when}` : ''}`;
 

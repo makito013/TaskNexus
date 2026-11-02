@@ -814,7 +814,12 @@ async def test_executar_limpar_concluidos_is_idempotent(store):
     assert first["imagens"] == 1
 
     second = await store.executar_limpar_concluidos("proj-a")
-    assert second == {"cards": 0, "imagens": 0, "filenames_apagados": []}
+    assert second == {
+        "cards": 0,
+        "imagens": 0,
+        "filenames_apagados": [],
+        "attachment_card_ids": [],
+    }
 
 
 # -- list_by_cliente (Fase 3) ------------------------------------------------
