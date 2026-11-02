@@ -60,6 +60,18 @@ async def save_upload(upload: Any, dest_path: str, max_bytes: int) -> int:
     return total
 
 
+def copy_file(src_path: str, dest_path: str, max_bytes: int) -> int:
+    """Copies a file of the agent's project into an attachment folder.
+    Synchronous (run it in a thread). Raises UploadTooLargeError past
+    `max_bytes`, checked before copying anything."""
+    size = os.path.getsize(src_path)
+    if size > max_bytes:
+        raise UploadTooLargeError(f"File exceeds {max_bytes} bytes")
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    shutil.copyfile(src_path, dest_path)
+    return size
+
+
 def remove_attachment_dir(root: str, card_id: int, attachment_id: int) -> None:
     """Best effort: a leftover folder is harmless (the row is the source of
     truth for what the card lists)."""

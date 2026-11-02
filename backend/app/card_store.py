@@ -373,7 +373,7 @@ class CardStore:
 
     _ATTACHMENT_COLUMNS = "id, card_id, filename, mime_type, size_bytes, created_at"
 
-    async def _list_attachments(self, card_id: int) -> list[dict]:
+    async def list_attachments(self, card_id: int) -> list[dict]:
         async with self._conn.execute(
             f"SELECT {self._ATTACHMENT_COLUMNS} FROM card_attachments "
             "WHERE card_id = ? ORDER BY id ASC",
@@ -400,7 +400,7 @@ class CardStore:
         for row in rows:
             sub = self._row_to_card_dict(row)
             sub["imagens"] = await self._list_images(sub["id"])
-            sub["attachments"] = await self._list_attachments(sub["id"])
+            sub["attachments"] = await self.list_attachments(sub["id"])
             sub["subcards"] = []
             sub["subcards_resumo"] = None
             subcards.append(sub)
@@ -606,7 +606,7 @@ class CardStore:
         for row in rows:
             card = self._row_to_card_dict(row)
             card["imagens"] = await self._list_images(card["id"])
-            card["attachments"] = await self._list_attachments(card["id"])
+            card["attachments"] = await self.list_attachments(card["id"])
             subcards = await self._list_active_subcards(card["id"])
             card["subcards"] = subcards
             if subcards:

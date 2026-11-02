@@ -2322,7 +2322,7 @@ def test_build_codex_config_overrides_reuses_hook_url_suffixes():
         expected |= suffixes_from(server["env"])
     assert expected == {
         "task", "task/delete", "cards/create", "cards/move", "cards/update",
-        "cards/delete", "cards/get", "cards/list", "viewer/open",
+        "cards/delete", "cards/get", "cards/list", "cards/attach", "viewer/open",
         # Fase A: `publicar_artefato` (mesmo servidor do visualizador).
         "artifacts/publish",
     }
@@ -2525,7 +2525,8 @@ def test_build_mcp_config_json_emits_all_escritorio_servers():
     cards_env = servers["escritorio-cards"]["env"]
     for key in ("ESCRITORIO_HOOK_CREATE_URL", "ESCRITORIO_HOOK_MOVE_URL",
                 "ESCRITORIO_HOOK_UPDATE_URL", "ESCRITORIO_HOOK_DELETE_URL",
-                "ESCRITORIO_HOOK_GET_URL", "ESCRITORIO_HOOK_LIST_URL"):
+                "ESCRITORIO_HOOK_GET_URL", "ESCRITORIO_HOOK_LIST_URL",
+                "ESCRITORIO_HOOK_ATTACH_URL"):
         assert key in cards_env
     assert cards_env["PYTHONUTF8"] == "1"
 

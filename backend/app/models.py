@@ -352,6 +352,16 @@ class HookCardGetRequest(BaseModel):
     card_id: int
 
 
+class HookCardAttachRequest(BaseModel):
+    """Body of POST /api/hooks/cards/attach (MCP tool `anexar_arquivo_card`).
+    `caminho` is a file of the session's project: relative to its root, or
+    absolute inside it. Same access rules as the file viewer (no escaping the
+    project, no `.env`/keys/sqlite)."""
+    claude_session_id: str
+    card_id: int
+    caminho: str
+
+
 class HookCardListRequest(BaseModel):
     """Body de POST /api/hooks/cards/list. `projeto_id` omitido -> todos os
     cards de topo do CLIENTE da sessão atual; informado -> só aquele projeto

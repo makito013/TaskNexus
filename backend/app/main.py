@@ -48,6 +48,7 @@ from app.agent_discovery import scan_projects, resolve_projeto_alvo
 from app.asyncio_patches import install_proactor_connection_lost_patch
 from app.attachments import list_attachments, save_attachments, delete_attachment
 from app import card_attachment_files, file_serving
+from app.file_access import resolve_safe_path
 from app.logging_filters import install_benign_transfer_error_filter
 from app.pty_manager import PTYManager
 from app.session_provisioner import provision_session_id
@@ -82,6 +83,7 @@ from app.models import (
     HookCardDeleteRequest,
     HookCardGetRequest,
     HookCardListRequest,
+    HookCardAttachRequest,
     AppearanceSettings,
     AppearanceUpdateRequest,
     NotificationSettings,
@@ -911,6 +913,7 @@ def _escritorio_mcp_servers(session_id: str) -> dict[str, _McpServerSpec]:
                 "ESCRITORIO_HOOK_DELETE_URL": f"{base_url}/api/hooks/cards/delete",
                 "ESCRITORIO_HOOK_GET_URL": f"{base_url}/api/hooks/cards/get",
                 "ESCRITORIO_HOOK_LIST_URL": f"{base_url}/api/hooks/cards/list",
+                "ESCRITORIO_HOOK_ATTACH_URL": f"{base_url}/api/hooks/cards/attach",
                 "PYTHONUTF8": "1",
             },
         },
@@ -938,7 +941,8 @@ def _build_mcp_config_json(session_id: str) -> str:
     esses arquivos) como servidores stdio do `claude` CLI, expondo
     `criar_tarefa_validacao` (escritorio-tarefas),
     `criar_card`/`mover_card`/`editar_card`/`excluir_card`/`ver_card`/
-    `listar_cards` (escritorio-cards, Tarefa 8 do plano 05-TL.md + Fase 3) e
+    `listar_cards`/`anexar_arquivo_card` (escritorio-cards, Tarefa 8 do plano
+    05-TL.md + Fase 3) e
     `abrir_no_visualizador`/`publicar_artefato` (escritorio-visualizador,
     Fases V e A). Os abspaths são resolvidos a partir de
     __file__ (diretório deste módulo), NÃO do cwd do PTY — o cwd do PTY é o
@@ -2400,35 +2404,48 @@ async def upload_card_attachment(card_id: int, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Nome de arquivo não permitido")
 
     try:
-        attachment = await card_store.add_attachment(
-            card_id, filename, card_attachment_files.guess_mime_type(filename)
+        attachment = await _create_card_attachment(
+            card_id,
+            filename,
+            lambda dest: card_attachment_files.save_upload(
+                file, dest, CARD_ATTACHMENT_MAX_BYTES
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except UploadTooLargeError:
+        raise HTTPException(status_code=413, detail=_attachment_too_large_message())
+    return CardAttachment(**attachment)
 
+
+def _attachment_too_large_message() -> str:
+    limit_mb = CARD_ATTACHMENT_MAX_BYTES // (1024 * 1024)
+    return f"Arquivo excede o limite de {limit_mb}MB"
+
+
+async def _create_card_attachment(card_id: int, filename: str, write_file) -> dict:
+    """Shared by the UI upload and the agent hook: inserts the row, then lets
+    `write_file(dest_path) -> size` put the bytes in the attachment's own
+    folder. Any failure while writing (UploadTooLargeError included) undoes
+    the row and the folder and is re-raised: a listed attachment without its
+    file would only ever show "Este arquivo não existe mais". The limit of
+    attachments per card surfaces as ValueError."""
+    attachment = await card_store.add_attachment(
+        card_id, filename, card_attachment_files.guess_mime_type(filename)
+    )
     folder = card_attachment_files.attachment_dir(
         BOARD_ATTACHMENTS_ROOT, card_id, attachment["id"]
     )
     try:
-        size = await card_attachment_files.save_upload(
-            file, os.path.join(folder, filename), CARD_ATTACHMENT_MAX_BYTES
-        )
-    except Exception as exc:
-        # Undo the row too: a listed attachment without its file would only
-        # ever show "Este arquivo não existe mais".
+        size = await write_file(os.path.join(folder, filename))
+    except Exception:
         await card_store.delete_attachment(card_id, attachment["id"])
         card_attachment_files.remove_attachment_dir(
             BOARD_ATTACHMENTS_ROOT, card_id, attachment["id"]
         )
-        if isinstance(exc, UploadTooLargeError):
-            limit_mb = CARD_ATTACHMENT_MAX_BYTES // (1024 * 1024)
-            raise HTTPException(
-                status_code=413, detail=f"Arquivo excede o limite de {limit_mb}MB"
-            )
         raise
-
     await card_store.set_attachment_size(attachment["id"], size)
-    return CardAttachment(**{**attachment, "size_bytes": size})
+    return {**attachment, "size_bytes": size}
 
 
 @app.delete("/api/cards/{card_id}/attachments/{attachment_id}")
@@ -2831,7 +2848,8 @@ async def hook_cards_delete(body: HookCardDeleteRequest):
 async def hook_cards_get(body: HookCardGetRequest):
     """Retorna os campos CRUS do card (CardStore.get), sem hidratar
     subcards/imagens — decisão fechada com o Bruno: ver_card espelha a linha
-    da tabela, quem quer a árvore usa listar_cards."""
+    da tabela, quem quer a árvore usa listar_cards. Exception: `attachments`
+    (file attachments) is included, see below."""
     session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
     if not session_key:
         return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
@@ -2847,6 +2865,9 @@ async def hook_cards_get(body: HookCardGetRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
+    # The raw row plus its file attachments: the agent needs to know what is
+    # already attached before calling anexar_arquivo_card again.
+    card = {**card, "attachments": await card_store.list_attachments(body.card_id)}
     return {"success": True, "card": card}
 
 
@@ -2880,6 +2901,55 @@ async def hook_cards_list(body: HookCardListRequest):
         )
 
     return {"success": True, "cards": cards, "total": len(cards)}
+
+
+@app.post("/api/hooks/cards/attach")
+async def hook_cards_attach(body: HookCardAttachRequest):
+    """MCP tool `anexar_arquivo_card`: copies a file of the session's project
+    into the card's attachments (the same ones the board shows with Ver /
+    Baixar). Same authorization as the other card hooks (`_agent_same_cliente`,
+    checked before writing anything) and the same path rules as the file
+    viewer (`resolve_safe_path`: inside the project, denylist). Business
+    errors come back as `{"success": False, "error": ...}` so the adapter can
+    relay them to the agent."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, _ = session_key.partition("::")
+    card = await card_store.get(body.card_id)
+    if card is None or card["deleted_at"] is not None:
+        return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
+    if not _agent_same_cliente(card, own_projeto_id):
+        return {"success": False, "error": f"Card {body.card_id} pertence a outro cliente"}
+
+    project_root = await asyncio.to_thread(_find_project_path, own_projeto_id)
+    if project_root is None:
+        return {"success": False, "error": f"Projeto da sessão não encontrado: {own_projeto_id}"}
+    try:
+        source = await asyncio.to_thread(resolve_safe_path, project_root, body.caminho)
+    except OSError as exc:
+        return {"success": False, "error": file_serving.http_error(exc, body.caminho).detail}
+
+    filename = card_attachment_files.clean_filename(os.path.basename(source))
+    if filename is None:
+        return {"success": False, "error": f"Nome de arquivo não permitido: {body.caminho}"}
+
+    try:
+        attachment = await _create_card_attachment(
+            body.card_id,
+            filename,
+            lambda dest: asyncio.to_thread(
+                card_attachment_files.copy_file, source, dest, CARD_ATTACHMENT_MAX_BYTES
+            ),
+        )
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    except UploadTooLargeError:
+        return {"success": False, "error": _attachment_too_large_message()}
+    except OSError:
+        return {"success": False, "error": f"Não foi possível copiar o arquivo: {body.caminho}"}
+    return {"success": True, "attachment": attachment}
 
 
 @app.post("/api/sessions/{session_key:path}/continue")
