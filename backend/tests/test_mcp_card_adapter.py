@@ -113,6 +113,7 @@ _HOOK_URL_ENV_BY_PATH = {
     "ESCRITORIO_HOOK_DELETE_URL": "delete",
     "ESCRITORIO_HOOK_GET_URL": "get",
     "ESCRITORIO_HOOK_LIST_URL": "list",
+    "ESCRITORIO_HOOK_ATTACH_URL": "attach",
 }
 
 
@@ -202,7 +203,7 @@ def _make_hostile_env(port):
     return env
 
 
-def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
+def test_tools_list_returns_all_card_tools_with_correct_schemas():
     server, thread, port = _start_ephemeral_server()
     try:
         adapter = _make_adapter(port)
@@ -210,12 +211,17 @@ def test_tools_list_returns_all_six_card_tools_with_correct_schemas():
             adapter.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
             response = adapter.recv()
             tools = response["result"]["tools"]
-            assert len(tools) == 6
+            assert len(tools) == 7
             by_name = {t["name"]: t for t in tools}
             assert set(by_name.keys()) == {
                 "criar_card", "mover_card", "editar_card",
                 "excluir_card", "ver_card", "listar_cards",
+                "anexar_arquivo_card",
             }
+            anexar = by_name["anexar_arquivo_card"]
+            assert anexar["inputSchema"]["required"] == ["card_id", "caminho"]
+            assert anexar["inputSchema"]["properties"]["card_id"]["type"] == "integer"
+            assert anexar["inputSchema"]["properties"]["caminho"]["type"] == "string"
 
             criar = by_name["criar_card"]
             assert criar["inputSchema"]["required"] == ["titulo"]
@@ -1031,6 +1037,84 @@ def test_http_error_with_non_json_body_still_reports_the_status():
             text = _call_tool(adapter, 66, "listar_cards", {})
             assert "HTTP 500" in text
             assert "não foi possível conectar" not in text.lower()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+# -- anexar_arquivo_card -------------------------------------------------------
+
+
+def test_anexar_arquivo_card_posts_to_attach_url_and_reports_the_attachment():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/attach": {
+            "success": True,
+            "attachment": {"id": 9, "card_id": 7, "filename": "plano.md"},
+        }}
+    )
+    try:
+        adapter = _make_adapter(port, session_id="session-att")
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 30, "method": "tools/call",
+                "params": {
+                    "name": "anexar_arquivo_card",
+                    "arguments": {"card_id": 7, "caminho": "docs/plano.md"},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "plano.md" in text and "card 7" in text
+
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["path"] == "/api/hooks/cards/attach"
+            assert received["body"] == {
+                "claude_session_id": "session-att",
+                "card_id": 7,
+                "caminho": "docs/plano.md",
+            }
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_anexar_arquivo_card_relays_backend_error():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/attach": {
+            "success": False, "error": "Arquivo protegido",
+        }}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 31, "method": "tools/call",
+                "params": {
+                    "name": "anexar_arquivo_card",
+                    "arguments": {"card_id": 7, "caminho": ".env"},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert text == "Arquivo protegido"
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_anexar_arquivo_card_without_caminho_is_rejected_before_posting():
+    server, thread, port = _start_ephemeral_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 32, "method": "tools/call",
+                "params": {"name": "anexar_arquivo_card", "arguments": {"card_id": 7}},
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "caminho" in text
+            assert _CapturingHandler.received.empty()
         finally:
             adapter.close()
     finally:

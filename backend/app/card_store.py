@@ -185,6 +185,21 @@ class CardStore:
         )
         await self._conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS card_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_card_attachments_card ON card_attachments(card_id)"
+        )
+        await self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS board_columns (
                 slug TEXT PRIMARY KEY,
                 label TEXT NOT NULL,
@@ -345,6 +360,28 @@ class CardStore:
             for row in rows
         ]
 
+    @staticmethod
+    def _row_to_attachment_dict(row) -> dict:
+        return {
+            "id": row[0],
+            "card_id": row[1],
+            "filename": row[2],
+            "mime_type": row[3],
+            "size_bytes": row[4],
+            "created_at": row[5],
+        }
+
+    _ATTACHMENT_COLUMNS = "id, card_id, filename, mime_type, size_bytes, created_at"
+
+    async def list_attachments(self, card_id: int) -> list[dict]:
+        async with self._conn.execute(
+            f"SELECT {self._ATTACHMENT_COLUMNS} FROM card_attachments "
+            "WHERE card_id = ? ORDER BY id ASC",
+            (card_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [self._row_to_attachment_dict(row) for row in rows]
+
     async def _list_active_subcards(self, parent_id: int) -> list[dict]:
         """Subcards ativos de um pai, no "mesmo formato" de um card de topo
         exceto que a recursão para de propósito neste nível: subcards() vem
@@ -363,6 +400,7 @@ class CardStore:
         for row in rows:
             sub = self._row_to_card_dict(row)
             sub["imagens"] = await self._list_images(sub["id"])
+            sub["attachments"] = await self.list_attachments(sub["id"])
             sub["subcards"] = []
             sub["subcards_resumo"] = None
             subcards.append(sub)
@@ -568,6 +606,7 @@ class CardStore:
         for row in rows:
             card = self._row_to_card_dict(row)
             card["imagens"] = await self._list_images(card["id"])
+            card["attachments"] = await self.list_attachments(card["id"])
             subcards = await self._list_active_subcards(card["id"])
             card["subcards"] = subcards
             if subcards:
@@ -1286,6 +1325,77 @@ class CardStore:
             await self._conn.commit()
             return row[0]
 
+    # -- file attachments ---------------------------------------------------
+    #
+    # Same split as the images above: this store only touches the database.
+    # Writing/removing the files on disk is main.py's job.
+
+    MAX_ATTACHMENTS_PER_CARD = 10
+
+    async def add_attachment(
+        self, card_id: int, filename: str, mime_type: str
+    ) -> dict:
+        """Inserts a card_attachments row with size 0 (the caller streams the
+        file to disk next, under a folder named after the returned id, and then
+        calls `set_attachment_size`). Raises ValueError when the card already
+        holds MAX_ATTACHMENTS_PER_CARD attachments; count and INSERT share the
+        lock for the same reason as `add_image`."""
+        async with self._tx_lock:
+            async with self._conn.execute(
+                "SELECT COUNT(*) FROM card_attachments WHERE card_id = ?",
+                (card_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row[0] >= self.MAX_ATTACHMENTS_PER_CARD:
+                raise ValueError(
+                    f"Card {card_id} já atingiu o limite de "
+                    f"{self.MAX_ATTACHMENTS_PER_CARD} anexos"
+                )
+            created_at = time.time()
+            cursor = await self._conn.execute(
+                """
+                INSERT INTO card_attachments (card_id, filename, mime_type, size_bytes, created_at)
+                VALUES (?, ?, ?, 0, ?)
+                """,
+                (card_id, filename, mime_type, created_at),
+            )
+            await self._conn.commit()
+            return {
+                "id": cursor.lastrowid,
+                "card_id": card_id,
+                "filename": filename,
+                "mime_type": mime_type,
+                "size_bytes": 0,
+                "created_at": created_at,
+            }
+
+    async def set_attachment_size(self, attachment_id: int, size_bytes: int) -> None:
+        async with self._tx_lock:
+            await self._conn.execute(
+                "UPDATE card_attachments SET size_bytes = ? WHERE id = ?",
+                (size_bytes, attachment_id),
+            )
+            await self._conn.commit()
+
+    async def get_attachment(self, attachment_id: int) -> dict | None:
+        async with self._conn.execute(
+            f"SELECT {self._ATTACHMENT_COLUMNS} FROM card_attachments WHERE id = ?",
+            (attachment_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return self._row_to_attachment_dict(row) if row else None
+
+    async def delete_attachment(self, card_id: int, attachment_id: int) -> bool:
+        """Deletes the row matching card_id AND attachment_id together (never
+        an attachment of another card). Returns whether a row was deleted."""
+        async with self._tx_lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM card_attachments WHERE card_id = ? AND id = ?",
+                (card_id, attachment_id),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
     # -- limpar concluídos ------------------------------------------------
 
     async def _selecionar_alvo_limpar(
@@ -1365,7 +1475,12 @@ class CardStore:
         )
         alvo = pais_ids + subcards_ids
         if not alvo:
-            return {"cards": 0, "imagens": 0, "filenames_apagados": []}
+            return {
+                "cards": 0,
+                "imagens": 0,
+                "filenames_apagados": [],
+                "attachment_card_ids": [],
+            }
 
         placeholders = ",".join("?" * len(alvo))
         async with self._conn.execute(
@@ -1374,6 +1489,11 @@ class CardStore:
         ) as cursor:
             image_rows = await cursor.fetchall()
         filenames_apagados = [(row[0], row[1]) for row in image_rows]
+        async with self._conn.execute(
+            f"SELECT DISTINCT card_id FROM card_attachments WHERE card_id IN ({placeholders})",
+            alvo,
+        ) as cursor:
+            attachment_card_ids = [row[0] for row in await cursor.fetchall()]
 
         # Under _tx_lock like every other explicit BEGIN on this connection:
         # without it, a commit from a concurrent create()/update() lands in the
@@ -1383,6 +1503,10 @@ class CardStore:
             try:
                 await self._conn.execute(
                     f"DELETE FROM card_images WHERE card_id IN ({placeholders})",
+                    alvo,
+                )
+                await self._conn.execute(
+                    f"DELETE FROM card_attachments WHERE card_id IN ({placeholders})",
                     alvo,
                 )
                 await self._conn.execute(
@@ -1399,4 +1523,5 @@ class CardStore:
             "cards": len(alvo),
             "imagens": len(filenames_apagados),
             "filenames_apagados": filenames_apagados,
+            "attachment_card_ids": attachment_card_ids,
         }

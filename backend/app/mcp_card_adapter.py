@@ -1,7 +1,8 @@
 """Adaptador MCP standalone: ponte entre as tools de card expostas ao `claude`
 CLI (via --mcp-config) — `criar_card`, `mover_card`, `editar_card`,
-`excluir_card`, `ver_card`, `listar_cards` — e o backend FastAPI do Escritório
-(endpoints POST /api/hooks/cards/{create,move,update,delete,get,list}).
+`excluir_card`, `ver_card`, `listar_cards`, `anexar_arquivo_card` — e o backend
+FastAPI do Escritório (endpoints POST
+/api/hooks/cards/{create,move,update,delete,get,list,attach}).
 
 Roda como PROCESSO FILHO do `claude` CLI (subprocess separado do backend
 FastAPI, spawnado pelo próprio CLI a partir do comando/args em
@@ -66,6 +67,9 @@ HOOK_GET_URL = os.environ.get(
 )
 HOOK_LIST_URL = os.environ.get(
     "ESCRITORIO_HOOK_LIST_URL", "http://localhost:8000/api/hooks/cards/list"
+)
+HOOK_ATTACH_URL = os.environ.get(
+    "ESCRITORIO_HOOK_ATTACH_URL", "http://localhost:8000/api/hooks/cards/attach"
 )
 
 # Contexto SSL que não valida certificado — seguro aqui porque a conexão é
@@ -256,6 +260,32 @@ TOOL_LISTAR_CARDS = {
     },
 }
 
+TOOL_ANEXAR_ARQUIVO_CARD = {
+    "name": "anexar_arquivo_card",
+    "description": (
+        "Anexa um arquivo do projeto atual a um card do board (qualquer tipo; "
+        ".md, .pdf e .html abrem direto no visualizador do card, os demais "
+        "ficam para download). O arquivo é COPIADO: alterações posteriores no "
+        "projeto não mudam o anexo — para atualizar, anexe de novo. Limites: "
+        "10 anexos por card e 25 MB por arquivo. Só para cards do mesmo "
+        "cliente da conversa atual. Use ver_card para ver o que já está anexado."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "card_id": {"type": "integer"},
+            "caminho": {
+                "type": "string",
+                "description": (
+                    "Caminho do arquivo, relativo à raiz do projeto atual (ex.: "
+                    "docs/plano.md) ou absoluto dentro dele."
+                ),
+            },
+        },
+        "required": ["card_id", "caminho"],
+    },
+}
+
 TOOLS = [
     TOOL_CRIAR_CARD,
     TOOL_MOVER_CARD,
@@ -263,6 +293,7 @@ TOOLS = [
     TOOL_EXCLUIR_CARD,
     TOOL_VER_CARD,
     TOOL_LISTAR_CARDS,
+    TOOL_ANEXAR_ARQUIVO_CARD,
 ]
 
 _TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
@@ -540,6 +571,23 @@ def _handle_listar_cards(arguments: dict) -> str:
     return _format_result(result, success_text)
 
 
+def _handle_anexar_arquivo_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+        "caminho": arguments.get("caminho"),
+    }
+    result = _post_json(HOOK_ATTACH_URL, body)
+    attachment = result.get("attachment") if isinstance(result, dict) else None
+    if attachment:
+        success_text = "Arquivo {0} anexado ao card {1} (anexo id {2}).".format(
+            attachment.get("filename"), attachment.get("card_id"), attachment.get("id")
+        )
+    else:
+        success_text = "Arquivo anexado ao card."
+    return _format_result(result, success_text)
+
+
 def _handle_tools_call(request: dict) -> dict:
     params = request.get("params") or {}
     tool_name = params.get("name")
@@ -564,6 +612,8 @@ def _handle_tools_call(request: dict) -> dict:
         text = _handle_ver_card(arguments)
     elif tool_name == TOOL_LISTAR_CARDS["name"]:
         text = _handle_listar_cards(arguments)
+    elif tool_name == TOOL_ANEXAR_ARQUIVO_CARD["name"]:
+        text = _handle_anexar_arquivo_card(arguments)
     else:
         text = "Tool desconhecida: {0}".format(tool_name)
 

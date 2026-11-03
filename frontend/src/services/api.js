@@ -280,6 +280,31 @@ export const api = {
     return r.json()
   },
 
+  async uploadCardAttachment(cardId, file) {
+    // multipart/form-data: same as uploadCardImage, the browser sets the boundary.
+    const formData = new FormData()
+    formData.append('file', file)
+    const r = await fetch(`${BASE}/cards/${cardId}/attachments`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!r.ok) {
+      let detail = null
+      try {
+        const body = await r.json()
+        detail = typeof body?.detail === 'string' ? body.detail : null
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail || 'Falha ao enviar anexo')
+    }
+    return r.json()
+  },
+
+  async deleteCardAttachment(cardId, attachmentId) {
+    const r = await fetch(`${BASE}/cards/${cardId}/attachments/${attachmentId}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error('Falha ao remover anexo')
+    return r.json()
+  },
+
   async previewClearFinished(projetoId) {
     const r = await fetch(`${BASE}/cards/limpar-concluidos/preview?projeto_id=${encodeURIComponent(projetoId)}`)
     if (!r.ok) throw new Error('Falha ao buscar preview de limpeza')
