@@ -820,12 +820,14 @@ describe('BoardV2 - clear finished cards', () => {
     expect(button.title).toBe('Selecione um cliente ou projeto para limpar concluídos');
   });
 
-  it('still renders the button for a fixed client WITHOUT subprojects, where the filter bar renders nothing at all', () => {
+  it('still renders the button for a fixed client WITHOUT subprojects, where the bar has no client/project select', () => {
     mockCardsWithClear();
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);
 
-    // The shared bar is genuinely absent here — that is the whole point.
-    expect(screen.queryByTestId('cliente-projeto-filter-bar')).toBeNull();
+    // The bar itself now always renders (it hosts the prioridade/tipo/prazo/
+    // sort controls), but without any client/project select.
+    expect(screen.queryByLabelText('Filtrar por cliente')).toBeNull();
+    expect(screen.queryByLabelText('Filtrar por projeto')).toBeNull();
     expect(screen.getByText('Limpar concluídos').disabled).toBe(false);
   });
 
@@ -2245,5 +2247,66 @@ describe('BoardV2 — barra de selects partindo do projeto da sidebar (Fase N)',
     render(<BoardV2 projects={clienteWithSubsProjects} selectedClienteId={null} selectedProjetoId={null} />);
     expect(screen.getByLabelText('Filtrar por cliente')).toBeTruthy();
     expect(screen.getByLabelText('Filtrar por projeto')).toBeTruthy();
+  });
+});
+
+
+describe('BoardV2 — prioridade, filters and sort', () => {
+  beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
+
+  function mockPriorityCards() {
+    mockUseCards.mockReturnValue({
+      cards: [
+        fakeCard({ id: 1, titulo: 'Baixa', prioridade: 'baixa' }),
+        fakeCard({ id: 2, titulo: 'Sem', prioridade: null }),
+        fakeCard({ id: 3, titulo: 'Muito alta', prioridade: 'muito_alta' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    });
+  }
+
+  const columnCardIds = () => [...screen.getByTestId('board-v2-col-body-a_fazer')
+    .querySelectorAll('[data-testid^="board-v2-card-"]')]
+    .map((el) => el.getAttribute('data-testid').replace('board-v2-card-', ''))
+    .filter((id) => /^\d+$/.test(id));
+
+  it('shows the priority icon on the card face', () => {
+    mockPriorityCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    const card = screen.getByTestId('board-v2-card-3');
+    expect(within(card).getByRole('img', { name: 'Prioridade: Muito alta' })).toBeTruthy();
+    expect(within(screen.getByTestId('board-v2-card-2')).queryByRole('img')).toBeNull();
+  });
+
+  it('filters the board by prioridade', () => {
+    mockPriorityCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    fireEvent.change(screen.getByLabelText('Filtrar por prioridade'), { target: { value: 'baixa' } });
+    expect(columnCardIds()).toEqual(['1']);
+    fireEvent.click(screen.getByText('Limpar filtros'));
+    expect(columnCardIds()).toEqual(['1', '2', '3']);
+  });
+
+  it('sorts by prioridade and disables card drag while sorted', () => {
+    mockPriorityCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).toContain('arraste');
+
+    fireEvent.change(screen.getByLabelText('Ordenar cards'), { target: { value: 'prioridade' } });
+
+    expect(columnCardIds()).toEqual(['3', '1', '2']);
+    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).not.toContain('arraste');
+    expect(screen.getByTestId('board-view-sort-hint')).toBeTruthy();
+  });
+
+  it('remembers the last view across mounts', () => {
+    mockPriorityCards();
+    const { unmount } = render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    fireEvent.change(screen.getByLabelText('Ordenar cards'), { target: { value: 'prioridade' } });
+    unmount();
+
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    expect(screen.getByLabelText('Ordenar cards').value).toBe('prioridade');
   });
 });

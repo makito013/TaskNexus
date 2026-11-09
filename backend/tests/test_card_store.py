@@ -1012,6 +1012,7 @@ _EXPECTED_CARD_COLUMNS_IN_ORDER = [
     "id", "titulo", "projeto_id", "parent_id", "status", "origem",
     "ultima_atualizacao_por", "descricao", "session_key", "criado_em",
     "atualizado_em", "deleted_at", "tipo", "prazo", "board_position",
+    "prioridade",
 ]
 
 
@@ -2653,3 +2654,100 @@ async def test_move_does_not_double_write_through_the_update_path(store):
     assert await _column_order(store, "em_andamento") == [mover, first, second]
     # Below the first card, not above the last one.
     assert moved["board_position"] < (await store.get(first))["board_position"]
+
+
+# -- update: moving a card to another client/project ------------------------
+
+
+async def _make_reassign_card(store, **overrides):
+    fields = {
+        "titulo": "Card",
+        "projeto_id": "cliente-a/proj-1",
+        "status": "a_fazer",
+        "origem": "bruno",
+        "ultima_atualizacao_por": "bruno",
+        **overrides,
+    }
+    return await store.create(**fields)
+
+
+@pytest.mark.asyncio
+async def test_update_moves_a_top_level_card_to_another_client_project(store):
+    card_id = await _make_reassign_card(store)
+
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", projeto_id="cliente-b/proj-2"
+    )
+
+    assert updated["projeto_id"] == "cliente-b/proj-2"
+    assert await store.list_top_level(["cliente-a/proj-1"]) == []
+    moved = await store.list_top_level(["cliente-b/proj-2"])
+    assert [c["id"] for c in moved] == [card_id]
+
+
+@pytest.mark.asyncio
+async def test_update_moving_a_card_carries_its_subcards_along(store):
+    card_id = await _make_reassign_card(store)
+    sub_id = await _make_reassign_card(store, titulo="Sub", projeto_id="", parent_id=card_id)
+
+    await store.update(card_id, ultima_atualizacao_por="bruno", projeto_id="cliente-b")
+
+    sub = await store.get(sub_id)
+    assert sub["projeto_id"] == "cliente-b"
+    [parent] = await store.list_by_cliente("cliente-b")
+    assert [s["id"] for s in parent["subcards"]] == [sub_id]
+
+
+@pytest.mark.asyncio
+async def test_update_refuses_to_move_a_subcard_on_its_own(store):
+    card_id = await _make_reassign_card(store)
+    sub_id = await _make_reassign_card(store, titulo="Sub", projeto_id="", parent_id=card_id)
+
+    with pytest.raises(ValueError):
+        await store.update(sub_id, ultima_atualizacao_por="bruno", projeto_id="cliente-b")
+
+    assert (await store.get(sub_id))["projeto_id"] == "cliente-a/proj-1"
+
+
+@pytest.mark.asyncio
+async def test_update_refuses_a_blank_projeto_id(store):
+    card_id = await _make_reassign_card(store)
+
+    with pytest.raises(ValueError):
+        await store.update(card_id, ultima_atualizacao_por="bruno", projeto_id="   ")
+
+    assert (await store.get(card_id))["projeto_id"] == "cliente-a/proj-1"
+
+
+@pytest.mark.asyncio
+async def test_update_with_the_same_projeto_id_keeps_the_card_in_place(store):
+    card_id = await _make_reassign_card(store)
+    before = await store.get(card_id)
+
+    updated = await store.update(
+        card_id, ultima_atualizacao_por="bruno", projeto_id="cliente-a/proj-1"
+    )
+
+    assert updated["projeto_id"] == "cliente-a/proj-1"
+    assert updated["board_position"] == before["board_position"]
+
+
+@pytest.mark.asyncio
+async def test_prioridade_column_is_added_to_a_pre_existing_database(tmp_path):
+    import aiosqlite
+
+    db = str(tmp_path / "old.db")
+    s = CardStore(db_path=db)
+    await s.initialize()
+    await s.close()
+    async with aiosqlite.connect(db) as conn:
+        await conn.execute("ALTER TABLE cards DROP COLUMN prioridade")
+        await conn.commit()
+
+    s = CardStore(db_path=db)
+    await s.initialize()
+    try:
+        card_id = await s.create(titulo="X", projeto_id="p", prioridade="media")
+        assert (await s.get(card_id))["prioridade"] == "media"
+    finally:
+        await s.close()

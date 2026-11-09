@@ -947,3 +947,58 @@ def test_an_unknown_column_is_reported_consistently_across_card_endpoints(client
         f"/api/cards/{parent['id']}/move",
         json={"status": 12345, "after_id": "nao-e-um-inteiro"},
     ).status_code == 422
+
+
+# -- PATCH: moving a card to another client/project --------------------------
+
+
+def test_patch_card_moves_it_to_another_client(client):
+    created = _create_card(client, projeto_id="cliente-a/proj-1")
+    r = client.patch(f"/api/cards/{created['id']}", json={"projeto_id": "cliente-b"})
+    assert r.status_code == 200, r.text
+    assert r.json()["projeto_id"] == "cliente-b"
+
+    listed = client.get("/api/cards", params={"projeto_id": "cliente-b"}).json()
+    assert [c["id"] for c in listed] == [created["id"]]
+
+
+def test_patch_subcard_projeto_id_is_400(client):
+    parent = _create_card(client, projeto_id="cliente-a")
+    sub = client.post(f"/api/cards/{parent['id']}/subcards", json={"titulo": "Sub"}).json()
+    r = client.patch(f"/api/cards/{sub['id']}", json={"projeto_id": "cliente-b"})
+    assert r.status_code == 400
+
+
+def test_patch_card_blank_projeto_id_is_400(client):
+    created = _create_card(client)
+    r = client.patch(f"/api/cards/{created['id']}", json={"projeto_id": ""})
+    assert r.status_code == 400
+
+
+# -- prioridade ----------------------------------------------------------------
+
+
+def test_card_prioridade_create_patch_and_clear(client):
+    created = _create_card(client, prioridade="muito_alta")
+    assert created["prioridade"] == "muito_alta"
+
+    r = client.patch(f"/api/cards/{created['id']}", json={"prioridade": "baixa"})
+    assert r.status_code == 200
+    assert r.json()["prioridade"] == "baixa"
+
+    r = client.patch(f"/api/cards/{created['id']}", json={"prioridade": ""})
+    assert r.json()["prioridade"] is None
+
+
+def test_card_without_prioridade_lists_it_as_null(client):
+    created = _create_card(client)
+    listed = client.get("/api/cards").json()
+    assert next(c for c in listed if c["id"] == created["id"])["prioridade"] is None
+
+
+def test_card_invalid_prioridade_is_422(client):
+    r = client.post("/api/cards", json={"titulo": "X", "projeto_id": "p", "prioridade": "urgente"})
+    assert r.status_code == 422
+    created = _create_card(client)
+    r = client.patch(f"/api/cards/{created['id']}", json={"prioridade": "urgente"})
+    assert r.status_code == 422

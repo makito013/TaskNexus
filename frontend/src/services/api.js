@@ -151,7 +151,7 @@ export const api = {
     return r.json()
   },
 
-  async createCard({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo }) {
+  async createCard({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo, prioridade }) {
     // Card cliente-only (feature Cliente/Projeto): o payload chega sem
     // `projeto_id`, só `cliente_id` — `JSON.stringify` descarta chaves
     // `undefined` sozinho, então não precisa de lógica condicional aqui;
@@ -166,7 +166,7 @@ export const api = {
     const r = await fetch(`${BASE}/cards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo }),
+      body: JSON.stringify({ titulo, projeto_id, cliente_id, status, descricao, tipo, prazo, prioridade }),
     })
     if (!r.ok) throw new Error('Falha ao criar card')
     return r.json()
@@ -192,11 +192,11 @@ export const api = {
   // an untouched field is never sent, so the backend leaves it alone.
   // `tipo: ""` / `prazo: ""` are the deliberate exception — the "clear this
   // field" sentinel that CardStore.update turns into NULL.
-  async updateCard(cardId, { titulo, descricao, status, tipo, prazo }) {
+  async updateCard(cardId, { titulo, descricao, status, tipo, prazo, prioridade, projeto_id }) {
     const r = await fetch(`${BASE}/cards/${cardId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, descricao, status, tipo, prazo }),
+      body: JSON.stringify({ titulo, descricao, status, tipo, prazo, prioridade, projeto_id }),
     })
     if (!r.ok) throw new Error('Falha ao atualizar card')
     return r.json()

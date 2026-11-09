@@ -17,6 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 CardTipo = Literal["bug", "hotfix", "historia"]
 CARD_TIPOS = get_args(CardTipo)
 
+# Card priority, lowest to highest. PT-BR values for the same reason as
+# CardTipo: they are the persisted contract shared with the agents' MCP tools.
+CardPrioridade = Literal["muito_baixa", "baixa", "media", "alta", "muito_alta"]
+CARD_PRIORIDADES = get_args(CardPrioridade)
+
 
 class Agent(BaseModel):
     """An agent that can be deployed in a project."""
@@ -211,6 +216,7 @@ class Card(BaseModel):
     # REQUEST models (CardCreateRequest/CardUpdateRequest).
     tipo: str | None = None
     prazo: str | None = None
+    prioridade: str | None = None
     # Manual ordering inside a board column. READ-ONLY in this contract: it is
     # never accepted on CardCreateRequest/CardUpdateRequest — the backend
     # assigns it (end of the destination column) and, from Phase 3 on, the
@@ -249,6 +255,7 @@ class CardCreateRequest(BaseModel):
     descricao: str | None = None
     tipo: CardTipo | None = None
     prazo: str | None = None
+    prioridade: CardPrioridade | None = None
 
 
 class SubcardCreateRequest(BaseModel):
@@ -259,6 +266,7 @@ class SubcardCreateRequest(BaseModel):
     status: str = "a_fazer"
     descricao: str | None = None
     tipo: CardTipo | None = None
+    prioridade: CardPrioridade | None = None
 
 
 class CardUpdateRequest(BaseModel):
@@ -273,6 +281,15 @@ class CardUpdateRequest(BaseModel):
     # through the MCP adapter) is acceptable and pre-existing behavior.
     tipo: Literal["bug", "hotfix", "historia", ""] | None = None
     prazo: str | None = None
+    # "" clears it, same sentinel as tipo/prazo.
+    prioridade: Literal[
+        "muito_baixa", "baixa", "media", "alta", "muito_alta", ""
+    ] | None = None
+    # Reassigns a TOP-LEVEL card to another client/project (a client-only
+    # card sends the client id itself). Subcards follow the parent; sending
+    # it for a subcard is a 400. UI path only: the agent hook
+    # (HookCardUpdateRequest) deliberately does not expose it.
+    projeto_id: str | None = None
 
 
 class CardMoveRequest(BaseModel):
@@ -307,6 +324,8 @@ class HookCardCreateRequest(BaseModel):
     # error" for the agent (mcp_card_adapter._post_json swallows the 422).
     # Validation lives in the handler, returning {"success": False, "error": ...}.
     tipo: str | None = None
+    # Same no-Literal rule as `tipo`; validated in the handler.
+    prioridade: str | None = None
     parent_id: int | None = None
     # Opcional: sub-projeto alvo do mesmo cliente (validado no backend via
     # resolve_projeto_alvo). Omitido -> projeto da conversa atual. Ignorado
@@ -336,6 +355,7 @@ class HookCardUpdateRequest(BaseModel):
     # No Literal on purpose (AD-2), same reason as HookCardCreateRequest.
     # "" clears the field; validated by hand in the handler.
     tipo: str | None = None
+    prioridade: str | None = None
 
 
 class HookCardDeleteRequest(BaseModel):

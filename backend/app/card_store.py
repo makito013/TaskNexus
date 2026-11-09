@@ -136,7 +136,8 @@ class CardStore:
                 deleted_at REAL,
                 tipo TEXT,
                 prazo TEXT,
-                board_position REAL
+                board_position REAL,
+                prioridade TEXT
             )
             """
         )
@@ -161,6 +162,12 @@ class CardStore:
         if "board_position" not in card_columns:
             await self._conn.execute(
                 "ALTER TABLE cards ADD COLUMN board_position REAL"
+            )
+        # `prioridade` (muito_baixa..muito_alta, see models.CARD_PRIORIDADES):
+        # same nullable, no-backfill pattern as `tipo`/`prazo`.
+        if "prioridade" not in card_columns:
+            await self._conn.execute(
+                "ALTER TABLE cards ADD COLUMN prioridade TEXT"
             )
         await self._conn.execute(
             """
@@ -319,12 +326,13 @@ class CardStore:
             "tipo": row[12],
             "prazo": row[13],
             "board_position": row[14],
+            "prioridade": row[15],
         }
 
     _CARD_COLUMNS = (
         "id, titulo, projeto_id, parent_id, status, origem, "
         "ultima_atualizacao_por, descricao, session_key, criado_em, "
-        "atualizado_em, deleted_at, tipo, prazo, board_position"
+        "atualizado_em, deleted_at, tipo, prazo, board_position, prioridade"
     )
 
     # Scalar subquery computing "one past the last card of this column".
@@ -421,6 +429,7 @@ class CardStore:
         cliente_id: str | None = None,
         tipo: str | None = None,
         prazo: str | None = None,
+        prioridade: str | None = None,
     ) -> int:
         """Cria um card de topo (parent_id=None) ou um subcard.
 
@@ -468,6 +477,7 @@ class CardStore:
         # `WHERE tipo IS NULL` would get it wrong.
         tipo = tipo or None
         prazo = prazo or None
+        prioridade = prioridade or None
 
         now = time.time()
         # A top-level card is born at the END of its destination column
@@ -486,8 +496,9 @@ class CardStore:
                 INSERT INTO cards (
                     titulo, projeto_id, parent_id, status, origem,
                     ultima_atualizacao_por, descricao, session_key,
-                    criado_em, atualizado_em, tipo, prazo, board_position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {position_sql})
+                    criado_em, atualizado_em, tipo, prazo, prioridade,
+                    board_position
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {position_sql})
                 """,
                 (
                     titulo,
@@ -502,6 +513,7 @@ class CardStore:
                     now,
                     tipo,
                     prazo,
+                    prioridade,
                     *position_params,
                 ),
             )
@@ -621,7 +633,8 @@ class CardStore:
         self, card_id: int, *, ultima_atualizacao_por: str, **fields
     ) -> dict | None:
         """PATCH genérico — serve card de topo e subcard indistintamente.
-        Aceita titulo/descricao/status/tipo/prazo como chaves de `fields`; só
+        Aceita titulo/descricao/status/tipo/prazo/projeto_id como chaves de
+        `fields` (projeto_id: ver o bloco de reatribuição abaixo); só
         as chaves presentes E não-None são aplicadas (chaves ausentes ou None
         são tratadas como "não veio no PATCH", não como "limpar o campo").
         Exception: for `tipo` and `prazo`, the empty string "" IS the "clear"
@@ -635,7 +648,27 @@ class CardStore:
         if current is None or current["deleted_at"] is not None:
             return None
 
-        allowed_columns = ("titulo", "descricao", "status", "tipo", "prazo")
+        # Reassigning the card to another client/project. Only a top-level
+        # card can move: a subcard's projeto_id is always derived from its
+        # parent (see `create`), so moving one on its own would split it from
+        # the parent's board. The parent carries its subcards along instead,
+        # inside the same transaction below.
+        new_projeto_id = fields.get("projeto_id")
+        projeto_changing = False
+        if new_projeto_id is not None:
+            new_projeto_id = new_projeto_id.strip()
+            if not new_projeto_id:
+                raise ValueError("projeto_id não pode ser vazio")
+            if new_projeto_id != current["projeto_id"]:
+                if current["parent_id"] is not None:
+                    raise ValueError(
+                        "Subtarefas seguem o projeto do card pai; mova o card pai."
+                    )
+                projeto_changing = True
+
+        allowed_columns = (
+            "titulo", "descricao", "status", "tipo", "prazo", "prioridade"
+        )
         set_clauses = []
         values: list = []
         for column in allowed_columns:
@@ -646,10 +679,14 @@ class CardStore:
             value = fields.get(column)
             if value is None:
                 continue
-            if column in ("tipo", "prazo") and value == "":
+            if column in ("tipo", "prazo", "prioridade") and value == "":
                 value = None
             set_clauses.append(f"{column} = ?")
             values.append(value)
+
+        if projeto_changing:
+            set_clauses.append("projeto_id = ?")
+            values.append(new_projeto_id)
 
         # Moving a top-level card to ANOTHER column re-appends it at the end of
         # the destination — the only ordering a plain status change can produce
@@ -676,6 +713,13 @@ class CardStore:
                 f"UPDATE cards SET {', '.join(set_clauses)} WHERE id = ?",
                 values,
             )
+            if projeto_changing:
+                # Subcards follow the parent. Includes soft-deleted ones so a
+                # later restore cannot resurrect them under the old project.
+                await self._conn.execute(
+                    "UPDATE cards SET projeto_id = ? WHERE parent_id = ?",
+                    (new_projeto_id, card_id),
+                )
             await self._conn.commit()
         return await self.get(card_id)
 

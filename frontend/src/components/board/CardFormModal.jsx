@@ -52,7 +52,14 @@
 // mount it conditionally (BoardV2 does) or give it a `key` that changes per
 // opening.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CARD_TIPO_COLORS, CARD_TIPO_LABELS, CARD_TIPOS, formatDataCriacao } from '../../utils/cardMeta.js';
+import {
+  CARD_PRIORIDADE_LABELS,
+  CARD_PRIORIDADES,
+  CARD_TIPO_COLORS,
+  CARD_TIPO_LABELS,
+  CARD_TIPOS,
+  formatDataCriacao,
+} from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
 import { renderMarkdown } from '../../utils/markdown.js';
 import { resolveProjectLabel } from '../../utils/projects.js';
@@ -60,6 +67,7 @@ import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { CardIdBadge } from './CardIdBadge.jsx';
 import { ImageAttachments } from './ImageAttachments.jsx';
 import { CardAttachments } from './CardAttachments.jsx';
+import { PriorityIcon } from './PriorityIcon.jsx';
 
 const NARROW_QUERY = '(max-width: 720px)';
 
@@ -201,6 +209,11 @@ const styles = {
     fontSize: '14px',
     lineHeight: 1.6,
   },
+  prioridadeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
   labelRow: {
     display: 'flex',
     alignItems: 'center',
@@ -292,6 +305,15 @@ function resolveCreateDefaults(clientesOptions, defaultClienteId, defaultProjeto
   return { clienteId, projetoId };
 }
 
+// Which client/project the `edit` mode opens on: the card's own. A
+// client-only card stores the client id itself as `projeto_id`, which maps to
+// "no specific project" ('') in the second select.
+function resolveEditDefaults(card) {
+  const projetoId = card?.projeto_id || '';
+  const clienteId = projetoId ? clienteIdFromProjetoId(projetoId) : '';
+  return { clienteId, projetoId: projetoId && projetoId !== clienteId ? projetoId : '' };
+}
+
 export function CardFormModal({
   open,
   mode,
@@ -332,17 +354,33 @@ export function CardFormModal({
   // Candidate "clients" for the first select: any Project whose id has no "/"
   // (a client-as-project and a loose root project both count as their own
   // client — the same rule the filter cascade uses).
-  const clientesOptions = useMemo(
-    () => (projetos || []).filter((p) => !p.id.includes('/')),
-    [projetos]
-  );
+  //
+  // In `edit`, the card's current client is always kept as an option even if
+  // it is missing from `projetos` (unregistered or removed client): without
+  // it the select would silently show another client and a stray Salvar
+  // would move the card.
+  const editDefaults = isEdit ? resolveEditDefaults(card) : null;
+  const clientesOptions = useMemo(() => {
+    const roots = (projetos || []).filter((p) => !p.id.includes('/'));
+    const ownClienteId = editDefaults?.clienteId;
+    if (ownClienteId && !roots.some((p) => p.id === ownClienteId)) {
+      return [...roots, { id: ownClienteId, nome: ownClienteId, sub_projetos: [] }];
+    }
+    return roots;
+  }, [projetos, editDefaults?.clienteId]);
+
+  // A top-level card can be moved to another client/project; a subcard
+  // cannot (its project is always the parent's — the backend refuses it).
+  const canChooseProjeto = !isEdit || !card?.parent_id;
 
   const [selectedClienteId, setSelectedClienteId] = useState(
-    () => resolveCreateDefaults(clientesOptions, defaultClienteId, defaultProjetoId).clienteId
+    () => editDefaults?.clienteId
+      ?? resolveCreateDefaults(clientesOptions, defaultClienteId, defaultProjetoId).clienteId
   );
   // '' = no specific project chosen (a client-only card).
   const [selectedProjetoId, setSelectedProjetoId] = useState(
-    () => resolveCreateDefaults(clientesOptions, defaultClienteId, defaultProjetoId).projetoId
+    () => editDefaults?.projetoId
+      ?? resolveCreateDefaults(clientesOptions, defaultClienteId, defaultProjetoId).projetoId
   );
 
   const [titulo, setTitulo] = useState(() => card?.titulo || '');
@@ -355,6 +393,7 @@ export function CardFormModal({
   const [descricao, setDescricao] = useState(() => card?.descricao || '');
   const [tipo, setTipo] = useState(() => card?.tipo || '');
   const [prazo, setPrazo] = useState(() => card?.prazo || '');
+  const [prioridade, setPrioridade] = useState(() => card?.prioridade || '');
   // Opens already rendered when editing a card that already has a
   // description — reopening an existing card should not throw raw markdown at
   // the reader. A new card, or one with no description yet, opens raw.
@@ -390,11 +429,26 @@ export function CardFormModal({
   if (!open) return null;
 
   const selectedCliente = clientesOptions.find((p) => p.id === selectedClienteId);
-  const clienteHasSubprojects = !!selectedCliente && (selectedCliente.sub_projetos || []).length > 0;
+  // The edited card's own project stays listed under its client even when it
+  // is not a direct child in `sub_projetos` (deeper path, unregistered
+  // project), for the same reason the client is kept above.
+  const projetoOptions = (() => {
+    const subs = selectedCliente ? [...(selectedCliente.sub_projetos || [])] : [];
+    const own = editDefaults?.projetoId;
+    if (own && editDefaults.clienteId === selectedClienteId && !subs.includes(own)) subs.push(own);
+    return subs;
+  })();
+  const clienteHasSubprojects = projetoOptions.length > 0;
 
   const handleSelectCliente = (novoClienteId) => {
     setSelectedClienteId(novoClienteId);
     setSelectedProjetoId(''); // changing client always resets the 2nd select
+    markDirty('projeto');
+  };
+
+  const handleSelectProjeto = (novoProjetoId) => {
+    setSelectedProjetoId(novoProjetoId);
+    markDirty('projeto');
   };
 
   // Client/project of the card being edited: the client name feeds the header
@@ -426,6 +480,7 @@ export function CardFormModal({
       descricao,
       tipo: tipo || null,
       prazo: prazo || null,
+      prioridade: prioridade || null,
     };
     if (selectedProjetoId) payload.projeto_id = selectedProjetoId;
     else payload.cliente_id = selectedClienteId;
@@ -443,6 +498,12 @@ export function CardFormModal({
     if (dirtyFields.has('descricao')) payload.descricao = descricao;
     if (dirtyFields.has('tipo')) payload.tipo = tipo;
     if (dirtyFields.has('prazo')) payload.prazo = prazo;
+    if (dirtyFields.has('prioridade')) payload.prioridade = prioridade;
+    if (dirtyFields.has('projeto')) {
+      // A client-only card is stored with the client id as its projeto_id.
+      const target = selectedProjetoId || selectedClienteId;
+      if (target && target !== card.projeto_id) payload.projeto_id = target;
+    }
     return payload;
   };
 
@@ -454,10 +515,15 @@ export function CardFormModal({
     // `ultima_atualizacao_por`, stealing the attribution from whoever last
     // edited the card. `create` has no such gate — its payload is always
     // complete.
-    if (isEdit && dirtyFields.size === 0) { onClose(); return; }
+    //
+    // Checked on the built payload, not on dirtyFields alone: picking another
+    // client and then the original one back marks `projeto` dirty but leaves
+    // nothing to send.
+    const payload = isEdit ? buildEditPayload(trimmedTitulo) : buildCreatePayload(trimmedTitulo);
+    if (isEdit && Object.keys(payload).length === 1) { onClose(); return; }
     setSaving(true);
     try {
-      await onSubmit(isEdit ? buildEditPayload(trimmedTitulo) : buildCreatePayload(trimmedTitulo));
+      await onSubmit(payload);
       onClose();
     } catch {
       alert('Falha ao salvar card. Tente novamente.');
@@ -590,11 +656,11 @@ export function CardFormModal({
             </div>
 
             <div style={styles.rail(isNarrow)}>
-              {isEdit ? (
+              {!canChooseProjeto ? (
                 <>
-                  {/* No "Cliente" row here: the client name shows once, beside
-                      the id in the header (via CardIdBadge). The rail keeps
-                      only what the header does not carry. */}
+                  {/* Subcard: the project follows the parent, so it is shown
+                      read-only. The client name shows beside the id in the
+                      header (via CardIdBadge). */}
                   <div style={styles.field}>
                     <span style={styles.label}>Projeto</span>
                     <span style={styles.readonlyValue}>{editProjetoNome || '—'}</span>
@@ -624,10 +690,10 @@ export function CardFormModal({
                           id="card-projeto"
                           style={styles.control(3)}
                           value={selectedProjetoId}
-                          onChange={(e) => setSelectedProjetoId(e.target.value)}
+                          onChange={(e) => handleSelectProjeto(e.target.value)}
                         >
                           <option value="">Nenhum (vincula direto ao cliente)</option>
-                          {(selectedCliente.sub_projetos || []).map((subId) => (
+                          {projetoOptions.map((subId) => (
                             <option key={subId} value={subId}>{resolveProjectLabel(subId, projetos)}</option>
                           ))}
                         </select>
@@ -658,6 +724,25 @@ export function CardFormModal({
                 {tipo && CARD_TIPO_COLORS[tipo] && (
                   <span style={styles.tipoChip(tipo)}>{CARD_TIPO_LABELS[tipo]}</span>
                 )}
+              </div>
+
+              <div style={styles.field}>
+                <label style={styles.label} htmlFor="card-prioridade">Prioridade</label>
+                <div style={styles.prioridadeRow}>
+                  <select
+                    id="card-prioridade"
+                    style={styles.control(3)}
+                    value={prioridade}
+                    onChange={(e) => { setPrioridade(e.target.value); markDirty('prioridade'); }}
+                  >
+                    <option value="">Sem prioridade</option>
+                    {/* Highest first: the order people scan for urgency. */}
+                    {[...CARD_PRIORIDADES].reverse().map((p) => (
+                      <option key={p} value={p}>{CARD_PRIORIDADE_LABELS[p]}</option>
+                    ))}
+                  </select>
+                  {prioridade && <PriorityIcon prioridade={prioridade} />}
+                </div>
               </div>
 
               <div style={styles.field}>

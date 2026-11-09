@@ -55,6 +55,7 @@ from app.session_provisioner import provision_session_id
 from app.quiet_hours import current_utc_offset_minutes, is_within_quiet_hours
 from app.models import (
     CARD_TIPOS,
+    CARD_PRIORIDADES,
     InitFrame,
     ResizeFrame,
     RenameFrame,
@@ -2188,6 +2189,7 @@ async def create_card(body: CardCreateRequest):
             descricao=body.descricao,
             tipo=body.tipo,
             prazo=body.prazo,
+            prioridade=body.prioridade,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2214,6 +2216,7 @@ async def create_subcard(card_id: int, body: SubcardCreateRequest):
             ultima_atualizacao_por="bruno",
             descricao=body.descricao,
             tipo=body.tipo,
+            prioridade=body.prioridade,
             parent_id=card_id,
         )
     except ValueError as e:
@@ -2227,11 +2230,14 @@ async def update_card(card_id: int, body: CardUpdateRequest):
     # None here means "status did not come in the PATCH" (same semantics as
     # CardStore.update), and _validate_card_status passes it through untouched.
     await _require_valid_card_status(body.status)
-    updated = await card_store.update(
-        card_id,
-        ultima_atualizacao_por="bruno",
-        **body.model_dump(exclude_none=True),
-    )
+    try:
+        updated = await card_store.update(
+            card_id,
+            ultima_atualizacao_por="bruno",
+            **body.model_dump(exclude_none=True),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Card not found: {card_id}")
     return Card(**updated)
@@ -2642,6 +2648,17 @@ def _validate_card_tipo(tipo: str | None) -> str | None:
     return None
 
 
+def _validate_card_prioridade(prioridade: str | None) -> str | None:
+    """Agent-path validation for `prioridade`, same contract as
+    _validate_card_tipo (None = absent, "" = clear, error string otherwise)."""
+    if prioridade is not None and prioridade != "" and prioridade not in CARD_PRIORIDADES:
+        return (
+            f"prioridade inválida: '{prioridade}'. Use "
+            + ", ".join(CARD_PRIORIDADES) + "."
+        )
+    return None
+
+
 @app.post("/api/hooks/cards/create")
 async def hook_cards_create(body: HookCardCreateRequest):
     session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
@@ -2649,7 +2666,7 @@ async def hook_cards_create(body: HookCardCreateRequest):
         return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
 
     # Cheap failure first: validate `tipo` before resolving project/parent.
-    tipo_erro = _validate_card_tipo(body.tipo)
+    tipo_erro = _validate_card_tipo(body.tipo) or _validate_card_prioridade(body.prioridade)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
 
@@ -2731,6 +2748,7 @@ async def hook_cards_create(body: HookCardCreateRequest):
             parent_id=body.parent_id,
             session_key=session_key,
             tipo=body.tipo,
+            prioridade=body.prioridade,
         )
     except ValueError as e:
         return {"success": False, "error": str(e)}
@@ -2792,7 +2810,7 @@ async def hook_cards_update(body: HookCardUpdateRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
-    tipo_erro = _validate_card_tipo(body.tipo)
+    tipo_erro = _validate_card_tipo(body.tipo) or _validate_card_prioridade(body.prioridade)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
 
@@ -2807,7 +2825,8 @@ async def hook_cards_update(body: HookCardUpdateRequest):
     # the MCP). exclude_none still lets the "" sentinel through (CardStore.update
     # turns it into NULL).
     campos = body.model_dump(
-        include={"titulo", "descricao", "status", "tipo"}, exclude_none=True
+        include={"titulo", "descricao", "status", "tipo", "prioridade"},
+        exclude_none=True
     )
     updated = await card_store.update(
         body.card_id,

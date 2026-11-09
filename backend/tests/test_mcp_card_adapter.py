@@ -227,7 +227,8 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             assert criar["inputSchema"]["required"] == ["titulo"]
             props = criar["inputSchema"]["properties"]
             assert set(props.keys()) == {
-                "titulo", "status", "descricao", "tipo", "parent_id", "projeto_id",
+                "titulo", "status", "descricao", "tipo", "prioridade",
+                "parent_id", "projeto_id",
             }
             # No `enum` on `status` any more (task #43 phase 1): the board's
             # columns are user-managed at runtime, so a static list in the tool
@@ -243,6 +244,8 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             # tipo (Phase 1): optional, string, enum bug/hotfix/historia.
             assert "tipo" not in criar["inputSchema"]["required"]
             assert props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
+            assert "prioridade" not in criar["inputSchema"]["required"]
+            assert props["prioridade"]["enum"] == ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
 
             mover = by_name["mover_card"]
             assert set(mover["inputSchema"]["required"]) == {"card_id", "novo_status"}
@@ -255,12 +258,13 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             assert editar["inputSchema"]["required"] == ["card_id"]
             editar_props = editar["inputSchema"]["properties"]
             assert set(editar_props.keys()) == {
-                "card_id", "titulo", "descricao", "status", "tipo",
+                "card_id", "titulo", "descricao", "status", "tipo", "prioridade",
             }
             assert editar_props["card_id"]["type"] == "integer"
             assert "enum" not in editar_props["status"]
             assert editar_props["status"]["type"] == "string"
             assert editar_props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
+            assert editar_props["prioridade"]["enum"] == ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
             # An empty `tipo` clears the field — this has to be stated in the description.
             assert "limpa o campo" in editar["description"]
 
@@ -1115,6 +1119,43 @@ def test_anexar_arquivo_card_without_caminho_is_rejected_before_posting():
             text = adapter.recv()["result"]["content"][0]["text"]
             assert "caminho" in text
             assert _CapturingHandler.received.empty()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_criar_and_editar_card_forward_prioridade_in_the_body():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/create": {"success": True, "card_id": 7},
+            "/api/hooks/cards/update": {"success": True, "card": {"id": 7}},
+        }
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 60, "method": "tools/call",
+                "params": {
+                    "name": "criar_card",
+                    "arguments": {"titulo": "X", "prioridade": "alta"},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["prioridade"] == "alta"
+
+            adapter.send({
+                "jsonrpc": "2.0", "id": 61, "method": "tools/call",
+                "params": {
+                    "name": "editar_card",
+                    "arguments": {"card_id": 7, "prioridade": ""},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["prioridade"] == ""
         finally:
             adapter.close()
     finally:

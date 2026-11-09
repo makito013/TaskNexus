@@ -283,6 +283,52 @@ describe('useCards — updateCard', () => {
   });
 });
 
+describe('useCards — updateCard moving a card to another project', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('merges the new projeto_id into the card and its subcards', async () => {
+    const parent = fakeCard({
+      id: 1,
+      projeto_id: 'cliente-a',
+      subcards: [fakeCard({ id: 2, parent_id: 1, projeto_id: 'cliente-a' })],
+      subcards_resumo: { total: 1, feitos: 0 },
+    });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([parent]) }));
+    const { result } = renderHook(() => useCards());
+    await waitFor(() => expect(result.current.cards).toEqual([parent]));
+
+    const patchResponse = fakeCard({ id: 1, projeto_id: 'cliente-b/proj', subcards: [] });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(patchResponse) }));
+
+    await act(async () => {
+      await result.current.updateCard(1, { projeto_id: 'cliente-b/proj' });
+    });
+
+    expect(result.current.cards[0].projeto_id).toBe('cliente-b/proj');
+    expect(result.current.cards[0].subcards[0].projeto_id).toBe('cliente-b/proj');
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/cards/1',
+      expect.objectContaining({ body: JSON.stringify({ projeto_id: 'cliente-b/proj' }) })
+    );
+  });
+
+  it('drops the card from a filtered board when it moves out of the filter', async () => {
+    const card = fakeCard({ id: 1, projeto_id: 'cliente-a' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([card]) }));
+    const { result } = renderHook(() => useCards(['cliente-a']));
+    await waitFor(() => expect(result.current.cards).toEqual([card]));
+
+    const patchResponse = fakeCard({ id: 1, projeto_id: 'cliente-b' });
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(patchResponse) }));
+
+    await act(async () => {
+      await result.current.updateCard(1, { projeto_id: 'cliente-b' });
+    });
+
+    expect(result.current.cards).toEqual([]);
+  });
+});
+
 describe('useCards — clearFinished', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 

@@ -1223,3 +1223,44 @@ def test_hook_cards_update_rejects_an_unknown_status_and_changes_nothing(client)
     assert card["status"] == "a_fazer"
     # The whole update is refused, not just the status half of it.
     assert card["titulo"] == "Card"
+
+
+# -- prioridade on the agent path --------------------------------------------
+
+
+def test_hook_cards_create_and_update_prioridade(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-0000000000a1")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "prioridade": "alta",
+    }).json()
+    assert created["success"] is True
+    card_id = created["card_id"]
+    assert _get_card(client, card_id)["prioridade"] == "alta"
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "prioridade": "muito_baixa",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["prioridade"] == "muito_baixa"
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "prioridade": "",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["prioridade"] is None
+
+
+def test_hook_cards_invalid_prioridade_is_rejected(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-0000000000a2")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "prioridade": "urgente",
+    })
+    assert r.json()["success"] is False
+    assert "prioridade inválida" in r.json()["error"]
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []

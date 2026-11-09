@@ -92,6 +92,19 @@ _CONNECTIVITY_ERROR_TEXT = (
 # never gets it). Defined up here because TOOL_CRIAR_CARD already references it.
 _TIPO_ENUM = ["bug", "hotfix", "historia"]
 
+# Manual copy of models.CARD_PRIORIDADES, same reasoning (and same "update
+# together" rule, including test_mcp_card_adapter.py) as _TIPO_ENUM above.
+_PRIORIDADE_ENUM = ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
+
+_PRIORIDADE_PROPERTY = {
+    "type": "string",
+    "enum": _PRIORIDADE_ENUM,
+    "description": (
+        "Prioridade do card, da menor para a maior: muito_baixa, baixa, "
+        "media, alta, muito_alta."
+    ),
+}
+
 TOOL_CRIAR_CARD = {
     "name": "criar_card",
     "description": (
@@ -129,6 +142,7 @@ TOOL_CRIAR_CARD = {
                     "fluxo do agente."
                 ),
             },
+            "prioridade": _PRIORIDADE_PROPERTY,
             "parent_id": {"type": "integer"},
             "projeto_id": {
                 "type": "string",
@@ -172,9 +186,9 @@ TOOL_MOVER_CARD = {
 TOOL_EDITAR_CARD = {
     "name": "editar_card",
     "description": (
-        "Edita o conteúdo de um card existente: título, descrição, status "
-        "e/ou tipo. Campos omitidos ficam inalterados; `tipo` com string "
-        "vazia limpa o campo. Use para corrigir ou completar o texto de um "
+        "Edita o conteúdo de um card existente: título, descrição, status, "
+        "tipo e/ou prioridade. Campos omitidos ficam inalterados; `tipo` ou "
+        "`prioridade` com string vazia limpa o campo. Use para corrigir ou completar o texto de um "
         "card já criado. Só é possível editar cards do mesmo cliente da "
         "conversa atual — cards de outro cliente não podem ser editados."
     ),
@@ -201,6 +215,7 @@ TOOL_EDITAR_CARD = {
                     "fluxo do agente."
                 ),
             },
+            "prioridade": _PRIORIDADE_PROPERTY,
         },
         "required": ["card_id"],
     },
@@ -478,6 +493,7 @@ def _handle_criar_card(arguments: dict) -> str:
         "status": arguments.get("status", "a_fazer"),
         "descricao": arguments.get("descricao"),
         "tipo": arguments.get("tipo"),
+        "prioridade": arguments.get("prioridade"),
         "parent_id": arguments.get("parent_id"),
         # Opcional (Tarefa 6): sub-projeto do mesmo cliente. Só entra no corpo
         # quando o agente informa — omitido -> backend usa o projeto da
@@ -512,6 +528,7 @@ def _handle_editar_card(arguments: dict) -> str:
         "descricao": arguments.get("descricao"),
         "status": arguments.get("status"),
         "tipo": arguments.get("tipo"),
+        "prioridade": arguments.get("prioridade"),
     }
     result = _post_json(HOOK_UPDATE_URL, body)
     return _format_result(result, "Card editado com sucesso.")

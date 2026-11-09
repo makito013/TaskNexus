@@ -141,6 +141,7 @@ import { BoardColumnMenu } from '../../components/board/BoardColumnMenu.jsx';
 import { BoardColumnRenameDialog } from '../../components/board/BoardColumnRenameDialog.jsx';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
+import { PriorityIcon } from '../../components/board/PriorityIcon.jsx';
 import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
 import { useColumns } from '../../hooks/useColumns.js';
@@ -151,7 +152,9 @@ import {
   isPrazoAtrasado,
 } from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
+import { applyBoardView, DEFAULT_BOARD_VIEW, isBoardViewSorted } from '../../utils/boardView.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { BoardViewControls } from './BoardViewControls.jsx';
 import { useViewer } from '../../features/viewer/ViewerContext.jsx';
 import { ViewerFullscreen } from '../../features/viewer/ViewerFullscreen.jsx';
 import { cardAttachmentItem, fileUrl } from '../../features/viewer/viewerApi.js';
@@ -718,6 +721,16 @@ const styles = {
     gap: '8px',
     minWidth: 0,
   },
+  // Right side of the meta row: priority glyph, then the tipo chip.
+  // `marginLeft: auto` keeps it right-aligned when it is the only child
+  // (the drag overlay has no id badge).
+  cardMetaRight: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginLeft: 'auto',
+    flexShrink: 0,
+  },
   tipoChip: (tipo) => ({
     padding: '2px 7px',
     borderRadius: '5px',
@@ -754,6 +767,24 @@ function resolveAvatarInitials(ultimaAtualizacaoPor) {
 // in AppV2). The filter bar starts from it and refines locally — see
 // useClienteProjetoFilter.js for the table of what the bar does per sidebar
 // state (Bruno: the bar stays, "principalmente quando estiver em Todos").
+const BOARD_VIEW_STORAGE_KEY = 'tasknexus.board.view';
+
+// Restores the last filter/sort, keeping only known keys so a stale or
+// hand-edited entry can never inject an unexpected shape.
+function loadBoardView() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOARD_VIEW_STORAGE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return { ...DEFAULT_BOARD_VIEW };
+    const view = { ...DEFAULT_BOARD_VIEW };
+    for (const key of Object.keys(DEFAULT_BOARD_VIEW)) {
+      if (typeof saved[key] === 'string') view[key] = saved[key];
+    }
+    return view;
+  } catch {
+    return { ...DEFAULT_BOARD_VIEW };
+  }
+}
+
 export function BoardV2({ projects = [], selectedClienteId = null, selectedProjetoId: sidebarProjetoId = null }) {
   // Cliente -> Projeto cascade (local state of this screen). `selectedProjectIds`
   // (plural) is the LISTING filter; `selectedProjetoId` (singular) is the
@@ -827,9 +858,24 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
   // filtra fora, de propósito, um card recém-criado via append otimista
   // (useCards.js) que não pertença ao cliente atual — o append otimista em
   // si não sabe filtrar por cliente.
-  const cards = effectiveClienteId != null
+  const clienteCards = effectiveClienteId != null
     ? fetchedCards.filter((c) => clienteIdFromProjetoId(c.projeto_id) === effectiveClienteId)
     : fetchedCards;
+
+  // Prioridade/tipo/prazo filters + sort (BoardViewControls). `cards` is what
+  // the board renders AND what drag anchors are computed from. A sorted view
+  // disables card drag (see SortableBoardCard), so anchors are only ever read
+  // from the manual order. Remembered per browser; storage may be unavailable.
+  const [boardView, setBoardView] = useState(loadBoardView);
+  const handleBoardViewChange = (next) => {
+    setBoardView(next);
+    try { localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+  const cards = useMemo(
+    () => applyBoardView(clienteCards, boardView, doneSlug),
+    [clienteCards, boardView, doneSlug]
+  );
+  const cardDragDisabled = isBoardViewSorted(boardView);
 
   // Status of the column whose "+ Adicionar card" was clicked (null = create
   // modal closed). Holds the STATUS, not a boolean: it is the modal's
@@ -856,7 +902,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
   // mudança na referência de `card` entre renders não reseta o que o Bruno
   // já estiver digitando.
   const [editingCardId, setEditingCardId] = useState(null);
-  const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
+  // Resolved before the prioridade/tipo/prazo filters: editing a card can move
+  // it out of the active filter, and the open modal must not vanish mid-edit.
+  const editingCard = editingCardId != null ? clienteCards.find((c) => c.id === editingCardId) : null;
 
   // Card attachments open in the same file viewer used by the chat and
   // Artefatos (markdown, PDF, sandboxed HTML…), full screen over the modal.
@@ -1296,7 +1344,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
           selectedProjetoId={selectedProjetoId}
           onSelectProjeto={setSelectedProjetoId}
           projects={projects}
-        />
+        >
+          <BoardViewControls view={boardView} onChange={handleBoardViewChange} />
+        </ClienteProjetoFilterBar>
         <div style={styles.headerActions}>
           <button
             type="button"
@@ -1427,7 +1477,12 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                     && dropHint.status === status
                     && dropHint.beforeId === card.id;
                   return (
-                    <SortableBoardCard key={card.id} cardId={card.id} titulo={card.titulo}>
+                    <SortableBoardCard
+                      key={card.id}
+                      cardId={card.id}
+                      titulo={card.titulo}
+                      disabled={cardDragDisabled}
+                    >
                     {({ dragProps }) => (
                     <>
                     {/* Drawn ABOVE the card the moved one will sit before —
@@ -1448,9 +1503,12 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                     >
                       <div style={styles.cardMetaRow}>
                         <CardIdBadge id={card.id} clienteNome={clienteNome} variant="card" />
-                        {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
-                          <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
-                        )}
+                        <span style={styles.cardMetaRight}>
+                          <PriorityIcon prioridade={card.prioridade} />
+                          {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
+                            <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
+                          )}
+                        </span>
                       </div>
                       <button
                         type="button"
@@ -1580,10 +1638,15 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
               className="v2-drag-lift"
               data-testid="board-v2-card-drag-overlay"
             >
-              {draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo] && (
+              {((draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo]) || draggingCard.prioridade) && (
                 <div style={styles.cardMetaRow}>
-                  <span style={styles.tipoChip(draggingCard.tipo)}>
-                    {CARD_TIPO_LABELS[draggingCard.tipo]}
+                  <span style={styles.cardMetaRight}>
+                    <PriorityIcon prioridade={draggingCard.prioridade} />
+                    {draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo] && (
+                      <span style={styles.tipoChip(draggingCard.tipo)}>
+                        {CARD_TIPO_LABELS[draggingCard.tipo]}
+                      </span>
+                    )}
                   </span>
                 </div>
               )}
