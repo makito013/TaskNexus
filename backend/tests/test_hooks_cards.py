@@ -1264,3 +1264,35 @@ def test_hook_cards_invalid_prioridade_is_rejected(client):
     assert r.json()["success"] is False
     assert "prioridade inválida" in r.json()["error"]
     assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+# -- card #213: a retried create returns the card it already made -------------
+
+def test_hook_cards_create_retry_with_same_title_returns_the_existing_card(client):
+    claude_sid = _register_session(client, "meu-projeto::agente-teste")
+    payload = {"claude_session_id": claude_sid, "titulo": "Bug do timeout"}
+
+    first = client.post("/api/hooks/cards/create", json=payload).json()
+    retry = client.post("/api/hooks/cards/create", json=payload).json()
+
+    assert first["success"] is True and first["deduplicated"] is False
+    assert retry == {"success": True, "card_id": first["card_id"], "deduplicated": True}
+    cards = client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json()
+    assert [c["titulo"] for c in cards].count("Bug do timeout") == 1
+
+
+def test_hook_cards_create_different_title_or_deleted_card_is_not_deduplicated(client):
+    claude_sid = _register_session(client, "meu-projeto::agente-teste")
+    first = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "A",
+    }).json()
+    other = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "B",
+    }).json()
+    assert other["deduplicated"] is False and other["card_id"] != first["card_id"]
+
+    client.delete(f"/api/cards/{first['card_id']}")
+    again = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "A",
+    }).json()
+    assert again["deduplicated"] is False and again["card_id"] != first["card_id"]

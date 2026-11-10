@@ -2764,7 +2764,10 @@ async def hook_cards_create(body: HookCardCreateRequest):
 
     origem = f"agente:{agent_id}"
     try:
-        card_id = await card_store.create(
+        # Deduplicated: a create whose response timed out in the MCP adapter
+        # may still have landed, and the agent's retry must get that card back
+        # instead of a twin (card #213).
+        card_id, deduplicated = await card_store.create_deduplicated(
             titulo=body.titulo,
             projeto_id=projeto_id,
             status=body.status,
@@ -2778,7 +2781,7 @@ async def hook_cards_create(body: HookCardCreateRequest):
         )
     except ValueError as e:
         return {"success": False, "error": str(e)}
-    return {"success": True, "card_id": card_id}
+    return {"success": True, "card_id": card_id, "deduplicated": deduplicated}
 
 
 @app.post("/api/hooks/cards/move")

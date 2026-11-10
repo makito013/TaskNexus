@@ -1246,3 +1246,136 @@ def test_perguntar_card_with_non_text_items_is_rejected_before_posting():
             adapter.close()
     finally:
         server.shutdown()
+
+
+# -- card #213: slow backend, timeout knob, duplicate-safe retries -------------
+
+
+class _SlowHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every POST only after `delay` seconds, like a backend whose
+    single database connection is busy hydrating the board."""
+
+    delay = 2.0
+    response: dict = {"success": True, "card_id": 1}
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        self.rfile.read(length)
+        threading.Event().wait(self.__class__.delay)
+        payload = json.dumps(self.__class__.response).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(payload)
+        except OSError:
+            pass  # the adapter gave up and closed the socket: expected
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+def _start_slow_server():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _SlowHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+
+def _make_adapter_with_timeout(port, timeout_seconds):
+    env = os.environ.copy()
+    env.update(_hook_url_env(port))
+    env["ESCRITORIO_CLAUDE_SESSION_ID"] = "test-session-id"
+    env["ESCRITORIO_HOOK_TIMEOUT"] = str(timeout_seconds)
+    return _AdapterProcess(env)
+
+
+def test_write_tool_timeout_says_the_action_may_have_been_applied():
+    """The #213 incident: a create that outlived the timeout was reported as
+    "não foi possível conectar", and the agent's retry made a duplicate."""
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter_with_timeout(port, 0.5)
+        try:
+            text = _call_tool(adapter, 1, "criar_card", {"titulo": "T"})
+            assert "não foi possível conectar" not in text.lower()
+            assert "PODE ter sido aplicada" in text
+            assert "listar_cards" in text
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_read_tool_timeout_says_to_try_again():
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter_with_timeout(port, 0.5)
+        try:
+            text = _call_tool(adapter, 1, "ver_card", {"card_id": 1})
+            assert "não foi possível conectar" not in text.lower()
+            assert "PODE ter sido aplicada" not in text
+            assert "tente de novo" in text.lower()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_backend_slower_than_the_old_3s_limit_still_succeeds_by_default():
+    """No ESCRITORIO_HOOK_TIMEOUT: the 30 s default must outlast a 3.5 s
+    answer (the #213 backend took ~3.4 s)."""
+    _SlowHandler.delay = 3.5
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "criar_card", "arguments": {"titulo": "T"}},
+            })
+            text = adapter.recv(timeout=10.0)["result"]["content"][0]["text"]
+            assert text == "Card criado com sucesso (id 1)."
+        finally:
+            adapter.close()
+    finally:
+        _SlowHandler.delay = 2.0
+        server.shutdown()
+
+
+def test_criar_card_reports_a_deduplicated_create_as_no_new_card():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/create": {
+                "success": True, "card_id": 209, "deduplicated": True,
+            }
+        }
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 1, "criar_card", {"titulo": "T"})
+            assert "209" in text
+            assert "nenhum card novo" in text
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_hook_timeout_env_parsing(monkeypatch):
+    sys.path.insert(0, os.path.dirname(ADAPTER_PATH))
+    try:
+        import mcp_card_adapter as adapter_module
+    finally:
+        sys.path.pop(0)
+    read = adapter_module._read_hook_timeout
+    default = adapter_module.DEFAULT_HOOK_TIMEOUT_SECONDS
+    assert default == 30.0
+
+    monkeypatch.delenv("ESCRITORIO_HOOK_TIMEOUT", raising=False)
+    assert read() == default
+    for raw, expected in [("12.5", 12.5), ("abc", default), ("0", default),
+                          ("-3", default), ("nan", default)]:
+        monkeypatch.setenv("ESCRITORIO_HOOK_TIMEOUT", raw)
+        assert read() == expected, raw

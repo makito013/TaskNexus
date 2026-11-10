@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import ssl
 import sys
 import urllib.error
@@ -84,6 +85,37 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 _CONNECTIVITY_ERROR_TEXT = (
     "Não foi possível conectar ao backend do Escritório para processar esta ação."
+)
+
+# Seconds each hook request may take. It used to be a fixed 3 s, and a board
+# poll hydrating every card was enough to push a create past it (card #213).
+# Read once at import, like the URLs; invalid or <= 0 falls back to default.
+DEFAULT_HOOK_TIMEOUT_SECONDS = 30.0
+
+
+def _read_hook_timeout() -> float:
+    try:
+        value = float(os.environ.get("ESCRITORIO_HOOK_TIMEOUT", ""))
+    except ValueError:
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    if value != value or value <= 0:  # NaN or non-positive
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    return value
+
+
+HOOK_TIMEOUT_SECONDS = _read_hook_timeout()
+
+# Returned by `_post_json` when the request was sent but no answer came back
+# in time. Distinct from None (no connection at all): the backend may have
+# applied the action, so a write tool must not tell the agent it failed.
+TIMED_OUT = object()
+
+_WRITE_TIMEOUT_TEXT = (
+    "O backend do Escritório não respondeu a tempo. A ação PODE ter sido "
+    "aplicada. Confira com listar_cards ou ver_card antes de repetir."
+)
+_READ_TIMEOUT_TEXT = (
+    "O backend do Escritório demorou para responder. Tente de novo."
 )
 
 # Manual copy of models.CARD_TIPOS: the literal list of valid tipo values
@@ -457,10 +489,14 @@ def _post_json(url: str, body: dict):
 
     Diferente do `_post_task` fire-and-forget de mcp_task_adapter.py: aqui o
     chamador PRECISA do corpo da resposta (`{success, error}` /
-    `{success, card_id}`) para decidir o que reportar ao agente. Só retorna
-    None quando a requisição genuinamente não pôde ser completada (erro de
-    rede/timeout) ou a resposta não é JSON válido — nesses casos o chamador
-    trata como falha de conectividade, nunca como sucesso silencioso.
+    `{success, card_id}`) para decidir o que reportar ao agente.
+
+    Failure results, never a silent success:
+    - TIMED_OUT: no answer within HOOK_TIMEOUT_SECONDS. The backend may still
+      have applied the action, so `_format_result` words it per tool kind.
+    - None: no connection at all (refused, DNS, ...). Nothing was applied.
+    - `{"success": False, ...}`: the backend answered with an HTTP error or
+      with a body that is not JSON.
     """
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -471,18 +507,36 @@ def _post_json(url: str, body: dict):
     )
     try:
         ctx = _SSL_CTX if url.startswith("https://") else None
-        with urllib.request.urlopen(req, timeout=3, context=ctx) as resp:
+        with urllib.request.urlopen(
+            req, timeout=HOOK_TIMEOUT_SECONDS, context=ctx
+        ) as resp:
             raw = resp.read()
-        return json.loads(raw)
     except urllib.error.HTTPError as exc:
         # O backend RESPONDEU (422 de validação do Pydantic, 500, ...): não é
         # falha de conectividade. Reportar como tal faz o agente concluir que
         # o backend caiu e repetir a mesma chamada inválida em vez de
-        # corrigi-la. Precisa vir antes do `except Exception` porque
+        # corrigi-la. Precisa vir antes do `except URLError` porque
         # HTTPError é subclasse de URLError.
         return {"success": False, "error": _http_error_text(exc)}
+    except urllib.error.URLError as exc:
+        # urllib wraps errors raised while SENDING (connect included) in
+        # URLError; a timeout there still means "no answer in time".
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            return TIMED_OUT
+        return None
+    except (socket.timeout, TimeoutError):
+        # Raised bare while waiting for / reading the response: the request
+        # was sent, so the backend may well have applied it.
+        return TIMED_OUT
     except Exception:
         return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {
+            "success": False,
+            "error": "O backend do Escritório devolveu uma resposta inválida.",
+        }
 
 
 def _http_error_text(exc) -> str:
@@ -509,7 +563,7 @@ def _http_error_text(exc) -> str:
     return text
 
 
-def _format_result(result, success_text: str) -> str:
+def _format_result(result, success_text: str, read_only: bool = False) -> str:
     """Traduz o corpo JSON de qualquer /api/hooks/cards/* para o texto que a
     tool devolve ao agente. `success: False` -> texto de erro de negócio
     (regra violada, permissão negada); `success: True` -> `success_text`;
@@ -521,7 +575,12 @@ def _format_result(result, success_text: str) -> str:
     Nas tools de consulta (ver_card/listar_cards) e no excluir_card, o
     `success_text` NÃO é uma frase fixa: o chamador o monta a partir do
     próprio payload (o card, a lista, a contagem de subcards) — é o payload
-    que interessa ao agente, não a confirmação."""
+    que interessa ao agente, não a confirmação.
+
+    `read_only` only changes the timeout text: a query is safe to repeat,
+    while a write that timed out may already have been applied."""
+    if result is TIMED_OUT:
+        return _READ_TIMEOUT_TEXT if read_only else _WRITE_TIMEOUT_TEXT
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is False:
@@ -547,11 +606,17 @@ def _handle_criar_card(arguments: dict) -> str:
     }
     result = _post_json(HOOK_CREATE_URL, body)
     card_id = result.get("card_id") if isinstance(result, dict) else None
-    success_text = (
-        "Card criado com sucesso (id {0}).".format(card_id)
-        if card_id is not None
-        else "Card criado com sucesso."
-    )
+    if isinstance(result, dict) and result.get("deduplicated"):
+        # The backend found this conversation's card with the same title made
+        # moments ago (usually a retry after a timeout) and returned it.
+        success_text = (
+            "Este card já tinha sido criado há pouco nesta conversa (id {0}); "
+            "nenhum card novo foi criado."
+        ).format(card_id)
+    elif card_id is not None:
+        success_text = "Card criado com sucesso (id {0}).".format(card_id)
+    else:
+        success_text = "Card criado com sucesso."
     return _format_result(result, success_text)
 
 
@@ -606,7 +671,7 @@ def _handle_ver_card(arguments: dict) -> str:
         if card is not None
         else "Card não encontrado."
     )
-    return _format_result(result, success_text)
+    return _format_result(result, success_text, read_only=True)
 
 
 def _handle_listar_cards(arguments: dict) -> str:
@@ -630,7 +695,7 @@ def _handle_listar_cards(arguments: dict) -> str:
         # Lista vazia continua sendo sucesso (o backend devolve success=True
         # com cards=[]); _format_result só chega aqui nesse caso.
         success_text = "Nenhum card encontrado."
-    return _format_result(result, success_text)
+    return _format_result(result, success_text, read_only=True)
 
 
 def _handle_anexar_arquivo_card(arguments: dict) -> str:

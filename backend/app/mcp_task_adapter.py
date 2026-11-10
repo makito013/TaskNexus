@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import ssl
 import sys
 import urllib.error
@@ -46,6 +47,33 @@ TOOL_NAME = "criar_tarefa_validacao"
 
 _CONNECTIVITY_ERROR_TEXT = (
     "Não foi possível conectar ao backend do Escritório para criar a tarefa."
+)
+
+# Seconds each hook request may take: ESCRITORIO_HOOK_TIMEOUT, default 30.0
+# s, same knob and rules as mcp_card_adapter.py (card #213). Invalid or <= 0
+# falls back to the default.
+DEFAULT_HOOK_TIMEOUT_SECONDS = 30.0
+
+
+def _read_hook_timeout() -> float:
+    try:
+        value = float(os.environ.get("ESCRITORIO_HOOK_TIMEOUT", ""))
+    except ValueError:
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    if value != value or value <= 0:  # NaN or non-positive
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    return value
+
+
+HOOK_TIMEOUT_SECONDS = _read_hook_timeout()
+
+# `_post_json` result when the request went out but no answer came back in
+# time: the backend may have applied it, so it must not read as "failed".
+TIMED_OUT = object()
+
+_TIMEOUT_TEXT = (
+    "O backend do Escritório não respondeu a tempo. A ação PODE ter sido "
+    "aplicada; confira antes de repetir."
 )
 
 TOOL_SCHEMA = {
@@ -151,9 +179,17 @@ def _post_json(url: str, body: dict):
     )
     try:
         ctx = _SSL_CTX if url.startswith("https://") else None
-        with urllib.request.urlopen(req, timeout=3, context=ctx) as resp:
+        with urllib.request.urlopen(
+            req, timeout=HOOK_TIMEOUT_SECONDS, context=ctx
+        ) as resp:
             raw = resp.read()
         return json.loads(raw)
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            return TIMED_OUT
+        return None
+    except (socket.timeout, TimeoutError):
+        return TIMED_OUT
     except Exception:
         return None
 
@@ -166,6 +202,8 @@ def _format_result(result, success_text: str) -> str:
     quando claude_session_id não resolve para uma session_key) -> mensagem
     informativa, já que nenhuma tarefa foi de fato criada. Mesmo formato do
     _format_result de mcp_card_adapter.py."""
+    if result is TIMED_OUT:
+        return _TIMEOUT_TEXT
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is False:
