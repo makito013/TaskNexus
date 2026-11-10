@@ -305,6 +305,24 @@ export const api = {
     return r.json()
   },
 
+  // Questions an agent left on the card (MCP `perguntar_card`). An empty
+  // answer clears it (back to pending).
+  async answerCardQuestion(cardId, questionId, answer) {
+    const r = await fetch(`${BASE}/cards/${cardId}/questions/${questionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer }),
+    })
+    if (!r.ok) throw new Error('Falha ao salvar resposta')
+    return r.json()
+  },
+
+  async deleteCardQuestion(cardId, questionId) {
+    const r = await fetch(`${BASE}/cards/${cardId}/questions/${questionId}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error('Falha ao remover pergunta')
+    return r.json()
+  },
+
   async previewClearFinished(projetoId) {
     const r = await fetch(`${BASE}/cards/limpar-concluidos/preview?projeto_id=${encodeURIComponent(projetoId)}`)
     if (!r.ok) throw new Error('Falha ao buscar preview de limpeza')

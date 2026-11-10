@@ -67,6 +67,7 @@ import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { CardIdBadge } from './CardIdBadge.jsx';
 import { ImageAttachments } from './ImageAttachments.jsx';
 import { CardAttachments } from './CardAttachments.jsx';
+import { CardQuestions, countPendingQuestions } from './CardQuestions.jsx';
 import { PriorityIcon } from './PriorityIcon.jsx';
 
 const NARROW_QUERY = '(max-width: 720px)';
@@ -337,6 +338,10 @@ export function CardFormModal({
   onUploadAttachment,
   onDeleteAttachment,
   onViewAttachment,
+  // Agent questions (optional: without `onAnswerQuestion` the section is not
+  // rendered). Each answer saves on its own, outside the form's "Salvar".
+  onAnswerQuestion,
+  onDeleteQuestion,
   // While something is stacked on top of the modal (the attachment viewer),
   // Esc belongs to that layer and must not also close the card.
   escapeSuspended = false,
@@ -627,6 +632,22 @@ export function CardFormModal({
                   />
                 )}
               </div>
+
+              {isEdit && onAnswerQuestion && card.questions?.length > 0 && (
+                <div style={styles.field}>
+                  <span style={styles.label}>
+                    Perguntas do agente
+                    {countPendingQuestions(card.questions) > 0
+                      && ` (${countPendingQuestions(card.questions)} sem resposta)`}
+                  </span>
+                  <CardQuestions
+                    cardId={card.id}
+                    questions={card.questions}
+                    onAnswer={onAnswerQuestion}
+                    onDelete={onDeleteQuestion}
+                  />
+                </div>
+              )}
 
               {isEdit && (
                 <div style={styles.field}>

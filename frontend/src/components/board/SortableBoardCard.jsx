@@ -89,11 +89,10 @@ const styles = {
   }),
 };
 
-// `disabled`: the board is showing a SORTED view (BoardViewControls), where
-// the on-screen order is not the manual order, so a drop would compute its
-// neighbours from an order the board does not store. dnd-kit then returns no
-// listeners, and the card drops the grab cursor and the drag wording.
-export function SortableBoardCard({ cardId, titulo, disabled = false, children }) {
+// Dragging stays enabled in a SORTED view too (BoardViewControls): there,
+// BoardV2's drop handler only changes the card's column, since the on-screen
+// order is the sort and not the stored manual order.
+export function SortableBoardCard({ cardId, titulo, children }) {
   const {
     // `attributes` is deliberately NOT destructured — same wholesale drop as
     // SortableBoardColumn, and for the same reasons. The one that matters most
@@ -110,7 +109,7 @@ export function SortableBoardCard({ cardId, titulo, disabled = false, children }
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: cardDndId(cardId), disabled });
+  } = useSortable({ id: cardDndId(cardId) });
 
   // The source card stays IN FLOW while dragging — faded, not removed — so the
   // column does not visibly collapse by one card's height the moment the drag
@@ -121,7 +120,7 @@ export function SortableBoardCard({ cardId, titulo, disabled = false, children }
     style: {
       transform: toTranslate(transform),
       transition,
-      ...(disabled ? null : styles.drag(isDragging)),
+      ...styles.drag(isDragging),
       // 2px with an offset, matching SortableBoardColumn — see the block
       // there. On touch the drag arms on the hold timer with no movement, and
       // a card is roughly finger-sized, so the ring around it is most of what
@@ -139,9 +138,7 @@ export function SortableBoardCard({ cardId, titulo, disabled = false, children }
     // a generic element, so on a roleless <div> this label would be dropped
     // exactly like dnd-kit's own `aria-roledescription` is. The role and the
     // label must stay together.
-    'aria-label': disabled
-      ? `Card ${titulo ?? cardId}`
-      : `Card ${titulo ?? cardId} — arraste para reposicionar`,
+    'aria-label': `Card ${titulo ?? cardId} — arraste para reposicionar`,
     ...listeners,
   };
 

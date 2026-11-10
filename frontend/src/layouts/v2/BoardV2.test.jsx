@@ -706,6 +706,42 @@ describe('BoardV2 - CardFormModal integration via the clickable card title', () 
     expect(screen.getByLabelText('Título').value).toBe('Card 1');
   });
 
+  it('opens the edit modal when clicking anywhere on the card face, not only the title', () => {
+    mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByTestId('board-v2-card-1'));
+
+    expect(screen.getByText('Editar Card')).toBeTruthy();
+  });
+
+  it('flags pending agent questions on the card face and lists them in the modal', () => {
+    mockCardsWithActions([fakeCard({
+      id: 1,
+      titulo: 'Card 1',
+      questions: [
+        { id: 10, card_id: 1, question: 'Qual banco?', answer: null, asked_by: 'agente:c', created_at: 1, answered_at: null },
+        { id: 11, card_id: 1, question: 'Migra?', answer: 'sim', asked_by: 'agente:c', created_at: 1, answered_at: 2 },
+      ],
+    })]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    expect(screen.getByTestId('card-questions-pending-1').textContent).toBe('1 pergunta');
+
+    fireEvent.click(screen.getByText('Card 1'));
+    expect(screen.getByText(/Perguntas do agente \(1 sem resposta\)/)).toBeTruthy();
+    expect(screen.getByLabelText('Qual banco?')).toBeTruthy();
+  });
+
+  it('clicking the status select on the card face does not open the modal', () => {
+    mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+
+    fireEvent.click(screen.getByLabelText('Mover "Card 1"'));
+
+    expect(screen.queryByText('Editar Card')).toBeNull();
+  });
+
   it('submitting the form calls updateCard with the edited card id and the new payload', async () => {
     const { updateCard } = mockCardsWithActions([fakeCard({ id: 1, titulo: 'Card 1' })]);
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);
@@ -2288,16 +2324,47 @@ describe('BoardV2 — prioridade, filters and sort', () => {
     expect(columnCardIds()).toEqual(['1', '2', '3']);
   });
 
-  it('sorts by prioridade and disables card drag while sorted', () => {
+  it('sorts by prioridade and keeps card drag enabled while sorted', () => {
     mockPriorityCards();
     render(<BoardV2 projects={projects} selectedClienteId="projA" />);
-    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).toContain('arraste');
 
     fireEvent.change(screen.getByLabelText('Ordenar cards'), { target: { value: 'prioridade' } });
 
     expect(columnCardIds()).toEqual(['3', '1', '2']);
-    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).not.toContain('arraste');
-    expect(screen.getByTestId('board-view-sort-hint')).toBeTruthy();
+    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).toContain('arraste');
+    expect(screen.getByTestId('board-view-sort-hint').textContent).toContain('coluna');
+  });
+
+  it('keeps card drag enabled while filtered', () => {
+    mockPriorityCards();
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    fireEvent.change(screen.getByLabelText('Filtrar por prioridade'), { target: { value: 'baixa' } });
+    expect(screen.getByTestId('board-v2-card-1').getAttribute('aria-label')).toContain('arraste');
+  });
+
+  it('while sorted, dropping a card on another column only changes its status', async () => {
+    const actions = {
+      cards: [
+        fakeCard({ id: 1, titulo: 'Baixa', prioridade: 'baixa' }),
+        fakeCard({ id: 2, titulo: 'Alta', prioridade: 'alta', status: 'feito' }),
+      ],
+      createCard: vi.fn(),
+      updateCard: vi.fn().mockResolvedValue({}),
+      moveCard: vi.fn().mockResolvedValue({}),
+      setCardDragActive: vi.fn(),
+    };
+    mockUseCards.mockReturnValue(actions);
+    render(<BoardV2 projects={projects} selectedClienteId="projA" />);
+    fireEvent.change(screen.getByLabelText('Ordenar cards'), { target: { value: 'prioridade' } });
+
+    await act(async () => { await dropCard(1, 'card:2'); });
+    expect(actions.moveCard).not.toHaveBeenCalled();
+    expect(actions.updateCard).toHaveBeenCalledWith(1, { status: 'feito' });
+
+    actions.updateCard.mockClear();
+    await act(async () => { await dropCard(1, 'dropzone:a_fazer'); });
+    expect(actions.updateCard).not.toHaveBeenCalled();
+    expect(actions.moveCard).not.toHaveBeenCalled();
   });
 
   it('remembers the last view across mounts', () => {

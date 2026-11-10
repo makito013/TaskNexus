@@ -205,6 +205,25 @@ class CardStore:
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_card_attachments_card ON card_attachments(card_id)"
         )
+        # Questions an agent leaves on a card for the user to answer in the
+        # card modal (MCP `perguntar_card`); the agent reads the answers back
+        # through `ver_card`. `answer` NULL = still waiting for the user.
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS card_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT,
+                asked_by TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                answered_at REAL
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id)"
+        )
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS board_columns (
@@ -390,6 +409,29 @@ class CardStore:
             rows = await cursor.fetchall()
         return [self._row_to_attachment_dict(row) for row in rows]
 
+    @staticmethod
+    def _row_to_question_dict(row) -> dict:
+        return {
+            "id": row[0],
+            "card_id": row[1],
+            "question": row[2],
+            "answer": row[3],
+            "asked_by": row[4],
+            "created_at": row[5],
+            "answered_at": row[6],
+        }
+
+    _QUESTION_COLUMNS = "id, card_id, question, answer, asked_by, created_at, answered_at"
+
+    async def list_questions(self, card_id: int) -> list[dict]:
+        async with self._conn.execute(
+            f"SELECT {self._QUESTION_COLUMNS} FROM card_questions "
+            "WHERE card_id = ? ORDER BY id ASC",
+            (card_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [self._row_to_question_dict(row) for row in rows]
+
     async def _list_active_subcards(self, parent_id: int) -> list[dict]:
         """Subcards ativos de um pai, no "mesmo formato" de um card de topo
         exceto que a recursão para de propósito neste nível: subcards() vem
@@ -409,6 +451,7 @@ class CardStore:
             sub = self._row_to_card_dict(row)
             sub["imagens"] = await self._list_images(sub["id"])
             sub["attachments"] = await self.list_attachments(sub["id"])
+            sub["questions"] = await self.list_questions(sub["id"])
             sub["subcards"] = []
             sub["subcards_resumo"] = None
             subcards.append(sub)
@@ -619,6 +662,7 @@ class CardStore:
             card = self._row_to_card_dict(row)
             card["imagens"] = await self._list_images(card["id"])
             card["attachments"] = await self.list_attachments(card["id"])
+            card["questions"] = await self.list_questions(card["id"])
             subcards = await self._list_active_subcards(card["id"])
             card["subcards"] = subcards
             if subcards:
@@ -1440,6 +1484,88 @@ class CardStore:
             await self._conn.commit()
             return cursor.rowcount > 0
 
+    # -- questions (agent asks, user answers) --------------------------------
+
+    MAX_QUESTIONS_PER_CARD = 30
+
+    async def add_questions(
+        self, card_id: int, questions: list[str], asked_by: str
+    ) -> list[dict]:
+        """Inserts one row per question (already stripped and non-empty — the
+        caller validates) and bumps the card's atualizado_em. Raises ValueError
+        when the card would go past MAX_QUESTIONS_PER_CARD; the count and the
+        INSERTs share the lock, so two concurrent calls cannot both squeeze in."""
+        now = time.time()
+        async with self._tx_lock:
+            async with self._conn.execute(
+                "SELECT COUNT(*) FROM card_questions WHERE card_id = ?",
+                (card_id,),
+            ) as cursor:
+                (existing,) = await cursor.fetchone()
+            if existing + len(questions) > self.MAX_QUESTIONS_PER_CARD:
+                raise ValueError(
+                    f"O card {card_id} já tem {existing} pergunta(s); o limite é "
+                    f"{self.MAX_QUESTIONS_PER_CARD} por card."
+                )
+            await self._conn.execute("BEGIN")
+            try:
+                ids = []
+                for question in questions:
+                    cursor = await self._conn.execute(
+                        "INSERT INTO card_questions (card_id, question, asked_by, created_at) "
+                        "VALUES (?, ?, ?, ?)",
+                        (card_id, question, asked_by, now),
+                    )
+                    ids.append(cursor.lastrowid)
+                await self._conn.execute(
+                    "UPDATE cards SET atualizado_em = ? WHERE id = ?", (now, card_id)
+                )
+            except Exception:
+                await self._conn.rollback()
+                raise
+            else:
+                await self._conn.commit()
+        return [q for q in await self.list_questions(card_id) if q["id"] in ids]
+
+    async def answer_question(
+        self, card_id: int, question_id: int, answer: str
+    ) -> dict | None:
+        """Sets (or, with an empty/blank answer, clears) the answer of a
+        question that belongs to `card_id`. Returns the updated question, or
+        None when no such question exists on that card."""
+        answer = (answer or "").strip() or None
+        now = time.time()
+        async with self._tx_lock:
+            cursor = await self._conn.execute(
+                "UPDATE card_questions SET answer = ?, answered_at = ? "
+                "WHERE card_id = ? AND id = ?",
+                (answer, now if answer else None, card_id, question_id),
+            )
+            if cursor.rowcount == 0:
+                await self._conn.commit()
+                return None
+            await self._conn.execute(
+                "UPDATE cards SET atualizado_em = ?, ultima_atualizacao_por = 'bruno' "
+                "WHERE id = ?",
+                (now, card_id),
+            )
+            await self._conn.commit()
+        async with self._conn.execute(
+            f"SELECT {self._QUESTION_COLUMNS} FROM card_questions WHERE id = ?",
+            (question_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return self._row_to_question_dict(row) if row else None
+
+    async def delete_question(self, card_id: int, question_id: int) -> bool:
+        async with self._tx_lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM card_questions WHERE card_id = ? AND id = ?",
+                (card_id, question_id),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
     # -- limpar concluídos ------------------------------------------------
 
     async def _selecionar_alvo_limpar(
@@ -1551,6 +1677,10 @@ class CardStore:
                 )
                 await self._conn.execute(
                     f"DELETE FROM card_attachments WHERE card_id IN ({placeholders})",
+                    alvo,
+                )
+                await self._conn.execute(
+                    f"DELETE FROM card_questions WHERE card_id IN ({placeholders})",
                     alvo,
                 )
                 await self._conn.execute(

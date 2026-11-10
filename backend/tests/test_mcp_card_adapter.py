@@ -114,6 +114,7 @@ _HOOK_URL_ENV_BY_PATH = {
     "ESCRITORIO_HOOK_GET_URL": "get",
     "ESCRITORIO_HOOK_LIST_URL": "list",
     "ESCRITORIO_HOOK_ATTACH_URL": "attach",
+    "ESCRITORIO_HOOK_ASK_URL": "questions",
 }
 
 
@@ -211,13 +212,18 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             adapter.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
             response = adapter.recv()
             tools = response["result"]["tools"]
-            assert len(tools) == 7
+            assert len(tools) == 8
             by_name = {t["name"]: t for t in tools}
             assert set(by_name.keys()) == {
                 "criar_card", "mover_card", "editar_card",
                 "excluir_card", "ver_card", "listar_cards",
-                "anexar_arquivo_card",
+                "anexar_arquivo_card", "perguntar_card",
             }
+            perguntar = by_name["perguntar_card"]
+            assert perguntar["inputSchema"]["required"] == ["card_id", "perguntas"]
+            assert perguntar["inputSchema"]["properties"]["perguntas"]["type"] == "array"
+            assert "questions" in by_name["ver_card"]["description"]
+
             anexar = by_name["anexar_arquivo_card"]
             assert anexar["inputSchema"]["required"] == ["card_id", "caminho"]
             assert anexar["inputSchema"]["properties"]["card_id"]["type"] == "integer"
@@ -1156,6 +1162,86 @@ def test_criar_and_editar_card_forward_prioridade_in_the_body():
             adapter.recv()
             received = _CapturingHandler.received.get(timeout=3.0)
             assert received["body"]["prioridade"] == ""
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+# -- perguntar_card ------------------------------------------------------------
+
+
+def test_perguntar_card_posts_questions_and_reports_count():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/questions": {
+            "success": True,
+            "questions": [{"id": 1}, {"id": 2}],
+        }}
+    )
+    try:
+        adapter = _make_adapter(port, session_id="session-ask")
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 40, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": "7", "perguntas": ["A?", "B?"]},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "2 pergunta(s)" in text and "card 7" in text and "ver_card" in text
+
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["path"] == "/api/hooks/cards/questions"
+            assert received["body"] == {
+                "claude_session_id": "session-ask",
+                "card_id": 7,
+                "perguntas": ["A?", "B?"],
+            }
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_perguntar_card_accepts_a_single_string_as_one_question():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/questions": {"success": True, "questions": [{"id": 1}]}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 41, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": 7, "perguntas": "Só uma?"},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["perguntas"] == ["Só uma?"]
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_perguntar_card_with_non_text_items_is_rejected_before_posting():
+    server, thread, port = _start_ephemeral_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": 7, "perguntas": [1, 2]},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "perguntas deve ser uma lista de textos" in text
+            assert _CapturingHandler.received.empty()
         finally:
             adapter.close()
     finally:

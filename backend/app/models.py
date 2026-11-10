@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -187,6 +187,24 @@ class CardAttachment(BaseModel):
     created_at: float
 
 
+class CardQuestion(BaseModel):
+    """A question an agent left on a card (MCP `perguntar_card`) for the user
+    to answer in the card modal. `answer` None = not answered yet."""
+    id: int
+    card_id: int
+    question: str
+    answer: str | None = None
+    asked_by: str  # "agente:{agent_id}"
+    created_at: float
+    answered_at: float | None = None
+
+
+class CardQuestionAnswerRequest(BaseModel):
+    """Body of PATCH /api/cards/{card_id}/questions/{question_id}. An empty
+    (or blank) answer clears it, putting the question back to pending."""
+    answer: str = ""
+
+
 class Card(BaseModel):
     """Card de board, persistente por projeto — DESACOPLADO de Task (tarefas
     de validação por sessão). `parent_id` NULL = card de topo. `subcards` e
@@ -227,6 +245,7 @@ class Card(BaseModel):
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
     attachments: list[CardAttachment] = []
+    questions: list[CardQuestion] = []
 
 
 # Necessário em Pydantic v2 quando o módulo usa `from __future__ import
@@ -380,6 +399,17 @@ class HookCardAttachRequest(BaseModel):
     claude_session_id: str
     card_id: int
     caminho: str
+
+
+class HookCardAskRequest(BaseModel):
+    """Body of POST /api/hooks/cards/questions (MCP tool `perguntar_card`).
+    `perguntas` keeps the PT-BR name of the other agent-facing fields
+    (`titulo`, `caminho`). Loosely typed on purpose (same AD-2 rule as `tipo`):
+    a 422 would reach the agent as a connectivity error, so the handler
+    validates it by hand."""
+    claude_session_id: str
+    card_id: int
+    perguntas: Any = None
 
 
 class HookCardListRequest(BaseModel):

@@ -1,8 +1,8 @@
 """Adaptador MCP standalone: ponte entre as tools de card expostas ao `claude`
 CLI (via --mcp-config) — `criar_card`, `mover_card`, `editar_card`,
-`excluir_card`, `ver_card`, `listar_cards`, `anexar_arquivo_card` — e o backend
-FastAPI do Escritório (endpoints POST
-/api/hooks/cards/{create,move,update,delete,get,list,attach}).
+`excluir_card`, `ver_card`, `listar_cards`, `anexar_arquivo_card`,
+`perguntar_card` — e o backend FastAPI do Escritório (endpoints POST
+/api/hooks/cards/{create,move,update,delete,get,list,attach,questions}).
 
 Roda como PROCESSO FILHO do `claude` CLI (subprocess separado do backend
 FastAPI, spawnado pelo próprio CLI a partir do comando/args em
@@ -70,6 +70,9 @@ HOOK_LIST_URL = os.environ.get(
 )
 HOOK_ATTACH_URL = os.environ.get(
     "ESCRITORIO_HOOK_ATTACH_URL", "http://localhost:8000/api/hooks/cards/attach"
+)
+HOOK_ASK_URL = os.environ.get(
+    "ESCRITORIO_HOOK_ASK_URL", "http://localhost:8000/api/hooks/cards/questions"
 )
 
 # Contexto SSL que não valida certificado — seguro aqui porque a conexão é
@@ -239,9 +242,13 @@ TOOL_VER_CARD = {
     "name": "ver_card",
     "description": (
         "Mostra os dados de um card específico pelo id (título, descrição, "
-        "status, projeto, origem, datas). Use antes de editar para revisar o "
-        "conteúdo atual. Só é possível consultar cards do mesmo cliente da "
-        "conversa atual."
+        "status, projeto, origem, datas, anexos e perguntas). Use antes de "
+        "editar para revisar o conteúdo atual. O campo `questions` traz as "
+        "perguntas feitas com perguntar_card: `answer` é a resposta do usuário "
+        "(null = ainda sem resposta). Quando o usuário mandar seguir com um "
+        "card em que você deixou perguntas, chame ver_card e leia as respostas "
+        "em vez de perguntar de novo no chat. Só é possível consultar cards do "
+        "mesmo cliente da conversa atual."
     ),
     "inputSchema": {
         "type": "object",
@@ -301,6 +308,35 @@ TOOL_ANEXAR_ARQUIVO_CARD = {
     },
 }
 
+TOOL_PERGUNTAR_CARD = {
+    "name": "perguntar_card",
+    "description": (
+        "Registra uma ou mais perguntas num card do board para o usuário "
+        "responder direto no card (seção \"Perguntas do agente\" do modal). "
+        "Use quando precisar de decisões ou informações do usuário para seguir "
+        "com o card: faça todas as perguntas de uma vez, avise no chat que "
+        "elas estão no card e pare. Quando o usuário mandar seguir, chame "
+        "ver_card e leia as respostas no campo `questions`. Limite de 30 "
+        "perguntas por card. Só para cards do mesmo cliente da conversa atual."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "card_id": {"type": "integer"},
+            "perguntas": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": (
+                    "Lista de perguntas, uma por item, cada uma autoexplicativa "
+                    "(o usuário lê no card, fora do contexto do chat)."
+                ),
+            },
+        },
+        "required": ["card_id", "perguntas"],
+    },
+}
+
 TOOLS = [
     TOOL_CRIAR_CARD,
     TOOL_MOVER_CARD,
@@ -309,12 +345,13 @@ TOOLS = [
     TOOL_VER_CARD,
     TOOL_LISTAR_CARDS,
     TOOL_ANEXAR_ARQUIVO_CARD,
+    TOOL_PERGUNTAR_CARD,
 ]
 
 _TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
 
 # Tipos JSON Schema usados nos inputSchema acima -> nome legível na mensagem.
-_SCHEMA_TYPE_LABEL = {"integer": "inteiro", "string": "texto"}
+_SCHEMA_TYPE_LABEL = {"integer": "inteiro", "string": "texto", "array": "lista de textos"}
 
 
 def _validate_arguments(tool: dict, arguments: dict):
@@ -359,6 +396,14 @@ def _validate_arguments(tool: dict, arguments: dict):
         elif expected == "string" and not isinstance(value, str):
             problems.append("{0} deve ser texto (recebido: {1})".format(
                 name, json.dumps(value, ensure_ascii=False)))
+        elif expected == "array":
+            # Only arrays of strings exist in these schemas (perguntar_card).
+            # A bare string is the most common slip: accept it as one item.
+            if isinstance(value, str):
+                validated[name] = [value]
+            elif not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                problems.append("{0} deve ser uma lista de textos (recebido: {1})".format(
+                    name, json.dumps(value, ensure_ascii=False)))
 
     if not problems:
         return validated, None
@@ -605,6 +650,22 @@ def _handle_anexar_arquivo_card(arguments: dict) -> str:
     return _format_result(result, success_text)
 
 
+def _handle_perguntar_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+        "perguntas": arguments.get("perguntas"),
+    }
+    result = _post_json(HOOK_ASK_URL, body)
+    questions = result.get("questions") if isinstance(result, dict) else None
+    count = len(questions) if questions else 0
+    success_text = (
+        "{0} pergunta(s) registrada(s) no card {1}. Avise o usuário que elas "
+        "estão no card e aguarde; depois leia as respostas com ver_card."
+    ).format(count, arguments.get("card_id"))
+    return _format_result(result, success_text)
+
+
 def _handle_tools_call(request: dict) -> dict:
     params = request.get("params") or {}
     tool_name = params.get("name")
@@ -631,6 +692,8 @@ def _handle_tools_call(request: dict) -> dict:
         text = _handle_listar_cards(arguments)
     elif tool_name == TOOL_ANEXAR_ARQUIVO_CARD["name"]:
         text = _handle_anexar_arquivo_card(arguments)
+    elif tool_name == TOOL_PERGUNTAR_CARD["name"]:
+        text = _handle_perguntar_card(arguments)
     else:
         text = "Tool desconhecida: {0}".format(tool_name)
 

@@ -109,7 +109,7 @@ export function BoardViewControls({ view, onChange }) {
       )}
       {sorted && (
         <span style={styles.hint} data-testid="board-view-sort-hint">
-          Arrastar cards fica desativado enquanto houver ordenação.
+          Com ordenação, arrastar muda só a coluna do card.
         </span>
       )}
     </>

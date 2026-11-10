@@ -470,6 +470,31 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     }
   }, [doneSlug]);
 
+  // Agent questions on a card. No alert() on answer failure: the questions
+  // section shows the error inline next to the answer that did not save
+  // (it autosaves on blur, so a modal alert mid-typing would be hostile).
+  const answerCardQuestion = useCallback(async (cardId, questionId, answer) => {
+    const saved = await api.answerCardQuestion(cardId, questionId, answer);
+    setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+      ...card,
+      questions: (card.questions || []).map((q) => (q.id === questionId ? saved : q)),
+    }), doneSlug));
+    return saved;
+  }, [doneSlug]);
+
+  const deleteCardQuestion = useCallback(async (cardId, questionId) => {
+    try {
+      await api.deleteCardQuestion(cardId, questionId);
+      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+        ...card,
+        questions: (card.questions || []).filter((q) => q.id !== questionId),
+      }), doneSlug));
+    } catch (e) {
+      alert('Falha ao remover pergunta. Tente novamente.');
+      throw e;
+    }
+  }, [doneSlug]);
+
   // Leitura sob demanda (não é poll de fundo) — ver nota no topo do arquivo
   // sobre por que não tem alert() aqui: o erro propaga pro chamador
   // (ClearFinishedModal, Tarefa 25) decidir sua própria UI de erro.
@@ -510,6 +535,8 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     deleteCardImage,
     uploadCardAttachment,
     deleteCardAttachment,
+    answerCardQuestion,
+    deleteCardQuestion,
     previewClearFinished,
     clearFinished,
   };

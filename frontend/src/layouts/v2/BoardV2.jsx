@@ -120,7 +120,7 @@ import {
   horizontalListSortingStrategy,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SortableBoardColumn,
@@ -142,6 +142,7 @@ import { BoardColumnRenameDialog } from '../../components/board/BoardColumnRenam
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
 import { PriorityIcon } from '../../components/board/PriorityIcon.jsx';
+import { countPendingQuestions } from '../../components/board/CardQuestions.jsx';
 import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
 import { useColumns } from '../../hooks/useColumns.js';
@@ -731,6 +732,16 @@ const styles = {
     marginLeft: 'auto',
     flexShrink: 0,
   },
+  // "The agent is waiting on you" marker: pending questions on the card.
+  questionsChip: {
+    padding: '2px 7px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: 700,
+    background: 'var(--v2-warn-soft)',
+    color: 'var(--v2-warn)',
+    whiteSpace: 'nowrap',
+  },
   tipoChip: (tipo) => ({
     padding: '2px 7px',
     borderRadius: '5px',
@@ -847,6 +858,8 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     deleteCardImage,
     uploadCardAttachment,
     deleteCardAttachment,
+    answerCardQuestion,
+    deleteCardQuestion,
     previewClearFinished,
     clearFinished,
   } = useCards(fetchProjectIds, doneSlug);
@@ -875,7 +888,16 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     () => applyBoardView(clienteCards, boardView, doneSlug),
     [clienteCards, boardView, doneSlug]
   );
-  const cardDragDisabled = isBoardViewSorted(boardView);
+  const boardSorted = isBoardViewSorted(boardView);
+  const lastCardDragEndRef = useRef(0);
+  // Click anywhere on a card face opens it, except on its own controls (the
+  // status select, links, buttons other than the title) and right after a
+  // drag ended on it.
+  const handleCardFaceClick = (event, cardId) => {
+    if (Date.now() - lastCardDragEndRef.current < 300) return;
+    if (event.target.closest('select, input, textarea, a, [data-card-control]')) return;
+    setEditingCardId(cardId);
+  };
 
   // Status of the column whose "+ Adicionar card" was clicked (null = create
   // modal closed). Holds the STATUS, not a boolean: it is the modal's
@@ -1171,6 +1193,12 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
       setDropHint(null);
       return;
     }
+    // Sorted view: the drop only changes the column (see handleCardDragEnd),
+    // so there is no slot to promise.
+    if (boardSorted) {
+      setDropHint(null);
+      return;
+    }
     const columnIds = cardsInColumn(target.status).map((c) => c.id);
     const drop = computeCardDrop(columnIds, activeCardId, target.overCardId);
     // No indicator for a no-op: there is nothing to promise.
@@ -1181,6 +1209,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     setDraggingCardId(null);
     setDropHint(null);
     setCardDragActive(false);
+    // The whole card face opens the card on click; a mouse drag can end with
+    // a click on it, which must not open the modal.
+    lastCardDragEndRef.current = Date.now();
   };
 
   const handleCardDragEnd = async (event) => {
@@ -1189,6 +1220,19 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     finishCardDrag();
     // Released outside any valid column: cancelled, with no request at all.
     if (activeCardId == null || target == null) return;
+
+    // Sorted view: the on-screen order is the sort, not the stored manual
+    // order, so neighbours taken from it would be meaningless (or a 409).
+    // Dropping into another column moves the card there exactly like the
+    // status select does; dropping in its own column is a no-op, because the
+    // sort decides where it shows anyway.
+    if (boardSorted) {
+      const activeCard = cards.find((c) => c.id === activeCardId);
+      if (activeCard && activeCard.status !== target.status) {
+        handleMove(activeCardId, target.status);
+      }
+      return;
+    }
 
     const columnIds = cardsInColumn(target.status).map((c) => c.id);
     const drop = computeCardDrop(columnIds, activeCardId, target.overCardId);
@@ -1481,7 +1525,6 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                       key={card.id}
                       cardId={card.id}
                       titulo={card.titulo}
-                      disabled={cardDragDisabled}
                     >
                     {({ dragProps }) => (
                     <>
@@ -1498,12 +1541,24 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                     <div
                       {...dragProps}
                       role="group"
-                      style={{ ...styles.card, ...dragProps.style }}
+                      style={{ ...styles.card, cursor: 'pointer', ...dragProps.style }}
                       data-testid={`board-v2-card-${card.id}`}
+                      onClick={(e) => handleCardFaceClick(e, card.id)}
                     >
                       <div style={styles.cardMetaRow}>
                         <CardIdBadge id={card.id} clienteNome={clienteNome} variant="card" />
                         <span style={styles.cardMetaRight}>
+                          {countPendingQuestions(card.questions) > 0 && (
+                            <span
+                              style={styles.questionsChip}
+                              data-testid={`card-questions-pending-${card.id}`}
+                              title="Perguntas do agente aguardando sua resposta"
+                            >
+                              {countPendingQuestions(card.questions) === 1
+                                ? '1 pergunta'
+                                : `${countPendingQuestions(card.questions)} perguntas`}
+                            </span>
+                          )}
                           <PriorityIcon prioridade={card.prioridade} />
                           {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
                             <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
@@ -1513,7 +1568,7 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                       <button
                         type="button"
                         style={styles.cardTitle}
-                        onClick={() => setEditingCardId(card.id)}
+                        onClick={(e) => { e.stopPropagation(); setEditingCardId(card.id); }}
                       >
                         {card.titulo}
                       </button>
@@ -1736,6 +1791,8 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
           onUploadAttachment={(file) => uploadCardAttachment(editingCardId, file)}
           onDeleteAttachment={handleDeleteAttachment}
           onViewAttachment={handleViewAttachment}
+          onAnswerQuestion={(questionId, answer) => answerCardQuestion(editingCardId, questionId, answer)}
+          onDeleteQuestion={(questionId) => deleteCardQuestion(editingCardId, questionId)}
           escapeSuspended={attachmentViewerOpen}
         />
       )}
