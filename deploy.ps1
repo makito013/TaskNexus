@@ -95,6 +95,10 @@ Exemplo (cópia consistente mesmo com a produção no ar):
         Write-Warning "SESSIONS_DB=$V3Db não existe: o backend vai criar um banco vazio."
     }
     Write-Host "==> V3 usando o banco $V3Db"
+    # backup() copia a tabela push_subscriptions junto: esta instância manda push
+    # de verdade para os aparelhos inscritos (inclusive o push de pendência de
+    # permissão do chat), em duplicidade com a produção.
+    Write-Warning "A cópia do banco mantém push_subscriptions: esta instância -V3 continua enviando push para os aparelhos inscritos. Para evitar, rode DELETE FROM push_subscriptions na cópia antes de subir."
 } elseif ($env:SESSIONS_DB) {
     # $env: persiste na sessão do pwsh: um -V3 anterior neste terminal deixaria
     # a produção subir em cima da cópia. Não zera (pode ser intencional).
@@ -117,7 +121,7 @@ try {
 if ($V3) {
     $env:FRONTEND_DIST = Join-Path $FrontendDir 'dist-v3'
     $LogFile = 'uvicorn-v3.log'
-    Write-Host "==> Layout V3 (experimental) ativo — servindo frontend\dist-v3 (terminal, board e chat indisponíveis nesta versão)"
+    Write-Host "==> Layout V3 (experimental) ativo — servindo frontend\dist-v3 (board indisponível nesta versão)"
 } else {
     $env:FRONTEND_DIST = $null
     $LogFile = 'uvicorn.log'
@@ -131,10 +135,17 @@ if (-not (Test-Path $VenvUvicorn)) {
 }
 
 # O .venv é o mesmo da produção: um pip install com ela no ar pode trocar uma
-# lib embaixo do processo vivo (e no Windows falha em .pyd carregado). A V3 não
-# traz dependência nova de backend, então -V3 pula o pip.
+# lib embaixo do processo vivo (e no Windows falha em .pyd carregado). A V3 traz
+# uma dependência nova de backend (claude-agent-sdk, do chat), mas -V3 continua
+# pulando o pip pelo mesmo motivo: o pacote entra no .venv no deploy normal
+# (sem -V3) ou num pip install -r requirements.txt manual. Enquanto não entrar,
+# o chat da V3 responde engine_unavailable e a V2 segue normal.
 if ($V3) {
     Write-Host "==> V3: pulando pip install (o .venv é compartilhado com a produção)"
+    & $VenvPython -c "import claude_agent_sdk" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "O chat da V3 fica indisponível (engine_unavailable) até um deploy normal ou pip install -r requirements.txt."
+    }
 } else {
     Write-Host "==> Instalando dependências do backend (pip install -r requirements.txt)..."
     & $VenvPython -m pip install -q -r (Join-Path $BackendDir "requirements.txt")

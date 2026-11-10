@@ -81,6 +81,19 @@ skipped, and the `finally` runs to completion — socket `close()` is idempotent
 CPython (maintainer statement in gh-149388), `_detach()` happens with whatever
 signature this version uses, and the flag gets set. Zero internals replicated.
 
+## Subprocess pipes (sockets only)
+
+The wrapper above is only valid for real sockets. The transport of a subprocess
+pipe (`asyncio.create_subprocess_exec`, which the chat engine uses to talk to
+the `claude` CLI) holds a `PipeHandle` in `_sock`, and a `PipeHandle` has no
+`shutdown()`. Calling it raised `AttributeError`, which escaped before the
+original ran: `connection_lost` never reached the protocol, the pipe was never
+closed and the subprocess was never reported as finished. So when `_sock` has
+no `shutdown`, the wrapper hands straight over to the original and touches
+nothing; the stdlib already protects pipes with `hasattr(self._sock,
+'shutdown')`, and closing a `PipeHandle` first could trigger the double close of
+gh-149388. The socket path is unchanged.
+
 ## Accepted behaviour delta
 
 The stdlib calls `shutdown()`/`close()` **after** `protocol.connection_lost(exc)`;
@@ -125,6 +138,11 @@ def install_proactor_connection_lost_patch() -> None:
 
     def _call_connection_lost(self, exc):  # noqa: ANN001, ANN202
         sock = getattr(self, "_sock", None)
+        if sock is not None and not hasattr(sock, "shutdown"):
+            # Subprocess pipe (`PipeHandle`): nothing to pre-close, and closing
+            # it here would risk the double close of gh-149388 (WinError 6).
+            # The stdlib already guards pipes with `hasattr(.., 'shutdown')`.
+            return original(self, exc)
         if sock is not None:
             # Preserve the intent of the stdlib's `shutdown()` (avoiding
             # ERROR_NETNAME_DELETED on a pending read at the other end) while

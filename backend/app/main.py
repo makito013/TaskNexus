@@ -9,7 +9,7 @@ import time
 import uuid
 import asyncio
 import uvicorn
-from typing import TypedDict
+from typing import Literal, TypedDict
 from contextlib import asynccontextmanager, contextmanager
 from fastapi import (
     FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
@@ -22,6 +22,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from pydantic import ValidationError
 from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
+from app.chat.availability import CliResolver, sdk_status, warn_if_session_env_inherited
+from app.chat.api import allowed_origins_from_env, create_chat_router
+from app.chat.engine import SpawnFailed
+from app.chat.manager import ChatManager
+from app.chat.sdk_engine import AgentSdkEngine
+from app.chat.service import ChatConfig, ChatService
+from app.chat.store import ChatStore
 from app.task_store import TaskStore
 from app.agent_store import GlobalAgentStore
 from app.card_store import CardStore, ColumnDeleteError, UnknownColumnError
@@ -168,6 +175,17 @@ artifact_store = ArtifactStore(db_path=SESSIONS_DB)
 # Workspace registry (workspaces, projects, folders) for V3 track 1 -- see workspace_store.py.
 workspace_store = WorkspaceStore(db_path=SESSIONS_DB)
 pty_manager = PTYManager()
+# V3 chat (track 2). `CHAT_*` are read here, at import, like CLEANUP_DELAY (so the
+# importlib.reload(main) of the test fixtures sees them) and AFTER `load_dotenv()` above:
+# CliResolver() reads CHAT_MIN_CLI_VERSION when it is built (never pass `min_version`, O15).
+chat_store = ChatStore(db_path=SESSIONS_DB)
+chat_config = ChatConfig.from_env()
+chat_manager = ChatManager(
+    max_processes=chat_config.max_processes,
+    idle_timeout=chat_config.idle_timeout,
+    pending_ttl=chat_config.pending_ttl,
+)
+chat_cli_resolver = CliResolver()
 
 # VAPID keypair provisioned at boot (decision G-1). None = push unavailable
 # on this machine (dependency missing / provisioning failed) — every push
@@ -504,6 +522,7 @@ async def _seed_workspace_registry() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    warn_if_session_env_inherited()
     await store.initialize()
     await task_store.initialize()
     await agent_store.initialize()
@@ -513,6 +532,7 @@ async def lifespan(app: FastAPI):
     await viewer_store.initialize()
     await artifact_store.initialize()
     await workspace_store.initialize()
+    await chat_store.initialize()
     # Generates the VAPID keypair on the very first boot and reuses it from
     # then on (G-1). Never raises — a failure here leaves _vapid_keys as
     # None, which every push path treats as "push unavailable" (R-2).
@@ -527,11 +547,16 @@ async def lifespan(app: FastAPI):
     # suprime até o banner "Uvicorn running on..." do próprio uvicorn, deixando
     # o terminal mudo do início ao fim mesmo quando tudo sobe certo — o que já
     # foi confundido uma vez com travamento. Esta linha ignora esse nível.
+    await chat_service.reconcile_on_boot()
     print("==> Backend pronto — aceitando conexões.", flush=True)
     yield
     # Primeiro o canal de hooks: ele serve o MESMO app, então uma requisição em
     # voo depois do close() dos stores bateria em conexão de banco fechada.
     await _stop_hook_loopback_listener()
+    try:
+        await chat_manager.shutdown()
+    except Exception as exc:  # noqa: BLE001 - a stuck chat process must not skip the rest
+        print(f"==> AVISO: o encerramento do chat falhou: {exc!r}", flush=True)
     await pty_manager.shutdown()
     await store.close()
     await task_store.close()
@@ -542,6 +567,7 @@ async def lifespan(app: FastAPI):
     await viewer_store.close()
     await artifact_store.close()
     await workspace_store.close()
+    await chat_store.close()
 
 
 # Two Windows-only workarounds for an abruptly disconnecting client (the
@@ -1385,6 +1411,11 @@ async def _ensure_pty_locked(session_key: str, project_id: str, agent_id: str | 
     if proc and proc.active:
         return proc, False, False, None
 
+    # A conversation owned by the chat engine never gets a PTY (one engine per
+    # key). Callers already map OSError to spawn_failed / provisioning_failed.
+    if await store.get_engine(session_key) == "chat":
+        raise OSError("Session is owned by the chat engine")
+
     proj, agent, cwd = _resolve_agent(project_id, agent_id)
     if (
         is_synthetic_key(project_id)
@@ -1686,8 +1717,23 @@ async def delete_global_agent(agent_id: str):
     return {"status": "deleted", "id": agent_id}
 
 
+SessionsEngineFilter = Literal["pty", "chat", "all"]
+
+
+async def _sessions_active_for_engine(engine: str) -> dict:
+    """`/active?engine=...`: the same PTY entries as the plain endpoint, each
+    tagged with its engine, plus the live chat conversations."""
+    pty_entries = await sessions_active() if engine in ("pty", "all") else {}
+    result = {key: {**entry, "engine": "pty"} for key, entry in pty_entries.items()}
+    if engine in ("chat", "all"):
+        result.update(await chat_service.active_snapshot())
+    return result
+
+
 @app.get("/api/sessions/active")
-async def sessions_active():
+async def sessions_active(engine: SessionsEngineFilter | None = None):
+    if engine is not None:
+        return await _sessions_active_for_engine(engine)
     now = asyncio.get_running_loop().time()
     meta = await store.get_all_meta()
     result = {}
@@ -1806,7 +1852,7 @@ async def hook_stop(request: Request):
 
 
 @app.get("/api/sessions/persisted")
-async def sessions_persisted():
+async def sessions_persisted(engine: SessionsEngineFilter | None = None):
     """Fase 4 (ADR-01): todas as sessões guardadas em sessions.db — a fonte de
     verdade da lista "Chats Abertos", DIFERENTE de /api/sessions/active.
 
@@ -1817,8 +1863,16 @@ async def sessions_persisted():
     (grace period, ou reinício do backend) até o usuário encerrar
     explicitamente — é isso que faz a lista "persistir entre dias" (critério
     de sucesso #2 da Fase 4), reabrir um item aqui reconecta via --resume.
+
+    V3 chat: without a parameter only `engine='pty'` rows are returned (what
+    the V2 has always seen, byte for byte). `?engine=pty|chat|all` filters and
+    tags every entry with its `engine`.
     """
-    return await store.get_all_meta()
+    if engine is None:
+        return await store.get_all_meta(engine="pty")
+    return await store.get_all_meta(
+        engine=None if engine == "all" else engine, include_engine=True
+    )
 
 
 @app.post("/api/sessions/{session_key:path}/ack")
@@ -1842,6 +1896,11 @@ async def rename_session(session_key: str, body: RenameFrame):
     return {"status": "renamed", "session_key": session_key, "display_name": display_name}
 
 
+async def _is_chat_key(session_key: str) -> bool:
+    """A conversation of the chat engine: its row says so, or a runtime is alive for it."""
+    return await store.get_engine(session_key) == "chat" or chat_manager.get(session_key) is not None
+
+
 @app.post("/api/sessions/{session_key:path}/terminate")
 async def terminate_session(session_key: str):
     """Terminates a PTY session (if one is running) and clears its stored
@@ -1861,6 +1920,12 @@ async def terminate_session(session_key: str):
     known_in_store = await store.get(session_key) is not None
     if proc is None and not known_in_store:
         raise HTTPException(status_code=404, detail=f"No active session: {session_key}")
+    if await _is_chat_key(session_key) or await store.was_chat(session_key):
+        # V3 chat: close the process and erase the chat's own data first. `was_chat` is a mark in
+        # `sessions.db` written when a chat is opened in the terminal (its chat data stays for a
+        # switch back). A pure PTY key has neither, so it never reaches the chat store or the
+        # session lock here (CT6).
+        await chat_service.terminate(session_key)
     if proc is not None:
         pty_manager.terminate(session_key)
     await store.clear(session_key)
@@ -1902,6 +1967,8 @@ async def reset_session(session_key: str):
     known_in_store = await store.get(session_key) is not None
     if proc is None and not known_in_store:
         raise HTTPException(status_code=404, detail=f"No active session: {session_key}")
+    if await _is_chat_key(session_key):
+        await chat_service.reset(session_key)
     # Idempotente e seguro mesmo se o processo já morreu sozinho (caso comum:
     # o resume_failed detectado acima já deixou o proc morto, sem removê-lo
     # de pty_manager — terminate() aqui só limpa a entrada).
@@ -3141,6 +3208,91 @@ workspace_service = WorkspaceService(
     get_global_agents=lambda: _global_agents_cache,
 )
 app.include_router(create_workspaces_router(workspace_service))
+
+
+# -- V3 chat (track 2) ------------------------------------------------------------------------------
+
+
+def _chat_resolve_agent(project_ref: str, agent_id: str | None):
+    """(project, agent) for a chat. An empty `project_ref` means "any project": the global
+    registry only (used by the connector discovery, which is per agent, not per project)."""
+    if not project_ref:
+        agent = next((a for a in _global_agents_cache if a.id == agent_id), None)
+        return None, agent
+    proj, agent, _ = _resolve_agent(project_ref, agent_id)
+    return proj, agent
+
+
+def _chat_resolve_project(project_ref: str, agent_id: str | None):
+    """(cwd, add_dirs, skipped): the same cwd the PTY uses; the project's other registered
+    folders by `position`, each re-checked like the primary one (S-5)."""
+    proj, _agent, cwd = _resolve_agent(project_ref, agent_id)
+    if proj is None:
+        raise SpawnFailed("folder_unavailable", "the project was not found")
+    if is_synthetic_key(project_ref):
+        if not _registry_folder_available(project_ref, proj):
+            raise SpawnFailed("folder_unavailable", "the project folder is unavailable")
+    elif not os.path.isdir(cwd):
+        raise SpawnFailed("folder_unavailable", "the project folder is unavailable")
+    add_dirs: list[str] = []
+    skipped: list[str] = []
+    snapshot = workspace_store.snapshot
+    row = snapshot.project_by_key.get(project_ref)
+    if row is not None:
+        for folder in sorted(snapshot.folders_by_project_id.get(row.id, ()), key=lambda f: f.position):
+            if folder.is_primary:
+                continue
+            ok = (
+                os.path.isdir(folder.path)
+                and os.path.normcase(os.path.realpath(folder.path)) == folder.canonical_path
+            )
+            (add_dirs if ok else skipped).append(folder.path)
+    return cwd, add_dirs, skipped
+
+
+def _chat_agent_exists(agent_id: str) -> bool:
+    if any(a.id == agent_id for a in _global_agents_cache):
+        return True
+    projects = scan_projects(PROJECTS_ROOT, global_agents=_global_agents_cache)
+    return any(a.id == agent_id for p in projects for a in p.agentes)
+
+
+async def _chat_pty_evict(session_key: str) -> None:
+    """Free a key from its PTY (the V2 socket, its task and the process) so the chat can own it."""
+    websocket = _active_connections.pop(session_key, None)
+    task = _active_tasks.pop(session_key, None)
+    if task is not None and not task.done():
+        task.cancel()
+    pty_manager.terminate(session_key)
+    _disconnect_times.pop(session_key, None)
+    if websocket is not None:
+        try:
+            await websocket.close()
+        except Exception:  # noqa: BLE001 - the browser may be gone already
+            pass
+
+
+# Tests swap `engine_factory` and `cli_resolver` on this instance after reloading main.
+chat_service = ChatService(
+    store=store,
+    chat_store=chat_store,
+    manager=chat_manager,
+    engine_factory=AgentSdkEngine,
+    cli_resolver=chat_cli_resolver,
+    resolve_project=_chat_resolve_project,
+    resolve_agent=_chat_resolve_agent,
+    agent_exists=_chat_agent_exists,
+    escritorio_mcp_servers=_escritorio_mcp_servers,
+    session_lock=_session_lock,
+    pty_is_alive=lambda key: (proc := pty_manager.get(key)) is not None and proc.active,
+    pty_evict=_chat_pty_evict,
+    mark_needs_attention=store.mark_needs_attention,
+    dispatch_push=_dispatch_push_for_session,
+    ack=store.ack,
+    sdk_status=sdk_status,
+    config=chat_config,
+)
+app.include_router(create_chat_router(chat_service, allowed_origins_from_env()))
 
 
 @app.websocket("/ws/pty/{session_key:path}")
