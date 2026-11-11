@@ -1,9 +1,10 @@
 """The real engine: the Claude Agent SDK driving the installed `claude` binary (ADR-30).
 
-This is the ONLY module that loads the SDK, and only inside functions (ADR-41), so the
-backend boots and serves the V2 even when the package is missing or broken.
+This is the only module that loads the SDK for work, and only inside functions (ADR-41), so the
+backend boots and serves the V2 even when the package is missing or broken. (`availability`
+also imports it, once, to report whether it is usable: ADR-41's check.)
 
-Everything that reaches the command line was validated by `ChatSpec.validate()` first
+Everything that reaches the command line was validated by `ChatSpec.validate_for_spawn()` first
 (GHSA-h4mw-j7qp-8mwm: a value starting with `-` would become a flag of the CLI).
 """
 from __future__ import annotations
@@ -20,13 +21,13 @@ from typing import Any, AsyncIterator
 
 from . import connectors, permissions
 from .engine import (
-    ArgvValueError,
     ChatProcess,
     ChatSpec,
     EngineCallbacks,
     EngineMessage,
     EngineUnavailable,
     PermissionContext,
+    PermissionDecision,
     ResumeFailed,
     SpawnFailed,
 )
@@ -50,6 +51,36 @@ def read_session_messages(claude_session_id: str, cwd: str) -> list:
     """The SDK's own transcript reader (G0.13), for the history import. Blocking: callers run
     it in a thread."""
     return load_sdk().get_session_messages(claude_session_id, directory=cwd)
+
+
+class SessionRuleUpdate:
+    """What the SDK serialises for one `updated_permissions` entry, in the form the CLI honours.
+
+    The SDK only calls `to_dict()` on each entry (`PermissionUpdate` is a type annotation there),
+    so this stands in for it. SDK 0.1.69 serialises a rule without content as
+    `{"toolName": "Write", "ruleContent": null}` and the CLI ignores the whole update (observed
+    live on 2.1.318: the tool asks again); the same rule without the key is honoured.
+    """
+
+    def __init__(self, update: dict):
+        self._update = update
+
+    def to_dict(self) -> dict:
+        return {
+            **self._update,
+            "rules": [
+                {key: value for key, value in rule.items() if not (key == "ruleContent" and value is None)}
+                for rule in self._update.get("rules") or []
+            ],
+        }
+
+
+def permission_result(sdk: Any, decision: PermissionDecision) -> Any:
+    """The SDK's answer to `can_use_tool` for a decision of the chat."""
+    if decision.behavior == "allow":
+        updates = [SessionRuleUpdate(item) for item in decision.updated_permissions]
+        return sdk.PermissionResultAllow(updated_input=decision.updated_input, updated_permissions=updates or None)
+    return sdk.PermissionResultDeny(message=decision.message, interrupt=decision.interrupt)
 
 
 def _safe_append(text: str | None) -> str | None:
@@ -214,12 +245,7 @@ class SdkProcess:
 
 class AgentSdkEngine:
     async def spawn(self, spec: ChatSpec, callbacks: EngineCallbacks) -> ChatProcess:
-        try:
-            spec.validate()
-        except ArgvValueError as exc:
-            if exc.field == "resume":
-                raise ResumeFailed(str(exc)) from exc
-            raise SpawnFailed("process_error", str(exc)) from exc
+        spec.validate_for_spawn()
 
         sdk = load_sdk()
         stderr_lines: deque[str] = deque(maxlen=_STDERR_KEEP)
@@ -286,12 +312,7 @@ class AgentSdkEngine:
                 PermissionContext(tool_use_id=getattr(context, "tool_use_id", None),
                                   suggestions=suggestions),
             )
-            if decision.behavior == "allow":
-                return permissions.build_allow(
-                    sdk.PermissionResultAllow, sdk.PermissionUpdate,
-                    sdk.types.PermissionRuleValue, decision,
-                )
-            return permissions.build_deny(sdk.PermissionResultDeny, decision)
+            return permission_result(sdk, decision)
 
         async def stop_hook(input_data: dict, tool_use_id: str | None, context: Any) -> dict:
             await callbacks.on_stop(dict(input_data))
@@ -351,15 +372,3 @@ class AgentSdkEngine:
         if spec.strict_mcp:
             kwargs["extra_args"] = {"strict-mcp-config": None}
         return sdk.ClaudeAgentOptions(**kwargs)
-
-    @staticmethod
-    def build_argv(sdk: Any, spec: ChatSpec, callbacks: EngineCallbacks) -> list[str]:
-        """The exact command line the SDK would run for `spec` (what the argv-injection test
-        inspects). Validates first, like `spawn`."""
-        spec.validate()
-        options = AgentSdkEngine._build_options(sdk, spec, callbacks, lambda line: None)
-        from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-
-        transport = SubprocessCLITransport(prompt=None, options=options)
-        transport._cli_path = spec.cli_path
-        return transport._build_command()

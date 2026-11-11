@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.chat import permissions
+from app.chat import permissions, sdk_engine
 
 
 @pytest.fixture
@@ -28,9 +28,7 @@ def _wire_updates(sdk, tool_name: str, tool_input: dict) -> list[dict]:
         tool_name=tool_name, tool_input=tool_input, suggestions=[], connector=None,
         behavior="allow", scope="session",
     )
-    allow = permissions.build_allow(
-        sdk.PermissionResultAllow, sdk.PermissionUpdate, sdk.types.PermissionRuleValue, decision
-    )
+    allow = sdk_engine.permission_result(sdk, decision)
     return [update.to_dict() for update in allow.updated_permissions]
 
 

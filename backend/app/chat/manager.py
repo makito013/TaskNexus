@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Awaitable, Callable
 
+from .config import DEFAULT_IDLE_TIMEOUT, DEFAULT_MAX_PROCESSES, DEFAULT_PENDING_TTL
 from .engine import SpawnFailed
 from .runtime import ChatRuntime
 from .store import ChatStore
@@ -39,9 +40,9 @@ class _Starting:
 class ChatManager:
     def __init__(
         self,
-        max_processes: int = 6,
-        idle_timeout: float = 1800.0,
-        pending_ttl: float = 14400.0,
+        max_processes: int = DEFAULT_MAX_PROCESSES,
+        idle_timeout: float = DEFAULT_IDLE_TIMEOUT,
+        pending_ttl: float = DEFAULT_PENDING_TTL,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.max_processes = max_processes

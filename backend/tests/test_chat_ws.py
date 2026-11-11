@@ -9,7 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.chat.availability import SdkStatus
 from app.chat.engine import SpawnFailed
-from app.chat.runtime import MAX_READERS
+from app.chat.hub import MAX_READERS
 from tests.chat_fakes import KEY, Rig, init_message
 from tests.test_chat_endpoints import PROJECT, StubResolver, env, wait_until  # noqa: F401 - fixtures
 

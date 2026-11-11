@@ -109,18 +109,22 @@ def connector_of_tool(tool_name: str, policy: ConnectorPolicy) -> str | None:
 def audit(mcp_status: dict | None, init_tools: Iterable[str] | None, policy: ConnectorPolicy) -> list[str]:
     """Names (or tool prefixes) of exposed connectors; empty means clean.
 
-    Status: with the allowlist empty the connectors must not be there at all, so any that is
-    not disabled/failed/needs-auth counts, `pending` included (it may connect later). With a
-    partial allowlist the blocked ones are connected on purpose and only their tools matter.
+    Status (`mcp_status` is `get_mcp_status()` or the `init`'s `mcp_servers` in the same shape):
+    with the allowlist empty the connectors must not be there at all, so any that is not
+    disabled/failed/needs-auth counts, `pending` included (it may connect later). With an
+    allowlist the blocked ones are loaded on purpose (their tools are denied) and only a
+    connector that is neither allowed nor known counts: nothing blocks it (CA16f).
     Tools (when `init_tools` is known): any connector tool outside the allowlist.
     """
     exposed: set[str] = set()
     if policy.mode == "probe":
         return []
-    if policy.mode == "none":
-        for server in (mcp_status or {}).get("mcpServers") or []:
-            if is_claudeai(server) and server.get("status") not in _SILENT_STATUSES:
-                exposed.add(str(server.get("name")))
+    known_names = {entry.get("name") for entry in policy.known}
+    for server in (mcp_status or {}).get("mcpServers") or []:
+        if not is_claudeai(server) or server.get("status") in _SILENT_STATUSES:
+            continue
+        if policy.mode == "none" or (server.get("name") not in policy.allowed and server.get("name") not in known_names):
+            exposed.add(str(server.get("name")))
     allowed_prefixes = _allowed_prefixes(policy)
     for tool in init_tools or ():
         if tool.startswith(CLAUDEAI_TOOL_PREFIX) and not (allowed_prefixes and tool.startswith(allowed_prefixes)):
@@ -140,7 +144,7 @@ async def probe(engine: ChatEngine, spec: ChatSpec, *, settle_seconds: float = _
                 poll_seconds: float = _PROBE_POLL_SECONDS) -> list[dict]:
     """List the connectors of the account: `connect()` without a query (no turn, no tokens),
     wait for the statuses to settle, keep `[{name, tool_prefix}]` of the claude.ai ones only,
-    disconnect. `spec` must have the connectors ON (policy with an allowlist) and an empty
+    disconnect. `spec` must have the connectors ON (`ConnectorPolicy(probe=True)`) and an empty
     scratch cwd."""
     process = await engine.spawn(
         spec,

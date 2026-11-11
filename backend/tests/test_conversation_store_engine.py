@@ -197,7 +197,14 @@ async def test_same_id_swap_adds_no_alias(store):
 @pytest.mark.asyncio
 async def test_sessions_table_wins_over_an_alias(store):
     await store.set("owner", "shared-id")
-    await store.add_alias("stale", "shared-id")
+    await store.set("stale", "shared-id")
+    await store.set_claude_session_id_with_alias("stale", "moved-on")  # leaves the alias shared-id -> stale
+    conn = sqlite3.connect(store.db_path)
+    try:
+        assert conn.execute("SELECT session_key FROM session_claude_ids WHERE claude_session_id = 'shared-id'"
+                            ).fetchone() == ("stale",)
+    finally:
+        conn.close()
 
     assert await store.get_session_key_by_claude_id("shared-id") == "owner"
 

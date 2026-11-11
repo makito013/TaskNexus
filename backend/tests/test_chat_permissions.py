@@ -5,10 +5,11 @@ import asyncio
 import hashlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from app.chat import permissions
+from app.chat import permissions, sdk_engine
 from app.chat.engine import PermissionDecision
 
 SESSION_ALLOW = {"type": "addRules", "rules": [{"toolName": "Write", "ruleContent": None}],
@@ -154,7 +155,7 @@ def test_answers_become_updated_input_only_for_a_question():
     assert other.updated_input is None
 
 
-def test_build_helpers_use_the_classes_they_are_given_and_import_nothing():
+def test_the_sdk_result_uses_the_classes_it_is_given_and_permissions_imports_nothing():
     class Allow:
         def __init__(self, updated_input=None, updated_permissions=None):
             self.updated_input, self.updated_permissions = updated_input, updated_permissions
@@ -163,20 +164,16 @@ def test_build_helpers_use_the_classes_they_are_given_and_import_nothing():
         def __init__(self, message="", interrupt=False):
             self.message, self.interrupt = message, interrupt
 
-    class Update:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
+    sdk = SimpleNamespace(PermissionResultAllow=Allow, PermissionResultDeny=Deny)
 
-    class Rule:
-        def __init__(self, tool_name, rule_content=None):
-            self.tool_name, self.rule_content = tool_name, rule_content
-
-    allow = permissions.build_allow(Allow, Update, Rule, PermissionDecision(
+    allow = sdk_engine.permission_result(sdk, PermissionDecision(
         behavior="allow", updated_permissions=[SESSION_ALLOW]))
-    deny = permissions.build_deny(Deny, PermissionDecision(behavior="deny", message="m", interrupt=True))
+    deny = sdk_engine.permission_result(sdk, PermissionDecision(behavior="deny", message="m", interrupt=True))
 
-    assert allow.updated_permissions[0].destination == "session"
-    assert allow.updated_permissions[0].rules[0].tool_name == "Write"
+    wire = allow.updated_permissions[0].to_dict()
+    assert wire["destination"] == "session"
+    assert wire["rules"] == [{"toolName": "Write"}]  # a null ruleContent never goes on the wire
+    assert SESSION_ALLOW["rules"][0] == {"toolName": "Write", "ruleContent": None}  # the decision is not touched
     assert (deny.message, deny.interrupt) == ("m", True)
     assert "claude_agent_sdk" not in Path(permissions.__file__).read_text(encoding="utf-8").replace(
         "never imports the SDK", "")

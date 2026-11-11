@@ -196,15 +196,6 @@ class ConversationStore:
                 raise
             await self._conn.commit()
 
-    async def add_alias(self, session_key: str, claude_session_id: str) -> None:
-        await self._conn.execute(
-            "INSERT OR REPLACE INTO session_claude_ids "
-            "(claude_session_id, session_key, created_at) "
-            "VALUES (?, ?, (julianday('now') - 2440587.5) * 86400.0)",
-            (claude_session_id, session_key),
-        )
-        await self._conn.commit()
-
     async def clear(self, session_key: str) -> None:
         await self._conn.execute(
             "DELETE FROM sessions WHERE session_key = ?",

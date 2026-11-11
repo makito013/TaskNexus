@@ -8,7 +8,8 @@ import pytest_asyncio
 
 from app.chat.engine import SpawnFailed
 from app.chat.manager import ChatManager, ClosedWhileStarting
-from app.chat.runtime import ChatRuntime, SessionHub
+from app.chat.hub import SessionHub
+from app.chat.runtime import ChatRuntime
 from app.chat.store import ChatStore
 from tests.chat_fakes import FakeChatEngine, Rig
 

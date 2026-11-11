@@ -543,11 +543,11 @@ async def lifespan(app: FastAPI):
     _pretrust_projects()
     await _seed_workspace_registry()
     await _start_hook_loopback_listener()
+    await chat_service.reconcile_on_boot()
     # print(), não logging: --log-level warning (uso em produção, deploy.sh)
     # suprime até o banner "Uvicorn running on..." do próprio uvicorn, deixando
     # o terminal mudo do início ao fim mesmo quando tudo sobe certo — o que já
     # foi confundido uma vez com travamento. Esta linha ignora esse nível.
-    await chat_service.reconcile_on_boot()
     print("==> Backend pronto — aceitando conexões.", flush=True)
     yield
     # Primeiro o canal de hooks: ele serve o MESMO app, então uma requisição em

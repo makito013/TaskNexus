@@ -11,7 +11,7 @@ import logging
 from typing import Callable, Mapping
 
 from .sdk_engine import read_session_messages
-from .normalizer import ChatEvent, TOOL_RESULT_MAX_BYTES, _content_text, _summary, truncate_utf8
+from .normalizer import ChatEvent, tool_result_event
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,9 @@ def _events_from(messages: list) -> list[ChatEvent]:
                 if block.get("type") == "text" and block.get("text", "").strip():
                     events.append(ChatEvent("message.user", {"client_msg_id": None, "text": block["text"], "origin": "import"}))
                 elif block.get("type") == "tool_result":
-                    text = _content_text(block.get("content"))
-                    clipped, truncated = truncate_utf8(text, TOOL_RESULT_MAX_BYTES)
-                    events.append(ChatEvent("tool.result", {
-                        "tool_use_id": block.get("tool_use_id"), "is_error": bool(block.get("is_error")),
-                        "summary": _summary(text), "content": clipped, "truncated": truncated,
-                    }))
+                    events.append(tool_result_event(
+                        block.get("tool_use_id"), block.get("is_error"), block.get("content")
+                    ))
         elif role == "assistant":
             kept = []
             for block in content if isinstance(content, list) else []:

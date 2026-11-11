@@ -16,7 +16,14 @@ sdk = pytest.importorskip("claude_agent_sdk")
 
 
 def _argv(spec: ChatSpec) -> list[str]:
-    return AgentSdkEngine.build_argv(sdk, spec, CALLBACKS)
+    """The exact command line the SDK would run for `spec`. Validates first, like `spawn`."""
+    from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+
+    spec.validate()
+    options = AgentSdkEngine._build_options(sdk, spec, CALLBACKS, lambda line: None)
+    transport = SubprocessCLITransport(prompt=None, options=options)
+    transport._cli_path = spec.cli_path
+    return transport._build_command()
 
 
 @pytest.mark.parametrize("evil", EVIL[:5])

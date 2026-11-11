@@ -183,17 +183,30 @@ async def _has(rig: Rig, kind: str) -> bool:
 
 
 async def test_set_model_is_applied_by_the_running_process(tmp_path, cli):
-    """Observed on 2.1.317: `set_model` answers at once with a notice, and the next turn's `init`
-    carries the new model (`model.changed`), with no extra turn of its own."""
+    """Observed on 2.1.317: `set_model` answers at once (that answer is the `model.changed` the
+    runtime publishes, CA29) and the next turn's `init` carries the resolved model name."""
     async with _rig(tmp_path, cli) as rig:
         runtime = await rig.start()
         await _turn(rig, runtime, "Reply with exactly: OK")
         await runtime.submit("set_model", model="sonnet")
-        await rig.wait_for_async(lambda: _has(rig, "system.notice"), 30)
+        assert [e["payload"]["model"] for e in await rig.events("model.changed")] == ["sonnet"]
         await _turn(rig, runtime, "Reply with exactly: OK2")
-        changed = (await rig.events("model.changed"))[0]["payload"]
+        announced = [e["payload"]["model"] for e in await rig.events("model.changed")]
+        answer_model = [e["payload"].get("model") for e in await rig.events("message.assistant")][-1]
 
-    assert "sonnet" in changed["model"]
+    # The CLI's answer (the alias), then at most the name the next `init` resolves it to.
+    assert announced[0] == "sonnet" and 1 <= len(announced) <= 2 and all("sonnet" in m for m in announced)
+    assert "sonnet" in str(answer_model)
+
+
+async def test_the_server_info_has_the_commands_and_the_models_the_catalog_reads(tmp_path, cli):
+    """A13: only `commands` (`{name, description, argumentHint}`) and `models` (`{value, displayName}`) are read."""
+    async with _rig(tmp_path, cli) as rig:
+        runtime = await rig.start()
+        info = await runtime.process.get_server_info()
+
+    assert info["commands"] and all({"name", "description", "argumentHint"} <= set(c) for c in info["commands"])
+    assert info["models"] and all(isinstance(m.get("value"), str) and m.get("displayName") for m in info["models"])
 
 
 async def test_the_connector_prefixes_and_the_disallowed_tools_mechanism_hold_on_this_binary(tmp_path, cli):

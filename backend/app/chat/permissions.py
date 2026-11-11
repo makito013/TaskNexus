@@ -13,7 +13,7 @@ Rules that never bend:
 from __future__ import annotations
 
 import os
-from typing import Any, Iterable
+from typing import Iterable
 
 from .engine import PermissionDecision
 
@@ -178,49 +178,3 @@ def build_decision(
     return PermissionDecision(
         behavior="allow", updated_input=updated_input, updated_permissions=updated_permissions
     )
-
-
-# -- the SDK classes come in as arguments: this module never imports the SDK -------------------
-
-
-_OMITTING_SUBCLASSES: dict[Any, Any] = {}
-
-
-def _omitting_null_rule_content(update_cls: Any) -> Any:
-    """A subclass of the SDK's `PermissionUpdate` whose wire form leaves out a null `ruleContent`.
-
-    SDK 0.1.69 serialises a rule without content as `{"toolName": "Write", "ruleContent": null}`
-    and the CLI ignores the whole update (observed live on 2.1.318: the tool asks again). The
-    same rule without the key is honoured. A subclass keeps the SDK class itself untouched.
-    """
-    cached = _OMITTING_SUBCLASSES.get(update_cls)
-    if cached is None:
-        class OmittingNullRuleContent(update_cls):
-            def to_dict(self):
-                wire = super().to_dict()
-                for rule in wire.get("rules") or []:
-                    if rule.get("ruleContent") is None:
-                        rule.pop("ruleContent", None)
-                return wire
-
-        cached = _OMITTING_SUBCLASSES[update_cls] = OmittingNullRuleContent
-    return cached
-
-
-def build_allow(allow_cls: Any, update_cls: Any, rule_cls: Any, decision: PermissionDecision):
-    update_cls = _omitting_null_rule_content(update_cls)
-    updates = [
-        update_cls(
-            type=item["type"],
-            rules=[rule_cls(tool_name=r["toolName"], rule_content=r.get("ruleContent"))
-                   for r in item["rules"]],
-            behavior=item["behavior"],
-            destination=item["destination"],
-        )
-        for item in decision.updated_permissions
-    ]
-    return allow_cls(updated_input=decision.updated_input, updated_permissions=updates or None)
-
-
-def build_deny(deny_cls: Any, decision: PermissionDecision):
-    return deny_cls(message=decision.message, interrupt=decision.interrupt)

@@ -934,10 +934,10 @@ def test_the_key_of_a_v2_session_with_a_suffix_switches_to_the_chat(env):
 
 
 def test_the_key_is_split_on_its_first_two_parts():
-    from app.chat.service import ChatService
+    from app.chat.engine_switch import split_key
 
-    assert ChatService._split_key("Pessoal/TaskNexus-publico::claude::rsvt3t") == ("Pessoal/TaskNexus-publico", "claude")
-    assert ChatService._split_key("RD_Station::claude") == ("RD_Station", "claude")
+    assert split_key("Pessoal/TaskNexus-publico::claude::rsvt3t") == ("Pessoal/TaskNexus-publico", "claude")
+    assert split_key("RD_Station::claude") == ("RD_Station", "claude")
 
 
 def _transcript(*pairs, prefix="msg"):

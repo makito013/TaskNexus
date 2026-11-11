@@ -60,6 +60,7 @@ class FakeChatProcess:
         self._turns = 0
         self.permission_tasks: list[asyncio.Task] = []
         self.announced_model: str | None = None
+        self.server_info_calls = 0
 
     def _check(self, name: str) -> None:
         if asyncio.current_task() is not self.owner_task:
@@ -86,6 +87,8 @@ class FakeChatProcess:
         shows only in the `init` of the NEXT turn (see `default_on_query`)."""
         self._check("set_model")
         self.calls.append(("set_model", alias))
+        if self.engine.set_model_error is not None:
+            raise self.engine.set_model_error
         self.model = alias
 
     async def set_permission_mode(self, mode: str) -> None:
@@ -98,7 +101,8 @@ class FakeChatProcess:
 
     async def get_server_info(self) -> dict:
         self._check("get_server_info")
-        return {}
+        self.server_info_calls += 1
+        return self.engine.server_info
 
     async def messages(self):
         while True:
@@ -168,6 +172,10 @@ class FakeChatEngine:
         # A slow connect: `spawn` waits here until a test sets the event.
         self.gate: asyncio.Event | None = None
         self.mcp_status: dict = {"mcpServers": []}
+        # What `get_server_info()` answers (the keys the product reads: commands, models).
+        self.server_info: dict = {}
+        # A refusal of the CLI to `set_model` (the control request fails).
+        self.set_model_error: Exception | None = None
         self.on_query: Callable[[FakeChatProcess, str], Any] = default_on_query
 
     @property
@@ -256,10 +264,11 @@ class Rig:
         self.pending_calls: list[str] = []
         self.all_decided: list[str] = []
         self.id_changes: list[tuple] = []
+        self.inits: list = []
         self.closed: list[str] = []
 
     async def __aenter__(self) -> "Rig":
-        from app.chat.runtime import SessionHub
+        from app.chat.hub import SessionHub
 
         await self.store.initialize()
         await self.store.create_chat_session({
@@ -291,6 +300,9 @@ class Rig:
         async def on_id_changed(key, previous, current):
             self.id_changes.append((key, previous, current))
 
+        async def on_init(key, info):
+            self.inits.append(info)
+
         async def state_payload(key):
             # The service's own producer, over this rig's store and runtime (no manager here).
             from types import SimpleNamespace
@@ -304,7 +316,7 @@ class Rig:
         return RuntimeHooks(on_stop=on_stop, on_permission_pending=on_pending,
                             on_all_decided=on_all_decided, on_session_id_changed=on_id_changed,
                             on_closed=lambda key, runtime: self.closed.append(key),
-                            state_payload=state_payload)
+                            state_payload=state_payload, on_init=on_init)
 
     def build(self, **extra):
         from app.chat.runtime import ChatRuntime

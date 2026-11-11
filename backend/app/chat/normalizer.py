@@ -47,7 +47,7 @@ def truncate_utf8(text: str, limit: int) -> tuple[str, bool]:
     return raw[:limit].decode("utf-8", errors="ignore"), True
 
 
-def _content_text(content: object) -> str:
+def content_text(content: object) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -64,6 +64,19 @@ def _content_text(content: object) -> str:
 def _summary(text: str) -> str:
     line = " ".join(text.split())
     return line if len(line) <= _SUMMARY_CHARS else line[: _SUMMARY_CHARS - 1] + "…"
+
+
+def tool_result_event(tool_use_id: str | None, is_error: bool, content: object) -> ChatEvent:
+    """The one place that shapes a `tool.result` event, for live results and imported history."""
+    text = content_text(content)
+    clipped, truncated = truncate_utf8(text, TOOL_RESULT_MAX_BYTES)
+    return ChatEvent("tool.result", {
+        "tool_use_id": tool_use_id,
+        "is_error": bool(is_error),
+        "summary": _summary(text),
+        "content": clipped,
+        "truncated": truncated,
+    })
 
 
 @dataclass
@@ -147,18 +160,10 @@ class Normalizer:
         })]
 
     def _on_user_tool_result(self, message: EngineMessage) -> list[ChatEvent]:
-        events = []
-        for result in message.results:
-            text = _content_text(result.get("content"))
-            content, truncated = truncate_utf8(text, TOOL_RESULT_MAX_BYTES)
-            events.append(ChatEvent("tool.result", {
-                "tool_use_id": result.get("tool_use_id"),
-                "is_error": bool(result.get("is_error")),
-                "summary": _summary(text),
-                "content": content,
-                "truncated": truncated,
-            }))
-        return events
+        return [
+            tool_result_event(result.get("tool_use_id"), result.get("is_error"), result.get("content"))
+            for result in message.results
+        ]
 
     def _on_user_text(self, message: EngineMessage) -> list[ChatEvent]:
         text = message.text or ""
@@ -177,7 +182,7 @@ class Normalizer:
         return [ChatEvent("turn.ended", {
             "subtype": data.get("subtype"),
             "is_error": bool(data.get("is_error")),
-            "terminal_reason": data.get("terminal_reason") or data.get("stop_reason"),
+            "terminal_reason": data.get("terminal_reason"),
             "cost_usd": data.get("cost_usd"),
             "duration_ms": data.get("duration_ms"),
             "num_turns": data.get("num_turns"),

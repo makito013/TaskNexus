@@ -5,9 +5,7 @@ Nothing outside this module touches the process: WS and REST put a `Command` in 
 and wait for its future. The owner task is also the task that spawned the process, which is
 what the SDK's cancel scopes require.
 
-`SessionHub` is the part that outlives a process: the event lock (`seq` order), the live
-readers (fan-out with bounded queues) and `publish`, used by the runtime and by the service
-for events that exist without a process (status, history import, reset).
+`hub.SessionHub` is the part that outlives a process (event lock, readers, `publish`).
 """
 from __future__ import annotations
 
@@ -20,116 +18,46 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from . import connectors, permissions
+from .config import DEFAULT_COMMAND_TIMEOUT
 from .engine import (
+    ALLOWED_PERMISSION_MODES,
+    ArgvValueError,
     ChatEngine,
     ChatProcess,
     ChatSpec,
     EngineCallbacks,
     EngineMessage,
+    EngineUnavailable,
     PermissionContext,
     PermissionDecision,
     ResumeFailed,
     SpawnFailed,
-    EngineUnavailable,
-    ArgvValueError,
     validate_model,
-    ALLOWED_PERMISSION_MODES,
 )
+from .errors import ChatCommandError
+from .hub import SessionHub
 from .normalizer import ChatEvent, Normalizer, NormalizerState
-from .store import ChatStore
 
 logger = logging.getLogger(__name__)
 
-MAX_READERS = 16
-READER_QUEUE_SIZE = 1024
-COMMAND_TIMEOUT_SECONDS = 30.0
 MAX_SEND_CHARS = 100_000
-OVERFLOW = object()  # sentinel left in a reader's queue when it fell behind
-
-
-class ChatCommandError(Exception):
-    """A command the runtime refuses; `code` is a `command.rejected` code of the WS contract."""
-
-    def __init__(self, code: str, message: str = ""):
-        super().__init__(message or code)
-        self.code = code
-        self.message = message or code
-
-
-class TooManyReaders(Exception):
-    pass
-
-
-# -- readers and the hub --------------------------------------------------------------------------
-
-
-class Reader:
-    def __init__(self) -> None:
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=READER_QUEUE_SIZE)
-        self.overflowed = False
-
-    def offer(self, frame: dict) -> None:
-        if self.overflowed:
-            return  # the socket is about to close; the client will ask for the rest with `since`
-        try:
-            self.queue.put_nowait(frame)
-        except asyncio.QueueFull:
-            # Too slow: drop the backlog and leave a marker; the socket closes with 4408
-            # and the client reconnects with `since` (the log is the truth).
-            self.overflowed = True
-            while not self.queue.empty():
-                self.queue.get_nowait()
-            self.queue.put_nowait(OVERFLOW)
-
-
-class SessionHub:
-    """Per `session_key`: the event lock, the readers and the one way to publish."""
-
-    def __init__(self, session_key: str, store: ChatStore):
-        self.session_key = session_key
-        self.store = store
-        self.event_lock = asyncio.Lock()
-        self.readers: list[Reader] = []
-
-    def frame(self, kind: str, payload: dict, seq: int | None, ts: float) -> dict:
-        return {"type": kind, "session_key": self.session_key, "seq": seq, "ts": ts, **payload}
-
-    def _fan_out(self, frame: dict) -> None:
-        for reader in list(self.readers):
-            reader.offer(frame)
-
-    async def publish(self, kind: str, payload: dict) -> int:
-        """Persist and fan out. Order of `seq` is the order of the lock. When the caller is
-        cancelled with the commit already in flight the event still reaches the readers
-        (the store runs the callback), so a durable event is never invisible live."""
-        async with self.event_lock:
-            seq, _ = await self.store.append_event(
-                self.session_key, kind, payload,
-                on_committed=lambda seq, ts: self._fan_out(self.frame(kind, payload, seq, ts)),
-            )
-        return seq
-
-    def emit(self, kind: str, payload: dict) -> None:
-        """Live only (`seq: null`): deltas, rate limits, state."""
-        self._fan_out(self.frame(kind, payload, None, time.time()))
-
-    async def add_reader(self) -> tuple[Reader, int]:
-        """Register a reader and read the cutoff in ONE critical section, so no event falls
-        between the replay (seq <= cutoff, from the database) and the live queue."""
-        async with self.event_lock:
-            if len(self.readers) >= MAX_READERS:
-                raise TooManyReaders()
-            reader = Reader()
-            self.readers.append(reader)
-            session = await self.store.get_chat_session(self.session_key)
-            return reader, (session["last_seq"] if session else 0)
-
-    def remove_reader(self, reader: Reader) -> None:
-        if reader in self.readers:
-            self.readers.remove(reader)
 
 
 # -- the runtime ----------------------------------------------------------------------------------
+
+
+async def _ignore_init(key: str, info: "InitInfo") -> None:
+    return None
+
+
+@dataclass
+class InitInfo:
+    """What the process told about itself at an `init`: the names it accepts as slash commands
+    and, from `get_server_info()`, only the keys the product reads (`commands`, `models`)."""
+
+    slash_commands: list[str] = field(default_factory=list)
+    commands: list[dict] = field(default_factory=list)
+    models: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -143,6 +71,8 @@ class RuntimeHooks:
     on_closed: Callable[[str, "ChatRuntime"], None]
     # The ONE producer of `session.state` (contract 4): the service, which reads the row.
     state_payload: Callable[[str], Awaitable[dict]]
+    # Told, from the owner task, after every `init` (the process was asked for its server info).
+    on_init: Callable[[str, "InitInfo"], Awaitable[None]] = _ignore_init
 
 
 @dataclass
@@ -179,7 +109,7 @@ class ChatRuntime:
         hooks: RuntimeHooks,
         resumed: bool,
         clock: Callable[[], float] = time.monotonic,
-        command_timeout: float = COMMAND_TIMEOUT_SECONDS,
+        command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
     ):
         self.session_key = session_key
         self.hub = hub
@@ -199,6 +129,7 @@ class ChatRuntime:
         self.last_activity = clock()
         self.closing_reason: str | None = None
         self.stop_pushed_for_turn = False
+        self.init_info: InitInfo | None = None
         self._owner: asyncio.Task | None = None
         self._ready: asyncio.Future | None = None
         self._background: set[asyncio.Task] = set()
@@ -301,7 +232,12 @@ class ChatRuntime:
             validate_model(model)
         except ArgvValueError:
             raise ChatCommandError("model_not_allowed", "not a model alias or id") from None
+        # The CLI answers the control request (a refusal raises): that answer is the confirmation.
+        # It still names the model only in the `init` of the NEXT turn, which then adds nothing
+        # when it carries the same name (the normalizer was told).
         await self.process.set_model(model)
+        self.normalizer.state.model = model
+        await self.hub.publish("model.changed", {"model": model})
         await self.store.update_chat_session(self.session_key, model=model)
         await self._emit_state()
 
@@ -312,6 +248,24 @@ class ChatRuntime:
         await self.store.update_chat_session(self.session_key, permission_mode=mode)
         await self.hub.publish("mode.changed", {"permission_mode": mode})
         await self._emit_state()
+
+    async def _cmd_init_info(self, slash_commands: list[str]) -> None:
+        """After an `init`: ask the process for its commands and models (only `commands` and
+        `models` are read, A13) and tell the service. Never fails the loop: a catalog that could
+        not be refreshed is not a broken conversation."""
+        try:
+            server_info = await self.process.get_server_info()
+            info = InitInfo(
+                slash_commands=slash_commands,
+                commands=[item for item in server_info.get("commands") or [] if isinstance(item, dict)],
+                models=[item for item in server_info.get("models") or [] if isinstance(item, dict)],
+            )
+            changed = info != self.init_info
+            self.init_info = info
+            if changed:  # every turn brings an `init`; the service hears only about news
+                await self.hooks.on_init(self.session_key, info)
+        except Exception:  # noqa: BLE001
+            logger.warning("chat %s: could not refresh the catalog from the process", self.session_key, exc_info=True)
 
     # -- the owner task -------------------------------------------------------------------------
 
@@ -405,9 +359,9 @@ class ChatRuntime:
                 await self.process.close()
             except Exception:  # noqa: BLE001
                 logger.exception("chat %s: process close failed", self.session_key)
-        for future_owner in list(self.pending.values()):
-            if not future_owner.future.done():
-                future_owner.future.set_result(
+        for entry in list(self.pending.values()):
+            if not entry.future.done():
+                entry.future.set_result(
                     PermissionDecision(behavior="deny", message="cancelled", interrupt=True)
                 )
         self.pending.clear()
@@ -453,12 +407,18 @@ class ChatRuntime:
     async def _handle_message(self, message: EngineMessage) -> None:
         self.last_activity = self.clock()
         if message.kind == "init":
-            exposed = connectors.audit(None, message.data.get("tools"), self.spec.connector_policy)
+            exposed = connectors.audit(
+                {"mcpServers": message.data.get("mcp_servers")}, message.data.get("tools"), self.spec.connector_policy
+            )
             if exposed:
                 await self._connector_exposed(exposed)
                 return
         for event in self.normalizer.feed(message):
             await self._handle_event(event)
+        if message.kind == "init":
+            # The process may only be asked from the owner task (ADR-39): leave it a note.
+            slash_commands = [name for name in message.data.get("slash_commands") or [] if isinstance(name, str)]
+            self.inbox.put_nowait(_Command("init_info", {"slash_commands": slash_commands}))
 
     async def _handle_event(self, event: ChatEvent) -> None:
         if not event.persist:

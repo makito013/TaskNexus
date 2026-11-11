@@ -20,6 +20,8 @@ import time
 
 import aiosqlite
 
+from .engine import is_valid_model
+
 logger = logging.getLogger(__name__)
 
 # An event payload above this is replaced by a marker (the conversation keeps
@@ -97,7 +99,58 @@ _SCHEMA = (
         updated_at           REAL NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_commands (
+        name          TEXT PRIMARY KEY,
+        description   TEXT,
+        argument_hint TEXT,
+        handling      TEXT NOT NULL,
+        enabled       INTEGER NOT NULL DEFAULT 1,
+        sort          INTEGER NOT NULL DEFAULT 0,
+        source        TEXT NOT NULL DEFAULT 'seed',
+        updated_at    REAL NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_models (
+        value         TEXT PRIMARY KEY,
+        display_name  TEXT NOT NULL,
+        description   TEXT,
+        enabled       INTEGER NOT NULL DEFAULT 1,
+        sort          INTEGER NOT NULL DEFAULT 0,
+        source        TEXT NOT NULL DEFAULT 'seed',
+        updated_at    REAL NOT NULL
+    )
+    """,
 )
+
+# Seeds of the catalog (`INSERT OR IGNORE`: what the user edited is never overwritten).
+# (name, description, handling). `clear` is `dispatch`: the G0.8 showed that the CLI really
+# forgets the conversation after it. The terminal-only ones are `hidden`.
+_SEED_COMMANDS = (
+    ("model", "Trocar o modelo da conversa", "ui"),
+    ("compact", "Resumir a conversa para liberar contexto", "dispatch"),
+    ("clear", "Esquecer a conversa e recomeçar", "dispatch"),
+    ("context", "Mostrar o uso do contexto", "dispatch"),
+    ("cost", "Mostrar o custo da sessão", "dispatch"),
+    ("config", "Abrir as configurações", "dispatch"),
+    ("effort", "Ajustar o esforço de raciocínio", "dispatch"),
+    ("rename", "Renomear a conversa", "dispatch"),
+    ("mcp", "Ver os servidores MCP", "dispatch"),
+    ("reload-plugins", "Recarregar os plugins", "dispatch"),
+    ("color", "Mudar a cor da sessão", "dispatch"),
+    ("fast", "Alternar o modo rápido", "dispatch"),
+    ("output-style", "Escolher o estilo de resposta", "dispatch"),
+    ("login", None, "hidden"),
+    ("logout", None, "hidden"),
+    ("theme", None, "hidden"),
+    ("terminal-setup", None, "hidden"),
+    ("permissions", None, "hidden"),
+    ("resume", None, "hidden"),
+)
+_SEED_MODELS = (("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku"))
+# Models a binary reports sort after the seeds and the user's own ordering.
+_SERVER_INFO_SORT_BASE = 100
 
 
 def _session_from_row(row: aiosqlite.Row) -> dict:
@@ -151,6 +204,18 @@ class ChatStore:
         await self._conn.execute("PRAGMA busy_timeout=5000")
         for statement in _SCHEMA:
             await self._conn.execute(statement)
+        now = time.time()
+        for position, (name, description, handling) in enumerate(_SEED_COMMANDS):
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO chat_commands (name, description, handling, sort, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (name, description, handling, position, now),
+            )
+        for position, (value, display_name) in enumerate(_SEED_MODELS):
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO chat_models (value, display_name, sort, updated_at) VALUES (?, ?, ?, ?)",
+                (value, display_name, position, now),
+            )
         await self._conn.commit()
 
     @contextlib.asynccontextmanager
@@ -571,3 +636,79 @@ class ChatStore:
                 ),
             )
         return await self.get_agent_settings(agent_id)
+
+    # -- chat_commands / chat_models -----------------------------------------------------
+
+    async def list_commands(self) -> list[dict]:
+        async with self._conn.execute("SELECT * FROM chat_commands ORDER BY sort, name") as cursor:
+            return [{**dict(row), "enabled": bool(row["enabled"])} async for row in cursor]
+
+    async def command_handling(self, name: str) -> str | None:
+        """How the registry handles `name`, or None when it is not registered."""
+        async with self._conn.execute("SELECT handling FROM chat_commands WHERE name = ?", (name,)) as cursor:
+            row = await cursor.fetchone()
+        return row["handling"] if row else None
+
+    async def put_commands(self, items: list[dict]) -> None:
+        """Upsert entries validated by `commands.validate_command_items`; they become the user's."""
+        async with self._write():
+            for item in items:
+                await self._conn.execute(
+                    "INSERT INTO chat_commands (name, description, argument_hint, handling, enabled, sort, "
+                    "source, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'user', ?) "
+                    "ON CONFLICT(name) DO UPDATE SET description = excluded.description, "
+                    "argument_hint = excluded.argument_hint, handling = excluded.handling, "
+                    "enabled = excluded.enabled, sort = excluded.sort, source = 'user', "
+                    "updated_at = excluded.updated_at",
+                    (item["name"], item["description"], item["argument_hint"], item["handling"],
+                     int(item["enabled"]), item["sort"], time.time()),
+                )
+
+    async def list_models(self) -> list[dict]:
+        async with self._conn.execute("SELECT * FROM chat_models ORDER BY sort, value") as cursor:
+            return [{**dict(row), "enabled": bool(row["enabled"])} async for row in cursor]
+
+    async def model_enabled(self, value: str) -> bool:
+        async with self._conn.execute("SELECT enabled FROM chat_models WHERE value = ?", (value,)) as cursor:
+            row = await cursor.fetchone()
+        return bool(row and row["enabled"])
+
+    async def put_models(self, items: list[dict]) -> None:
+        """Upsert entries validated by `commands.validate_model_items`; they become the user's."""
+        async with self._write():
+            for item in items:
+                await self._conn.execute(
+                    "INSERT INTO chat_models (value, display_name, description, enabled, sort, source, "
+                    "updated_at) VALUES (?, ?, ?, ?, ?, 'user', ?) "
+                    "ON CONFLICT(value) DO UPDATE SET display_name = excluded.display_name, "
+                    "description = excluded.description, enabled = excluded.enabled, sort = excluded.sort, "
+                    "source = 'user', updated_at = excluded.updated_at",
+                    (item["value"], item["display_name"], item["description"], int(item["enabled"]),
+                     item["sort"], time.time()),
+                )
+
+    async def seed_models_from_server_info(self, models: list[dict]) -> None:
+        """The models a binary reports (`get_server_info()["models"]`: `value`, `displayName`,
+        `description`) join the catalog as `server_info`. A value already there, edited or not,
+        stays as it is, and one that could not reach the command line is skipped."""
+        rows = []
+        for model in models:
+            value = model.get("value")
+            if not is_valid_model(value):
+                continue
+            display = model.get("displayName")
+            description = model.get("description")
+            rows.append((
+                value,
+                (display if isinstance(display, str) and display.strip() else value)[:100],
+                (description[:500] or None) if isinstance(description, str) else None,
+            ))
+        if not rows:
+            return
+        async with self._write():
+            for position, (value, display_name, description) in enumerate(rows):
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO chat_models (value, display_name, description, sort, source, "
+                    "updated_at) VALUES (?, ?, ?, ?, 'server_info', ?)",
+                    (value, display_name, description, _SERVER_INFO_SORT_BASE + position, time.time()),
+                )

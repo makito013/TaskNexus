@@ -7,7 +7,8 @@ import os
 import pytest
 
 from app.chat.engine import ConnectorPolicy, ResumeFailed, SpawnFailed
-from app.chat.runtime import OVERFLOW, ChatCommandError, MAX_READERS, TooManyReaders
+from app.chat.hub import MAX_READERS, OVERFLOW, TooManyReaders
+from app.chat.runtime import ChatCommandError
 from tests.chat_fakes import KEY, SESSION_UUID, Rig, assistant_text, init_message, result_message
 
 pytestmark = pytest.mark.asyncio
@@ -568,15 +569,18 @@ async def test_a_process_that_dies_mid_turn_sends_a_last_state_that_is_stopped_a
     assert states[-1]["status"] == "stopped"
 
 
-async def test_set_model_is_answered_without_an_init_and_the_next_turn_announces_it(db):
+async def test_set_model_is_confirmed_by_the_cli_answer_and_the_next_init_adds_nothing(db):
+    """CA29: the real CLI names the new model only in the `init` of the NEXT turn, but it answers the
+    control request at once; that answer is the confirmation (`model.changed`)."""
     async with Rig(db, model="haiku") as rig:
         runtime = await rig.start()
         await runtime.submit("send", text="one")
         await rig.wait_for(lambda: not runtime.turn_running)
         await runtime.submit("set_model", model="sonnet")
-        assert await rig.events("model.changed") == []
+        assert [e["payload"]["model"] for e in await rig.events("model.changed")] == ["sonnet"]
         await runtime.submit("send", text="two")
         await rig.wait_for(lambda: not runtime.turn_running)
+        assert rig.engine.last.queries == ["one", "two"]
 
     assert [e["payload"]["model"] for e in await rig.events("model.changed")] == ["sonnet"]
 

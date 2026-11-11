@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable, Protocol
 
+from .config import DEFAULT_CONNECT_TIMEOUT
+
 # -- values that end up in the CLI argv ------------------------------------------------------
 
 _UUID_RE = re.compile(
@@ -148,7 +150,7 @@ class ChatSpec:
     # Safety net for the empty-allowlist mode: `--strict-mcp-config`, so only the servers
     # in `mcp_servers` load at all (used when the audit still found connectors).
     strict_mcp: bool = False
-    connect_timeout: float = 60.0
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
 
     def validate(self) -> None:
         """Raise ArgvValueError for anything that must not reach the command line."""
@@ -161,6 +163,16 @@ class ChatSpec:
         if self.permission_mode not in ALLOWED_PERMISSION_MODES:
             raise ArgvValueError("permission_mode", "not an allowed mode")
         validate_add_dirs(self.add_dirs)
+
+    def validate_for_spawn(self) -> None:
+        """`validate()` with the failure a spawn reports: `ResumeFailed` for a bad `resume`,
+        `SpawnFailed(process_error)` for any other value. The one place that maps the two."""
+        try:
+            self.validate()
+        except ArgvValueError as exc:
+            if exc.field == "resume":
+                raise ResumeFailed(str(exc)) from exc
+            raise SpawnFailed("process_error", str(exc)) from exc
 
 
 # -- what the process reports and asks ---------------------------------------------------------

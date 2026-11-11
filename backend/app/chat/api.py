@@ -16,11 +16,12 @@ import time
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from .runtime import OVERFLOW, ChatCommandError, TooManyReaders
-from .service import ChatError, ChatService, public_detail
+from .errors import ChatCommandError, ChatError, public_detail
+from .hub import OVERFLOW, TooManyReaders
+from .service import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,27 @@ def origin_allowed(origin: str | None, host: str | None, extra: list[str]) -> bo
     return bool(host) and parsed.netloc.lower() == host.lower()
 
 
+# The HTTP status of every code of the contract (any other code is a plain 400). `spawn_failed` and
+# `resume_failed` are 200: the failure was recorded as a `status` event and in `last_error`, which
+# is what the client reads.
+HTTP_STATUS = {
+    "project_not_found": 404, "agent_not_found": 404, "session_not_found": 404, "permission_not_found": 404,
+    "engine_conflict": 409, "closed_while_starting": 409, "already_decided": 409,
+    "permission_expired": 410,
+    "agent_not_chat_capable": 422, "mode_not_allowed": 422, "model_not_allowed": 422,
+    "first_message_too_long": 422, "scope_not_allowed": 422, "invalid_name": 422, "unknown_connector": 422,
+    "invalid_engine": 422, "folder_unavailable": 422, "invalid_command": 422, "invalid_model": 422,
+    "invalid_frame": 422,
+    "probe_failed": 502, "process_error": 502,
+    "engine_unavailable": 503, "capacity_exceeded": 503,
+    "spawn_failed": 200, "resume_failed": 200,
+}
+
+
 def _http_error(exc: ChatError) -> HTTPException:
-    return HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
+    return HTTPException(
+        status_code=HTTP_STATUS.get(exc.code, 400), detail={"code": exc.code, "message": exc.message}
+    )
 
 
 class CreateChatBody(BaseModel):
@@ -102,6 +122,18 @@ def create_chat_router(service: ChatService, allowed_origins: list[str] | None =
     async def chat_events(session_key: str, since: int = Query(0, ge=0), limit: int = Query(500, ge=1, le=1000)):
         return await guarded(service.events(session_key, since, limit))
 
+    @router.get("/api/chat/sessions/{session_key:path}/commands")
+    async def chat_commands_of_session(session_key: str):
+        return await guarded(service.session_commands(session_key))
+
+    @router.get("/api/chat/commands")
+    async def get_chat_commands():
+        return await service.get_commands()
+
+    @router.get("/api/chat/models")
+    async def get_chat_models():
+        return await service.get_models()
+
     @router.get("/api/chat/agents/{agent_id}/connectors")
     async def get_connectors(agent_id: str):
         return await guarded(service.get_connectors(agent_id))
@@ -128,15 +160,18 @@ def create_chat_router(service: ChatService, allowed_origins: list[str] | None =
 
     @router.post("/api/chat/permissions/{permission_id}/decide", dependencies=[Depends(require_origin)])
     async def decide_permission(permission_id: str, body: DecideBody):
-        try:
-            return await service.decide(
-                permission_id, behavior=body.behavior, scope=body.scope, message=body.message,
-                interrupt=body.interrupt, answers=body.answers, by="rest",
-            )
-        except ChatCommandError as exc:
-            status = {"permission_not_found": 404, "already_decided": 409, "permission_expired": 410,
-                      "scope_not_allowed": 422}.get(exc.code, 400)
-            raise HTTPException(status, {"code": exc.code, "message": exc.message}) from exc
+        return await guarded(service.decide(
+            permission_id, behavior=body.behavior, scope=body.scope, message=body.message,
+            interrupt=body.interrupt, answers=body.answers, by="rest",
+        ))
+
+    @router.put("/api/chat/commands", dependencies=[Depends(require_origin)])
+    async def put_chat_commands(body: dict = Body(...)):
+        return await guarded(service.put_commands(body.get("commands")))
+
+    @router.put("/api/chat/models", dependencies=[Depends(require_origin)])
+    async def put_chat_models(body: dict = Body(...)):
+        return await guarded(service.put_models(body.get("models")))
 
     @router.put("/api/chat/agents/{agent_id}/connectors", dependencies=[Depends(require_origin)])
     async def put_connectors(agent_id: str, body: AllowlistBody):
