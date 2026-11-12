@@ -1,0 +1,66 @@
+{
+  "seed_rows": [
+    {
+      "session_key": "proj-d::claude",
+      "claude_session_id": "44444444-4444-4444-8444-444444444444",
+      "updated_at": 1700000300.0,
+      "display_name": null,
+      "needs_attention": 1,
+      "last_activity_seen_at": null,
+      "push_notified": 0
+    },
+    {
+      "session_key": "proj-a::claude",
+      "claude_session_id": "11111111-1111-4111-8111-111111111111",
+      "updated_at": 1700000000.0,
+      "display_name": "Revisão do módulo",
+      "needs_attention": 1,
+      "last_activity_seen_at": null,
+      "push_notified": 1
+    },
+    {
+      "session_key": "proj-f::claude",
+      "claude_session_id": "66666666-6666-4666-8666-666666666666",
+      "updated_at": 1700000500.0,
+      "display_name": "Ação pendente",
+      "needs_attention": 1,
+      "last_activity_seen_at": null,
+      "push_notified": 1
+    },
+    {
+      "session_key": "proj-b::claude",
+      "claude_session_id": "",
+      "updated_at": 1700000100.0,
+      "display_name": null,
+      "needs_attention": 0,
+      "last_activity_seen_at": 1700000050.0,
+      "push_notified": 0
+    },
+    {
+      "session_key": "proj-e::terminal",
+      "claude_session_id": "",
+      "updated_at": 1700000400.0,
+      "display_name": "Terminal avulso",
+      "needs_attention": 0,
+      "last_activity_seen_at": 1700000350.0,
+      "push_notified": 0
+    },
+    {
+      "session_key": "proj-c::codex",
+      "claude_session_id": "33333333-3333-4333-8333-333333333333",
+      "updated_at": 1700000200.0,
+      "display_name": "Análise crítica",
+      "needs_attention": 0,
+      "last_activity_seen_at": null,
+      "push_notified": 1
+    }
+  ],
+  "active_fakes": {
+    "proj-a::claude": "running",
+    "proj-b::claude": "idle",
+    "proj-d::claude": "disconnected"
+  },
+  "persisted_body": "{\"proj-d::claude\":{\"display_name\":null,\"needs_attention\":true,\"push_notified\":false},\"proj-a::claude\":{\"display_name\":\"Revisão do módulo\",\"needs_attention\":true,\"push_notified\":true},\"proj-f::claude\":{\"display_name\":\"Ação pendente\",\"needs_attention\":true,\"push_notified\":true},\"proj-b::claude\":{\"display_name\":null,\"needs_attention\":false,\"push_notified\":false},\"proj-e::terminal\":{\"display_name\":\"Terminal avulso\",\"needs_attention\":false,\"push_notified\":false},\"proj-c::codex\":{\"display_name\":\"Análise crítica\",\"needs_attention\":false,\"push_notified\":true}}",
+  "active_body": "{\"proj-a::claude\":{\"status\":\"running\",\"connected\":true,\"needs_attention\":true,\"display_name\":\"Revisão do módulo\"},\"proj-b::claude\":{\"status\":\"idle\",\"connected\":true,\"needs_attention\":false,\"display_name\":null},\"proj-d::claude\":{\"status\":\"disconnected\",\"connected\":false,\"needs_attention\":true,\"display_name\":null}}",
+  "source_commit": "c4c5dee"
+}

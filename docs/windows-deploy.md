@@ -91,8 +91,19 @@ board e o chat não existem.
   antes do build se a variável faltar ou resolver para o `backend\sessions.db`
   real. Dois backends no mesmo SQLite disputam escrita e rodam os mesmos jobs de
   fundo.
-- **venv:** pula o `pip install`. O `backend\.venv` é o mesmo da produção, e a V3
-  não traz dependência nova de backend.
+- **venv:** pula o `pip install`. O `backend\.venv` é o mesmo da produção. A V3
+  traz uma dependência nova de backend (`claude-agent-sdk`, do chat), que só entra
+  no `.venv` pelo **deploy normal** (`.\deploy.ps1` sem `-V3`, que roda
+  `pip install -r requirements.txt`) ou por um `pip install -r requirements.txt`
+  manual. Enquanto não entrar, o chat responde `engine_unavailable` e o resto da
+  V3 e a V2 funcionam normalmente; o `-V3` testa o import e avisa:
+  "O chat da V3 fica indisponível (engine_unavailable) até um deploy normal ou pip
+  install -r requirements.txt."
+- **push:** a cópia do banco leva junto a tabela `push_subscriptions`, então a
+  instância `-V3` **continua enviando push** para os aparelhos inscritos (inclusive
+  o aviso de pendência de permissão do chat). O `-V3` avisa. Para não duplicar o
+  push da produção, apague as inscrições na cópia antes de subir
+  (`DELETE FROM push_subscriptions`).
 
 Com a produção no ar, `-V3` sem `-Port` binda a mesma porta dela (443/80); o
 script só **avisa**, não bloqueia. Suba a V3 numa instância paralela:
@@ -108,6 +119,55 @@ $env:SESSIONS_DB = "C:/tmp/tn-v3/sessions-v3.db"
 `$env:SESSIONS_DB` persiste na sessão do terminal: feche-o (ou rode
 `$env:SESSIONS_DB = $null`) antes de voltar a subir a produção nele.
 `./deploy.sh --v3` é o equivalente no macOS/Linux, com as mesmas proteções.
+
+### Binário do `claude` no chat
+
+O chat fala com o `claude` instalado na máquina, nunca com o binário embutido no
+pacote do SDK. O caminho vem de, nesta ordem: `CHAT_CLI_PATH` (variável do
+ambiente do backend), `cmd[0]` do agente e `claude` no `PATH`. Wrappers `.cmd`,
+`.bat` e `.ps1` são recusados (aponte para o `claude.exe`). A versão mínima é a
+`2.1.317`, a única em que o desligamento dos conectores claude.ai foi provado;
+`CHAT_MIN_CLI_VERSION` sobe o mínimo. Falhas aparecem como `cli_not_found`,
+`cli_invalid` e `cli_version_unsupported`. Inicie o backend de um terminal comum:
+se ele herdar `CLAUDECODE` ou `CLAUDE_CODE_CHILD_SESSION` (iniciado de dentro de
+uma sessão do Claude Code), o boot avisa que os transcripts podem ficar
+desligados.
+
+## Reverter o chat da V3
+
+Use quando for voltar o código para uma versão sem o chat **depois** de o chat ter
+sido usado em produção. Sem o passo 2, a V2 antiga veria as conversas do chat como
+sessões de terminal sem o histórico que elas têm no chat. Antes de qualquer uso do
+chat em produção, basta `git revert` (a coluna `engine` e as tabelas do chat ficam
+no banco e são ignoradas pelo código antigo).
+
+1. **Pare o serviço** (o backend precisa estar parado: o script recusa se alguma
+   conversa do chat ainda tiver processo vivo).
+2. Rode o script **com o código ainda na versão com chat** (ele some com a
+   reversão). É só stdlib e roda de qualquer checkout:
+
+   ```powershell
+   backend\.venv\Scripts\python.exe backend\scripts\revert_chat_sessions.py --db backend\sessions.db
+   ```
+
+   Opções: `--archive <arquivo.json>` (padrão: `<db>.chat-archive-<data>-<pid>.json` ao
+   lado do banco; o script nunca sobrescreve um arquivo existente e recusa o próprio
+   banco ou seus `-wal`/`-shm` como destino) e `--dry-run` (só mostra as contagens).
+   Códigos de saída: `0` feito (ou nada a fazer), `2` recusado por processo de chat
+   vivo, `1` erro. O backend grava o próprio PID em `chat_sessions.runtime_owner_pid`
+   enquanto uma conversa tem processo e zera ao fechar; é esse PID que o script confere.
+   Os arquivos `backend/sessions.db.chat-archive-*` têm texto puro das conversas e estão
+   no `.gitignore`: nunca os adicione ao repositório.
+3. **Confira as contagens** impressas (`sessions migradas`, `eventos arquivados`, ...)
+   e guarde o arquivo de arquivo: ele tem as mensagens e pedidos de permissão que
+   saíram do banco. Rodar de novo imprime zeros.
+4. Reverta o código (`git revert` do commit do chat, ou volte o checkout).
+5. Suba o serviço. As conversas migradas abrem no terminal com `--resume` do
+   mesmo id de sessão.
+
+Nunca rode duas versões diferentes do backend no mesmo banco (a instância `-V3`
+sempre usa uma cópia). Ao trocar uma conversa entre o chat e o terminal, feche a
+sessão num dos lados antes de abri-la no outro.
 
 Para desenvolver a V3 com hot reload: `npm run dev:v3` no `frontend` e, se o
 backend não estiver na 8000, `$env:API_PORT = "8010"` antes (variável do shell,

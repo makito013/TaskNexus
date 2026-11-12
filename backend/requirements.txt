@@ -16,3 +16,13 @@ pywinpty==2.0.14; sys_platform == "win32"
 pywebpush==2.0.3
 py-vapid==1.9.4
 eval_type_backport==0.4.0
+# Chat engine (V3 chat). claude-agent-sdk 0.1.69 is the newest release that still
+# resolves with uvicorn==0.30.6; pydantic 2.14 breaks the SDK / mcp imports.
+# The SDK is imported lazily and always driven with an explicit cli_path (never the bundled binary).
+claude-agent-sdk==0.1.69
+pydantic<2.14
+# Pinned to what a fresh resolve produced with the pins above (pip backtracked through many
+# sse-starlette releases because fastapi 0.115 caps starlette at 0.38.x). Keeps the deploy
+# deterministic instead of re-resolving to a different set.
+mcp==1.12.4
+sse-starlette==3.0.3

@@ -98,3 +98,7 @@ certs/
 
 # Card file attachments from the Board (real user uploads, runtime data).
 backend/board_attachments/
+
+# Chat rollback archives (backend/scripts/revert_chat_sessions.py): raw event and
+# permission payloads, never commit them
+backend/sessions.db.chat-archive-*
