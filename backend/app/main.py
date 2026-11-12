@@ -55,6 +55,7 @@ from app.session_provisioner import provision_session_id
 from app.quiet_hours import current_utc_offset_minutes, is_within_quiet_hours
 from app.models import (
     CARD_TIPOS,
+    CARD_PRIORIDADES,
     InitFrame,
     ResizeFrame,
     RenameFrame,
@@ -67,6 +68,8 @@ from app.models import (
     HookTaskRequest,
     Card,
     CardAttachment,
+    CardQuestion,
+    CardQuestionAnswerRequest,
     CardImage,
     CardCreateRequest,
     SubcardCreateRequest,
@@ -84,6 +87,7 @@ from app.models import (
     HookCardGetRequest,
     HookCardListRequest,
     HookCardAttachRequest,
+    HookCardAskRequest,
     AppearanceSettings,
     AppearanceUpdateRequest,
     NotificationSettings,
@@ -914,6 +918,7 @@ def _escritorio_mcp_servers(session_id: str) -> dict[str, _McpServerSpec]:
                 "ESCRITORIO_HOOK_GET_URL": f"{base_url}/api/hooks/cards/get",
                 "ESCRITORIO_HOOK_LIST_URL": f"{base_url}/api/hooks/cards/list",
                 "ESCRITORIO_HOOK_ATTACH_URL": f"{base_url}/api/hooks/cards/attach",
+                "ESCRITORIO_HOOK_ASK_URL": f"{base_url}/api/hooks/cards/questions",
                 "PYTHONUTF8": "1",
             },
         },
@@ -941,7 +946,7 @@ def _build_mcp_config_json(session_id: str) -> str:
     esses arquivos) como servidores stdio do `claude` CLI, expondo
     `criar_tarefa_validacao` (escritorio-tarefas),
     `criar_card`/`mover_card`/`editar_card`/`excluir_card`/`ver_card`/
-    `listar_cards`/`anexar_arquivo_card` (escritorio-cards, Tarefa 8 do plano
+    `listar_cards`/`anexar_arquivo_card`/`perguntar_card` (escritorio-cards, Tarefa 8 do plano
     05-TL.md + Fase 3) e
     `abrir_no_visualizador`/`publicar_artefato` (escritorio-visualizador,
     Fases V e A). Os abspaths são resolvidos a partir de
@@ -2188,6 +2193,7 @@ async def create_card(body: CardCreateRequest):
             descricao=body.descricao,
             tipo=body.tipo,
             prazo=body.prazo,
+            prioridade=body.prioridade,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2214,6 +2220,7 @@ async def create_subcard(card_id: int, body: SubcardCreateRequest):
             ultima_atualizacao_por="bruno",
             descricao=body.descricao,
             tipo=body.tipo,
+            prioridade=body.prioridade,
             parent_id=card_id,
         )
     except ValueError as e:
@@ -2227,11 +2234,14 @@ async def update_card(card_id: int, body: CardUpdateRequest):
     # None here means "status did not come in the PATCH" (same semantics as
     # CardStore.update), and _validate_card_status passes it through untouched.
     await _require_valid_card_status(body.status)
-    updated = await card_store.update(
-        card_id,
-        ultima_atualizacao_por="bruno",
-        **body.model_dump(exclude_none=True),
-    )
+    try:
+        updated = await card_store.update(
+            card_id,
+            ultima_atualizacao_por="bruno",
+            **body.model_dump(exclude_none=True),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Card not found: {card_id}")
     return Card(**updated)
@@ -2483,6 +2493,28 @@ async def card_attachment_file(attachment_id: int, file_path: str, download: boo
     return await file_serving.file_response(root, file_path, download)
 
 
+# -- Card questions -------------------------------------------------------------
+#
+# Agents ask through the MCP tool `perguntar_card` (hook below); the user
+# answers here, from the card modal. The agent reads the answers back with
+# `ver_card`.
+
+
+@app.patch("/api/cards/{card_id}/questions/{question_id}", response_model=CardQuestion)
+async def answer_card_question(card_id: int, question_id: int, body: CardQuestionAnswerRequest):
+    question = await card_store.answer_question(card_id, question_id, body.answer)
+    if question is None:
+        raise HTTPException(status_code=404, detail=f"Question not found: {question_id}")
+    return CardQuestion(**question)
+
+
+@app.delete("/api/cards/{card_id}/questions/{question_id}")
+async def delete_card_question(card_id: int, question_id: int):
+    if not await card_store.delete_question(card_id, question_id):
+        raise HTTPException(status_code=404, detail=f"Question not found: {question_id}")
+    return {"status": "deleted", "card_id": card_id, "question_id": question_id}
+
+
 @app.get("/api/cards/limpar-concluidos/preview", response_model=LimparConcluidosResult)
 async def preview_limpar_concluidos(projeto_id: str):
     result = await card_store.preview_limpar_concluidos(projeto_id)
@@ -2642,6 +2674,17 @@ def _validate_card_tipo(tipo: str | None) -> str | None:
     return None
 
 
+def _validate_card_prioridade(prioridade: str | None) -> str | None:
+    """Agent-path validation for `prioridade`, same contract as
+    _validate_card_tipo (None = absent, "" = clear, error string otherwise)."""
+    if prioridade is not None and prioridade != "" and prioridade not in CARD_PRIORIDADES:
+        return (
+            f"prioridade inválida: '{prioridade}'. Use "
+            + ", ".join(CARD_PRIORIDADES) + "."
+        )
+    return None
+
+
 @app.post("/api/hooks/cards/create")
 async def hook_cards_create(body: HookCardCreateRequest):
     session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
@@ -2649,7 +2692,7 @@ async def hook_cards_create(body: HookCardCreateRequest):
         return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
 
     # Cheap failure first: validate `tipo` before resolving project/parent.
-    tipo_erro = _validate_card_tipo(body.tipo)
+    tipo_erro = _validate_card_tipo(body.tipo) or _validate_card_prioridade(body.prioridade)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
 
@@ -2721,7 +2764,10 @@ async def hook_cards_create(body: HookCardCreateRequest):
 
     origem = f"agente:{agent_id}"
     try:
-        card_id = await card_store.create(
+        # Deduplicated: a create whose response timed out in the MCP adapter
+        # may still have landed, and the agent's retry must get that card back
+        # instead of a twin (card #213).
+        card_id, deduplicated = await card_store.create_deduplicated(
             titulo=body.titulo,
             projeto_id=projeto_id,
             status=body.status,
@@ -2731,10 +2777,11 @@ async def hook_cards_create(body: HookCardCreateRequest):
             parent_id=body.parent_id,
             session_key=session_key,
             tipo=body.tipo,
+            prioridade=body.prioridade,
         )
     except ValueError as e:
         return {"success": False, "error": str(e)}
-    return {"success": True, "card_id": card_id}
+    return {"success": True, "card_id": card_id, "deduplicated": deduplicated}
 
 
 @app.post("/api/hooks/cards/move")
@@ -2792,7 +2839,7 @@ async def hook_cards_update(body: HookCardUpdateRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
-    tipo_erro = _validate_card_tipo(body.tipo)
+    tipo_erro = _validate_card_tipo(body.tipo) or _validate_card_prioridade(body.prioridade)
     if tipo_erro is not None:
         return {"success": False, "error": tipo_erro}
 
@@ -2807,7 +2854,8 @@ async def hook_cards_update(body: HookCardUpdateRequest):
     # the MCP). exclude_none still lets the "" sentinel through (CardStore.update
     # turns it into NULL).
     campos = body.model_dump(
-        include={"titulo", "descricao", "status", "tipo"}, exclude_none=True
+        include={"titulo", "descricao", "status", "tipo", "prioridade"},
+        exclude_none=True
     )
     updated = await card_store.update(
         body.card_id,
@@ -2865,10 +2913,55 @@ async def hook_cards_get(body: HookCardGetRequest):
             "error": f"Card {body.card_id} pertence a outro cliente",
         }
 
-    # The raw row plus its file attachments: the agent needs to know what is
-    # already attached before calling anexar_arquivo_card again.
-    card = {**card, "attachments": await card_store.list_attachments(body.card_id)}
+    # The raw row plus its file attachments (the agent needs to know what is
+    # already attached before calling anexar_arquivo_card again) and its
+    # questions: this is where the agent reads the user's answers.
+    card = {
+        **card,
+        "attachments": await card_store.list_attachments(body.card_id),
+        "questions": await card_store.list_questions(body.card_id),
+    }
     return {"success": True, "card": card}
+
+
+MAX_QUESTION_CHARS = 2000
+
+
+@app.post("/api/hooks/cards/questions")
+async def hook_cards_ask(body: HookCardAskRequest):
+    """MCP tool `perguntar_card`: records questions on a card for the user to
+    answer in the card modal. Same session/existence/same-client order as the
+    other card hooks; business errors as {"success": False, "error": ...}."""
+    session_key = await store.get_session_key_by_claude_id(body.claude_session_id)
+    if not session_key:
+        return {"status": "ok"}  # no-op silencioso, mesmo padrão de hook_task/hook_stop
+
+    own_projeto_id, _, agent_id = session_key.partition("::")
+    card = await card_store.get(body.card_id)
+    if card is None or card["deleted_at"] is not None:
+        return {"success": False, "error": f"Card {body.card_id} não existe ou foi removido"}
+    if not _agent_same_cliente(card, own_projeto_id):
+        return {"success": False, "error": f"Card {body.card_id} pertence a outro cliente"}
+
+    raw = body.perguntas or []
+    if not isinstance(raw, list) or not all(isinstance(q, str) for q in raw):
+        return {"success": False, "error": "perguntas deve ser uma lista de textos."}
+    questions = [q.strip() for q in raw if q.strip()]
+    if not questions:
+        return {"success": False, "error": "Informe ao menos uma pergunta não vazia."}
+    if any(len(q) > MAX_QUESTION_CHARS for q in questions):
+        return {
+            "success": False,
+            "error": f"Cada pergunta pode ter no máximo {MAX_QUESTION_CHARS} caracteres.",
+        }
+
+    try:
+        created = await card_store.add_questions(
+            body.card_id, questions, asked_by=f"agente:{agent_id}"
+        )
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    return {"success": True, "questions": created}
 
 
 @app.post("/api/hooks/cards/list")

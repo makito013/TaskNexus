@@ -114,6 +114,7 @@ _HOOK_URL_ENV_BY_PATH = {
     "ESCRITORIO_HOOK_GET_URL": "get",
     "ESCRITORIO_HOOK_LIST_URL": "list",
     "ESCRITORIO_HOOK_ATTACH_URL": "attach",
+    "ESCRITORIO_HOOK_ASK_URL": "questions",
 }
 
 
@@ -211,13 +212,18 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             adapter.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
             response = adapter.recv()
             tools = response["result"]["tools"]
-            assert len(tools) == 7
+            assert len(tools) == 8
             by_name = {t["name"]: t for t in tools}
             assert set(by_name.keys()) == {
                 "criar_card", "mover_card", "editar_card",
                 "excluir_card", "ver_card", "listar_cards",
-                "anexar_arquivo_card",
+                "anexar_arquivo_card", "perguntar_card",
             }
+            perguntar = by_name["perguntar_card"]
+            assert perguntar["inputSchema"]["required"] == ["card_id", "perguntas"]
+            assert perguntar["inputSchema"]["properties"]["perguntas"]["type"] == "array"
+            assert "questions" in by_name["ver_card"]["description"]
+
             anexar = by_name["anexar_arquivo_card"]
             assert anexar["inputSchema"]["required"] == ["card_id", "caminho"]
             assert anexar["inputSchema"]["properties"]["card_id"]["type"] == "integer"
@@ -227,7 +233,8 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             assert criar["inputSchema"]["required"] == ["titulo"]
             props = criar["inputSchema"]["properties"]
             assert set(props.keys()) == {
-                "titulo", "status", "descricao", "tipo", "parent_id", "projeto_id",
+                "titulo", "status", "descricao", "tipo", "prioridade",
+                "parent_id", "projeto_id",
             }
             # No `enum` on `status` any more (task #43 phase 1): the board's
             # columns are user-managed at runtime, so a static list in the tool
@@ -243,6 +250,8 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             # tipo (Phase 1): optional, string, enum bug/hotfix/historia.
             assert "tipo" not in criar["inputSchema"]["required"]
             assert props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
+            assert "prioridade" not in criar["inputSchema"]["required"]
+            assert props["prioridade"]["enum"] == ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
 
             mover = by_name["mover_card"]
             assert set(mover["inputSchema"]["required"]) == {"card_id", "novo_status"}
@@ -255,12 +264,13 @@ def test_tools_list_returns_all_card_tools_with_correct_schemas():
             assert editar["inputSchema"]["required"] == ["card_id"]
             editar_props = editar["inputSchema"]["properties"]
             assert set(editar_props.keys()) == {
-                "card_id", "titulo", "descricao", "status", "tipo",
+                "card_id", "titulo", "descricao", "status", "tipo", "prioridade",
             }
             assert editar_props["card_id"]["type"] == "integer"
             assert "enum" not in editar_props["status"]
             assert editar_props["status"]["type"] == "string"
             assert editar_props["tipo"]["enum"] == ["bug", "hotfix", "historia"]
+            assert editar_props["prioridade"]["enum"] == ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
             # An empty `tipo` clears the field — this has to be stated in the description.
             assert "limpa o campo" in editar["description"]
 
@@ -1119,3 +1129,253 @@ def test_anexar_arquivo_card_without_caminho_is_rejected_before_posting():
             adapter.close()
     finally:
         server.shutdown()
+
+
+def test_criar_and_editar_card_forward_prioridade_in_the_body():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/create": {"success": True, "card_id": 7},
+            "/api/hooks/cards/update": {"success": True, "card": {"id": 7}},
+        }
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 60, "method": "tools/call",
+                "params": {
+                    "name": "criar_card",
+                    "arguments": {"titulo": "X", "prioridade": "alta"},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["prioridade"] == "alta"
+
+            adapter.send({
+                "jsonrpc": "2.0", "id": 61, "method": "tools/call",
+                "params": {
+                    "name": "editar_card",
+                    "arguments": {"card_id": 7, "prioridade": ""},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["prioridade"] == ""
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+# -- perguntar_card ------------------------------------------------------------
+
+
+def test_perguntar_card_posts_questions_and_reports_count():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/questions": {
+            "success": True,
+            "questions": [{"id": 1}, {"id": 2}],
+        }}
+    )
+    try:
+        adapter = _make_adapter(port, session_id="session-ask")
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 40, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": "7", "perguntas": ["A?", "B?"]},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "2 pergunta(s)" in text and "card 7" in text and "ver_card" in text
+
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["path"] == "/api/hooks/cards/questions"
+            assert received["body"] == {
+                "claude_session_id": "session-ask",
+                "card_id": 7,
+                "perguntas": ["A?", "B?"],
+            }
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_perguntar_card_accepts_a_single_string_as_one_question():
+    server, thread, port = _start_ephemeral_server(
+        responses={"/api/hooks/cards/questions": {"success": True, "questions": [{"id": 1}]}}
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 41, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": 7, "perguntas": "Só uma?"},
+                },
+            })
+            adapter.recv()
+            received = _CapturingHandler.received.get(timeout=3.0)
+            assert received["body"]["perguntas"] == ["Só uma?"]
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_perguntar_card_with_non_text_items_is_rejected_before_posting():
+    server, thread, port = _start_ephemeral_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 42, "method": "tools/call",
+                "params": {
+                    "name": "perguntar_card",
+                    "arguments": {"card_id": 7, "perguntas": [1, 2]},
+                },
+            })
+            text = adapter.recv()["result"]["content"][0]["text"]
+            assert "perguntas deve ser uma lista de textos" in text
+            assert _CapturingHandler.received.empty()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+# -- card #213: slow backend, timeout knob, duplicate-safe retries -------------
+
+
+class _SlowHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every POST only after `delay` seconds, like a backend whose
+    single database connection is busy hydrating the board."""
+
+    delay = 2.0
+    response: dict = {"success": True, "card_id": 1}
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        self.rfile.read(length)
+        threading.Event().wait(self.__class__.delay)
+        payload = json.dumps(self.__class__.response).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(payload)
+        except OSError:
+            pass  # the adapter gave up and closed the socket: expected
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+def _start_slow_server():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _SlowHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+
+def _make_adapter_with_timeout(port, timeout_seconds):
+    env = os.environ.copy()
+    env.update(_hook_url_env(port))
+    env["ESCRITORIO_CLAUDE_SESSION_ID"] = "test-session-id"
+    env["ESCRITORIO_HOOK_TIMEOUT"] = str(timeout_seconds)
+    return _AdapterProcess(env)
+
+
+def test_write_tool_timeout_says_the_action_may_have_been_applied():
+    """The #213 incident: a create that outlived the timeout was reported as
+    "não foi possível conectar", and the agent's retry made a duplicate."""
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter_with_timeout(port, 0.5)
+        try:
+            text = _call_tool(adapter, 1, "criar_card", {"titulo": "T"})
+            assert "não foi possível conectar" not in text.lower()
+            assert "PODE ter sido aplicada" in text
+            assert "listar_cards" in text
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_read_tool_timeout_says_to_try_again():
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter_with_timeout(port, 0.5)
+        try:
+            text = _call_tool(adapter, 1, "ver_card", {"card_id": 1})
+            assert "não foi possível conectar" not in text.lower()
+            assert "PODE ter sido aplicada" not in text
+            assert "tente de novo" in text.lower()
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_backend_slower_than_the_old_3s_limit_still_succeeds_by_default():
+    """No ESCRITORIO_HOOK_TIMEOUT: the 30 s default must outlast a 3.5 s
+    answer (the #213 backend took ~3.4 s)."""
+    _SlowHandler.delay = 3.5
+    server, port = _start_slow_server()
+    try:
+        adapter = _make_adapter(port)
+        try:
+            adapter.send({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "criar_card", "arguments": {"titulo": "T"}},
+            })
+            text = adapter.recv(timeout=10.0)["result"]["content"][0]["text"]
+            assert text == "Card criado com sucesso (id 1)."
+        finally:
+            adapter.close()
+    finally:
+        _SlowHandler.delay = 2.0
+        server.shutdown()
+
+
+def test_criar_card_reports_a_deduplicated_create_as_no_new_card():
+    server, thread, port = _start_ephemeral_server(
+        responses={
+            "/api/hooks/cards/create": {
+                "success": True, "card_id": 209, "deduplicated": True,
+            }
+        }
+    )
+    try:
+        adapter = _make_adapter(port)
+        try:
+            text = _call_tool(adapter, 1, "criar_card", {"titulo": "T"})
+            assert "209" in text
+            assert "nenhum card novo" in text
+        finally:
+            adapter.close()
+    finally:
+        server.shutdown()
+
+
+def test_hook_timeout_env_parsing(monkeypatch):
+    sys.path.insert(0, os.path.dirname(ADAPTER_PATH))
+    try:
+        import mcp_card_adapter as adapter_module
+    finally:
+        sys.path.pop(0)
+    read = adapter_module._read_hook_timeout
+    default = adapter_module.DEFAULT_HOOK_TIMEOUT_SECONDS
+    assert default == 30.0
+
+    monkeypatch.delenv("ESCRITORIO_HOOK_TIMEOUT", raising=False)
+    assert read() == default
+    for raw, expected in [("12.5", 12.5), ("abc", default), ("0", default),
+                          ("-3", default), ("nan", default)]:
+        monkeypatch.setenv("ESCRITORIO_HOOK_TIMEOUT", raw)
+        assert read() == expected, raw

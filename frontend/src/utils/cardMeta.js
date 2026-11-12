@@ -29,6 +29,31 @@ export const CARD_TIPO_COLORS = {
   historia: { soft: 'var(--v2-accent-2-soft)', strong: 'var(--v2-accent-2)' },
 };
 
+// Card priority, lowest to highest. Persisted values are PT-BR for the same
+// reason as `tipo` (shared contract with the agents' MCP tools); see
+// models.CARD_PRIORIDADES on the backend.
+export const CARD_PRIORIDADES = ['muito_baixa', 'baixa', 'media', 'alta', 'muito_alta'];
+
+export const CARD_PRIORIDADE_LABELS = {
+  muito_baixa: 'Muito baixa',
+  baixa: 'Baixa',
+  media: 'Média',
+  alta: 'Alta',
+  muito_alta: 'Muito alta',
+};
+
+// Higher = more urgent. Unknown/absent values have no rank (sorted last).
+export const PRIORITY_RANK = Object.fromEntries(CARD_PRIORIDADES.map((p, i) => [p, i + 1]));
+
+// One v2 token per level, all defined in both theme blocks of theme.css.
+export const CARD_PRIORIDADE_COLORS = {
+  muito_baixa: 'var(--v2-text-faint)',
+  baixa: 'var(--v2-accent-2)',
+  media: 'var(--v2-accent)',
+  alta: 'var(--v2-warn)',
+  muito_alta: 'var(--v2-danger)',
+};
+
 const MONTH_ABBR = [
   'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
   'jul', 'ago', 'set', 'out', 'nov', 'dez',

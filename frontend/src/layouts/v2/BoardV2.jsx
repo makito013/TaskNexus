@@ -120,7 +120,7 @@ import {
   horizontalListSortingStrategy,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SortableBoardColumn,
@@ -141,6 +141,8 @@ import { BoardColumnMenu } from '../../components/board/BoardColumnMenu.jsx';
 import { BoardColumnRenameDialog } from '../../components/board/BoardColumnRenameDialog.jsx';
 import { CardFormModal } from '../../components/board/CardFormModal.jsx';
 import { CardIdBadge } from '../../components/board/CardIdBadge.jsx';
+import { PriorityIcon } from '../../components/board/PriorityIcon.jsx';
+import { countPendingQuestions } from '../../components/board/CardQuestions.jsx';
 import { ClearFinishedModal } from '../../components/board/ClearFinishedModal.jsx';
 import { useCards } from '../../hooks/useCards.js';
 import { useColumns } from '../../hooks/useColumns.js';
@@ -151,7 +153,9 @@ import {
   isPrazoAtrasado,
 } from '../../utils/cardMeta.js';
 import { clienteIdFromProjetoId } from '../../utils/clientes.js';
+import { applyBoardView, DEFAULT_BOARD_VIEW, isBoardViewSorted } from '../../utils/boardView.js';
 import { ClienteProjetoFilterBar } from './ClienteProjetoFilterBar.jsx';
+import { BoardViewControls } from './BoardViewControls.jsx';
 import { useViewer } from '../../features/viewer/ViewerContext.jsx';
 import { ViewerFullscreen } from '../../features/viewer/ViewerFullscreen.jsx';
 import { cardAttachmentItem, fileUrl } from '../../features/viewer/viewerApi.js';
@@ -718,6 +722,26 @@ const styles = {
     gap: '8px',
     minWidth: 0,
   },
+  // Right side of the meta row: priority glyph, then the tipo chip.
+  // `marginLeft: auto` keeps it right-aligned when it is the only child
+  // (the drag overlay has no id badge).
+  cardMetaRight: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginLeft: 'auto',
+    flexShrink: 0,
+  },
+  // "The agent is waiting on you" marker: pending questions on the card.
+  questionsChip: {
+    padding: '2px 7px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: 700,
+    background: 'var(--v2-warn-soft)',
+    color: 'var(--v2-warn)',
+    whiteSpace: 'nowrap',
+  },
   tipoChip: (tipo) => ({
     padding: '2px 7px',
     borderRadius: '5px',
@@ -754,6 +778,24 @@ function resolveAvatarInitials(ultimaAtualizacaoPor) {
 // in AppV2). The filter bar starts from it and refines locally — see
 // useClienteProjetoFilter.js for the table of what the bar does per sidebar
 // state (Bruno: the bar stays, "principalmente quando estiver em Todos").
+const BOARD_VIEW_STORAGE_KEY = 'tasknexus.board.view';
+
+// Restores the last filter/sort, keeping only known keys so a stale or
+// hand-edited entry can never inject an unexpected shape.
+function loadBoardView() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOARD_VIEW_STORAGE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return { ...DEFAULT_BOARD_VIEW };
+    const view = { ...DEFAULT_BOARD_VIEW };
+    for (const key of Object.keys(DEFAULT_BOARD_VIEW)) {
+      if (typeof saved[key] === 'string') view[key] = saved[key];
+    }
+    return view;
+  } catch {
+    return { ...DEFAULT_BOARD_VIEW };
+  }
+}
+
 export function BoardV2({ projects = [], selectedClienteId = null, selectedProjetoId: sidebarProjetoId = null }) {
   // Cliente -> Projeto cascade (local state of this screen). `selectedProjectIds`
   // (plural) is the LISTING filter; `selectedProjetoId` (singular) is the
@@ -816,6 +858,8 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     deleteCardImage,
     uploadCardAttachment,
     deleteCardAttachment,
+    answerCardQuestion,
+    deleteCardQuestion,
     previewClearFinished,
     clearFinished,
   } = useCards(fetchProjectIds, doneSlug);
@@ -827,9 +871,33 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
   // filtra fora, de propósito, um card recém-criado via append otimista
   // (useCards.js) que não pertença ao cliente atual — o append otimista em
   // si não sabe filtrar por cliente.
-  const cards = effectiveClienteId != null
+  const clienteCards = effectiveClienteId != null
     ? fetchedCards.filter((c) => clienteIdFromProjetoId(c.projeto_id) === effectiveClienteId)
     : fetchedCards;
+
+  // Prioridade/tipo/prazo filters + sort (BoardViewControls). `cards` is what
+  // the board renders AND what drag anchors are computed from. A sorted view
+  // disables card drag (see SortableBoardCard), so anchors are only ever read
+  // from the manual order. Remembered per browser; storage may be unavailable.
+  const [boardView, setBoardView] = useState(loadBoardView);
+  const handleBoardViewChange = (next) => {
+    setBoardView(next);
+    try { localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+  const cards = useMemo(
+    () => applyBoardView(clienteCards, boardView, doneSlug),
+    [clienteCards, boardView, doneSlug]
+  );
+  const boardSorted = isBoardViewSorted(boardView);
+  const lastCardDragEndRef = useRef(0);
+  // Click anywhere on a card face opens it, except on its own controls (the
+  // status select, links, buttons other than the title) and right after a
+  // drag ended on it.
+  const handleCardFaceClick = (event, cardId) => {
+    if (Date.now() - lastCardDragEndRef.current < 300) return;
+    if (event.target.closest('select, input, textarea, a, [data-card-control]')) return;
+    setEditingCardId(cardId);
+  };
 
   // Status of the column whose "+ Adicionar card" was clicked (null = create
   // modal closed). Holds the STATUS, not a boolean: it is the modal's
@@ -856,7 +924,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
   // mudança na referência de `card` entre renders não reseta o que o Bruno
   // já estiver digitando.
   const [editingCardId, setEditingCardId] = useState(null);
-  const editingCard = editingCardId != null ? cards.find((c) => c.id === editingCardId) : null;
+  // Resolved before the prioridade/tipo/prazo filters: editing a card can move
+  // it out of the active filter, and the open modal must not vanish mid-edit.
+  const editingCard = editingCardId != null ? clienteCards.find((c) => c.id === editingCardId) : null;
 
   // Card attachments open in the same file viewer used by the chat and
   // Artefatos (markdown, PDF, sandboxed HTML…), full screen over the modal.
@@ -1123,6 +1193,12 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
       setDropHint(null);
       return;
     }
+    // Sorted view: the drop only changes the column (see handleCardDragEnd),
+    // so there is no slot to promise.
+    if (boardSorted) {
+      setDropHint(null);
+      return;
+    }
     const columnIds = cardsInColumn(target.status).map((c) => c.id);
     const drop = computeCardDrop(columnIds, activeCardId, target.overCardId);
     // No indicator for a no-op: there is nothing to promise.
@@ -1133,6 +1209,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     setDraggingCardId(null);
     setDropHint(null);
     setCardDragActive(false);
+    // The whole card face opens the card on click; a mouse drag can end with
+    // a click on it, which must not open the modal.
+    lastCardDragEndRef.current = Date.now();
   };
 
   const handleCardDragEnd = async (event) => {
@@ -1141,6 +1220,19 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
     finishCardDrag();
     // Released outside any valid column: cancelled, with no request at all.
     if (activeCardId == null || target == null) return;
+
+    // Sorted view: the on-screen order is the sort, not the stored manual
+    // order, so neighbours taken from it would be meaningless (or a 409).
+    // Dropping into another column moves the card there exactly like the
+    // status select does; dropping in its own column is a no-op, because the
+    // sort decides where it shows anyway.
+    if (boardSorted) {
+      const activeCard = cards.find((c) => c.id === activeCardId);
+      if (activeCard && activeCard.status !== target.status) {
+        handleMove(activeCardId, target.status);
+      }
+      return;
+    }
 
     const columnIds = cardsInColumn(target.status).map((c) => c.id);
     const drop = computeCardDrop(columnIds, activeCardId, target.overCardId);
@@ -1296,7 +1388,9 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
           selectedProjetoId={selectedProjetoId}
           onSelectProjeto={setSelectedProjetoId}
           projects={projects}
-        />
+        >
+          <BoardViewControls view={boardView} onChange={handleBoardViewChange} />
+        </ClienteProjetoFilterBar>
         <div style={styles.headerActions}>
           <button
             type="button"
@@ -1427,7 +1521,11 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                     && dropHint.status === status
                     && dropHint.beforeId === card.id;
                   return (
-                    <SortableBoardCard key={card.id} cardId={card.id} titulo={card.titulo}>
+                    <SortableBoardCard
+                      key={card.id}
+                      cardId={card.id}
+                      titulo={card.titulo}
+                    >
                     {({ dragProps }) => (
                     <>
                     {/* Drawn ABOVE the card the moved one will sit before —
@@ -1443,19 +1541,34 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
                     <div
                       {...dragProps}
                       role="group"
-                      style={{ ...styles.card, ...dragProps.style }}
+                      style={{ ...styles.card, cursor: 'pointer', ...dragProps.style }}
                       data-testid={`board-v2-card-${card.id}`}
+                      onClick={(e) => handleCardFaceClick(e, card.id)}
                     >
                       <div style={styles.cardMetaRow}>
                         <CardIdBadge id={card.id} clienteNome={clienteNome} variant="card" />
-                        {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
-                          <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
-                        )}
+                        <span style={styles.cardMetaRight}>
+                          {countPendingQuestions(card.questions) > 0 && (
+                            <span
+                              style={styles.questionsChip}
+                              data-testid={`card-questions-pending-${card.id}`}
+                              title="Perguntas do agente aguardando sua resposta"
+                            >
+                              {countPendingQuestions(card.questions) === 1
+                                ? '1 pergunta'
+                                : `${countPendingQuestions(card.questions)} perguntas`}
+                            </span>
+                          )}
+                          <PriorityIcon prioridade={card.prioridade} />
+                          {card.tipo && CARD_TIPO_COLORS[card.tipo] && (
+                            <span style={styles.tipoChip(card.tipo)}>{CARD_TIPO_LABELS[card.tipo]}</span>
+                          )}
+                        </span>
                       </div>
                       <button
                         type="button"
                         style={styles.cardTitle}
-                        onClick={() => setEditingCardId(card.id)}
+                        onClick={(e) => { e.stopPropagation(); setEditingCardId(card.id); }}
                       >
                         {card.titulo}
                       </button>
@@ -1580,10 +1693,15 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
               className="v2-drag-lift"
               data-testid="board-v2-card-drag-overlay"
             >
-              {draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo] && (
+              {((draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo]) || draggingCard.prioridade) && (
                 <div style={styles.cardMetaRow}>
-                  <span style={styles.tipoChip(draggingCard.tipo)}>
-                    {CARD_TIPO_LABELS[draggingCard.tipo]}
+                  <span style={styles.cardMetaRight}>
+                    <PriorityIcon prioridade={draggingCard.prioridade} />
+                    {draggingCard.tipo && CARD_TIPO_COLORS[draggingCard.tipo] && (
+                      <span style={styles.tipoChip(draggingCard.tipo)}>
+                        {CARD_TIPO_LABELS[draggingCard.tipo]}
+                      </span>
+                    )}
                   </span>
                 </div>
               )}
@@ -1673,6 +1791,8 @@ export function BoardV2({ projects = [], selectedClienteId = null, selectedProje
           onUploadAttachment={(file) => uploadCardAttachment(editingCardId, file)}
           onDeleteAttachment={handleDeleteAttachment}
           onViewAttachment={handleViewAttachment}
+          onAnswerQuestion={(questionId, answer) => answerCardQuestion(editingCardId, questionId, answer)}
+          onDeleteQuestion={(questionId) => deleteCardQuestion(editingCardId, questionId)}
           escapeSuspended={attachmentViewerOpen}
         />
       )}

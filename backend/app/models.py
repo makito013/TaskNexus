@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -16,6 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 # not the RHS of an assignment), so the list is not repeated by hand.
 CardTipo = Literal["bug", "hotfix", "historia"]
 CARD_TIPOS = get_args(CardTipo)
+
+# Card priority, lowest to highest. PT-BR values for the same reason as
+# CardTipo: they are the persisted contract shared with the agents' MCP tools.
+CardPrioridade = Literal["muito_baixa", "baixa", "media", "alta", "muito_alta"]
+CARD_PRIORIDADES = get_args(CardPrioridade)
 
 
 class Agent(BaseModel):
@@ -182,6 +187,24 @@ class CardAttachment(BaseModel):
     created_at: float
 
 
+class CardQuestion(BaseModel):
+    """A question an agent left on a card (MCP `perguntar_card`) for the user
+    to answer in the card modal. `answer` None = not answered yet."""
+    id: int
+    card_id: int
+    question: str
+    answer: str | None = None
+    asked_by: str  # "agente:{agent_id}"
+    created_at: float
+    answered_at: float | None = None
+
+
+class CardQuestionAnswerRequest(BaseModel):
+    """Body of PATCH /api/cards/{card_id}/questions/{question_id}. An empty
+    (or blank) answer clears it, putting the question back to pending."""
+    answer: str = ""
+
+
 class Card(BaseModel):
     """Card de board, persistente por projeto — DESACOPLADO de Task (tarefas
     de validação por sessão). `parent_id` NULL = card de topo. `subcards` e
@@ -211,6 +234,7 @@ class Card(BaseModel):
     # REQUEST models (CardCreateRequest/CardUpdateRequest).
     tipo: str | None = None
     prazo: str | None = None
+    prioridade: str | None = None
     # Manual ordering inside a board column. READ-ONLY in this contract: it is
     # never accepted on CardCreateRequest/CardUpdateRequest — the backend
     # assigns it (end of the destination column) and, from Phase 3 on, the
@@ -221,6 +245,7 @@ class Card(BaseModel):
     subcards_resumo: dict | None = None  # {"total": int, "feitos": int} ou None
     imagens: list[CardImage] = []
     attachments: list[CardAttachment] = []
+    questions: list[CardQuestion] = []
 
 
 # Necessário em Pydantic v2 quando o módulo usa `from __future__ import
@@ -249,6 +274,7 @@ class CardCreateRequest(BaseModel):
     descricao: str | None = None
     tipo: CardTipo | None = None
     prazo: str | None = None
+    prioridade: CardPrioridade | None = None
 
 
 class SubcardCreateRequest(BaseModel):
@@ -259,6 +285,7 @@ class SubcardCreateRequest(BaseModel):
     status: str = "a_fazer"
     descricao: str | None = None
     tipo: CardTipo | None = None
+    prioridade: CardPrioridade | None = None
 
 
 class CardUpdateRequest(BaseModel):
@@ -273,6 +300,15 @@ class CardUpdateRequest(BaseModel):
     # through the MCP adapter) is acceptable and pre-existing behavior.
     tipo: Literal["bug", "hotfix", "historia", ""] | None = None
     prazo: str | None = None
+    # "" clears it, same sentinel as tipo/prazo.
+    prioridade: Literal[
+        "muito_baixa", "baixa", "media", "alta", "muito_alta", ""
+    ] | None = None
+    # Reassigns a TOP-LEVEL card to another client/project (a client-only
+    # card sends the client id itself). Subcards follow the parent; sending
+    # it for a subcard is a 400. UI path only: the agent hook
+    # (HookCardUpdateRequest) deliberately does not expose it.
+    projeto_id: str | None = None
 
 
 class CardMoveRequest(BaseModel):
@@ -307,6 +343,8 @@ class HookCardCreateRequest(BaseModel):
     # error" for the agent (mcp_card_adapter._post_json swallows the 422).
     # Validation lives in the handler, returning {"success": False, "error": ...}.
     tipo: str | None = None
+    # Same no-Literal rule as `tipo`; validated in the handler.
+    prioridade: str | None = None
     parent_id: int | None = None
     # Opcional: sub-projeto alvo do mesmo cliente (validado no backend via
     # resolve_projeto_alvo). Omitido -> projeto da conversa atual. Ignorado
@@ -336,6 +374,7 @@ class HookCardUpdateRequest(BaseModel):
     # No Literal on purpose (AD-2), same reason as HookCardCreateRequest.
     # "" clears the field; validated by hand in the handler.
     tipo: str | None = None
+    prioridade: str | None = None
 
 
 class HookCardDeleteRequest(BaseModel):
@@ -360,6 +399,17 @@ class HookCardAttachRequest(BaseModel):
     claude_session_id: str
     card_id: int
     caminho: str
+
+
+class HookCardAskRequest(BaseModel):
+    """Body of POST /api/hooks/cards/questions (MCP tool `perguntar_card`).
+    `perguntas` keeps the PT-BR name of the other agent-facing fields
+    (`titulo`, `caminho`). Loosely typed on purpose (same AD-2 rule as `tipo`):
+    a 422 would reach the agent as a connectivity error, so the handler
+    validates it by hand."""
+    claude_session_id: str
+    card_id: int
+    perguntas: Any = None
 
 
 class HookCardListRequest(BaseModel):

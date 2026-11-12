@@ -136,7 +136,8 @@ class CardStore:
                 deleted_at REAL,
                 tipo TEXT,
                 prazo TEXT,
-                board_position REAL
+                board_position REAL,
+                prioridade TEXT
             )
             """
         )
@@ -161,6 +162,12 @@ class CardStore:
         if "board_position" not in card_columns:
             await self._conn.execute(
                 "ALTER TABLE cards ADD COLUMN board_position REAL"
+            )
+        # `prioridade` (muito_baixa..muito_alta, see models.CARD_PRIORIDADES):
+        # same nullable, no-backfill pattern as `tipo`/`prazo`.
+        if "prioridade" not in card_columns:
+            await self._conn.execute(
+                "ALTER TABLE cards ADD COLUMN prioridade TEXT"
             )
         await self._conn.execute(
             """
@@ -197,6 +204,25 @@ class CardStore:
         )
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_card_attachments_card ON card_attachments(card_id)"
+        )
+        # Questions an agent leaves on a card for the user to answer in the
+        # card modal (MCP `perguntar_card`); the agent reads the answers back
+        # through `ver_card`. `answer` NULL = still waiting for the user.
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS card_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT,
+                asked_by TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                answered_at REAL
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id)"
         )
         await self._conn.execute(
             """
@@ -319,12 +345,13 @@ class CardStore:
             "tipo": row[12],
             "prazo": row[13],
             "board_position": row[14],
+            "prioridade": row[15],
         }
 
     _CARD_COLUMNS = (
         "id, titulo, projeto_id, parent_id, status, origem, "
         "ultima_atualizacao_por, descricao, session_key, criado_em, "
-        "atualizado_em, deleted_at, tipo, prazo, board_position"
+        "atualizado_em, deleted_at, tipo, prazo, board_position, prioridade"
     )
 
     # Scalar subquery computing "one past the last card of this column".
@@ -339,26 +366,81 @@ class CardStore:
         "WHERE status = ? AND parent_id IS NULL) + 1.0, 0.0)"
     )
 
+    @staticmethod
+    def _row_to_image_dict(row) -> dict:
+        return {
+            "id": row[0],
+            "card_id": row[1],
+            "filename": row[2],
+            "mime_type": row[3],
+            "size_bytes": row[4],
+            "criado_em": row[5],
+        }
+
+    _IMAGE_COLUMNS = "id, card_id, filename, mime_type, size_bytes, criado_em"
+
     async def _list_images(self, card_id: int) -> list[dict]:
         async with self._conn.execute(
-            """
-            SELECT id, card_id, filename, mime_type, size_bytes, criado_em
-            FROM card_images WHERE card_id = ? ORDER BY id ASC
-            """,
+            f"SELECT {self._IMAGE_COLUMNS} FROM card_images "
+            "WHERE card_id = ? ORDER BY id ASC",
             (card_id,),
         ) as cursor:
             rows = await cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "card_id": row[1],
-                "filename": row[2],
-                "mime_type": row[3],
-                "size_bytes": row[4],
-                "criado_em": row[5],
-            }
-            for row in rows
-        ]
+        return [self._row_to_image_dict(row) for row in rows]
+
+    # Bound parameters per `IN (...)` query. Below SQLite's historical
+    # SQLITE_MAX_VARIABLE_NUMBER of 999, so it works on any build.
+    _IN_CHUNK_SIZE = 500
+
+    async def _fetch_grouped(
+        self, sql_template: str, ids: list[int], row_to_dict, key_index: int
+    ) -> dict[int, list[dict]]:
+        """Runs `sql_template` (with an `{ids}` placeholder for the IN list)
+        once per chunk of `ids` and groups the rows by the column at
+        `key_index`. Every id gets an entry, so callers can index without a
+        default. Row order within a group follows the query's ORDER BY."""
+        grouped: dict[int, list[dict]] = {card_id: [] for card_id in ids}
+        for start in range(0, len(ids), self._IN_CHUNK_SIZE):
+            chunk = ids[start:start + self._IN_CHUNK_SIZE]
+            placeholders = ", ".join("?" for _ in chunk)
+            async with self._conn.execute(
+                sql_template.format(ids=placeholders), chunk
+            ) as cursor:
+                rows = await cursor.fetchall()
+            for row in rows:
+                grouped[row[key_index]].append(row_to_dict(row))
+        return grouped
+
+    async def _attach_card_children(self, cards: list[dict]) -> None:
+        """Fills `imagens`, `attachments` and `questions` on every card with
+        one query per table for the whole batch (instead of three per card).
+        The board poll and `listar_cards` hydrate every card of a client, and
+        CardStore shares ONE aiosqlite connection: a per-card loop queued
+        hundreds of statements ahead of any write arriving meanwhile, which
+        is how an MCP `criar_card` ended up waiting past the adapter timeout
+        (card #213)."""
+        ids = [card["id"] for card in cards]
+        if not ids:
+            return
+        images = await self._fetch_grouped(
+            f"SELECT {self._IMAGE_COLUMNS} FROM card_images "
+            "WHERE card_id IN ({ids}) ORDER BY id ASC",
+            ids, self._row_to_image_dict, 1,
+        )
+        attachments = await self._fetch_grouped(
+            f"SELECT {self._ATTACHMENT_COLUMNS} FROM card_attachments "
+            "WHERE card_id IN ({ids}) ORDER BY id ASC",
+            ids, self._row_to_attachment_dict, 1,
+        )
+        questions = await self._fetch_grouped(
+            f"SELECT {self._QUESTION_COLUMNS} FROM card_questions "
+            "WHERE card_id IN ({ids}) ORDER BY id ASC",
+            ids, self._row_to_question_dict, 1,
+        )
+        for card in cards:
+            card["imagens"] = images[card["id"]]
+            card["attachments"] = attachments[card["id"]]
+            card["questions"] = questions[card["id"]]
 
     @staticmethod
     def _row_to_attachment_dict(row) -> dict:
@@ -382,33 +464,78 @@ class CardStore:
             rows = await cursor.fetchall()
         return [self._row_to_attachment_dict(row) for row in rows]
 
-    async def _list_active_subcards(self, parent_id: int) -> list[dict]:
-        """Subcards ativos de um pai, no "mesmo formato" de um card de topo
-        exceto que a recursão para de propósito neste nível: subcards() vem
-        sempre vazio e subcards_resumo sempre None, porque a regra de 1
-        nível garante que um subcard nunca tem filhos."""
+    @staticmethod
+    def _row_to_question_dict(row) -> dict:
+        return {
+            "id": row[0],
+            "card_id": row[1],
+            "question": row[2],
+            "answer": row[3],
+            "asked_by": row[4],
+            "created_at": row[5],
+            "answered_at": row[6],
+        }
+
+    _QUESTION_COLUMNS = "id, card_id, question, answer, asked_by, created_at, answered_at"
+
+    async def list_questions(self, card_id: int) -> list[dict]:
         async with self._conn.execute(
-            f"""
-            SELECT {self._CARD_COLUMNS} FROM cards
-            WHERE parent_id = ? AND deleted_at IS NULL
-            ORDER BY id ASC
-            """,
-            (parent_id,),
+            f"SELECT {self._QUESTION_COLUMNS} FROM card_questions "
+            "WHERE card_id = ? ORDER BY id ASC",
+            (card_id,),
         ) as cursor:
             rows = await cursor.fetchall()
-        subcards = []
-        for row in rows:
-            sub = self._row_to_card_dict(row)
-            sub["imagens"] = await self._list_images(sub["id"])
-            sub["attachments"] = await self.list_attachments(sub["id"])
+        return [self._row_to_question_dict(row) for row in rows]
+
+    async def _list_active_subcards(
+        self, parent_ids: list[int]
+    ) -> dict[int, list[dict]]:
+        """Subcards ativos de cada pai, no "mesmo formato" de um card de topo
+        exceto que a recursão para de propósito neste nível: subcards() vem
+        sempre vazio e subcards_resumo sempre None, porque a regra de 1
+        nível garante que um subcard nunca tem filhos. Batched: one query for
+        all parents, plus `_attach_card_children` for all subcards at once."""
+        by_parent = await self._fetch_grouped(
+            f"SELECT {self._CARD_COLUMNS} FROM cards "
+            "WHERE parent_id IN ({ids}) AND deleted_at IS NULL ORDER BY id ASC",
+            parent_ids, self._row_to_card_dict, 3,
+        )
+        all_subcards = [sub for subs in by_parent.values() for sub in subs]
+        await self._attach_card_children(all_subcards)
+        for sub in all_subcards:
             sub["subcards"] = []
             sub["subcards_resumo"] = None
-            subcards.append(sub)
-        return subcards
+        return by_parent
 
     # -- CRUD de cards -------------------------------------------------------
 
-    async def create(
+    # Window in which an agent create with the same session, title, project
+    # and parent returns the card it already made instead of a new one (card
+    # #213): an MCP call that timed out on the client side may still have
+    # been applied, and the agent's retry must not duplicate it.
+    AGENT_CREATE_DEDUP_WINDOW_SECONDS = 120.0
+
+    async def create(self, titulo: str, **kwargs) -> int:
+        """Cria um card de topo (parent_id=None) ou um subcard. See
+        `_create_card` for the arguments and the projeto_id rules."""
+        card_id, _ = await self._create_card(titulo, **kwargs)
+        return card_id
+
+    async def create_deduplicated(
+        self, titulo: str, *, session_key: str, **kwargs
+    ) -> tuple[int, bool]:
+        """Same as `create`, but when a live card with the same session_key,
+        titulo, projeto_id and parent_id was created within
+        AGENT_CREATE_DEDUP_WINDOW_SECONDS, returns `(that_id, True)` without
+        inserting. Returns `(new_id, False)` otherwise."""
+        return await self._create_card(
+            titulo,
+            session_key=session_key,
+            dedup_window=self.AGENT_CREATE_DEDUP_WINDOW_SECONDS,
+            **kwargs,
+        )
+
+    async def _create_card(
         self,
         titulo: str,
         projeto_id: str | None = None,
@@ -421,7 +548,9 @@ class CardStore:
         cliente_id: str | None = None,
         tipo: str | None = None,
         prazo: str | None = None,
-    ) -> int:
+        prioridade: str | None = None,
+        dedup_window: float | None = None,
+    ) -> tuple[int, bool]:
         """Cria um card de topo (parent_id=None) ou um subcard.
 
         Resolução de projeto_id, em ordem (só o ramo 3 é novo):
@@ -468,6 +597,7 @@ class CardStore:
         # `WHERE tipo IS NULL` would get it wrong.
         tipo = tipo or None
         prazo = prazo or None
+        prioridade = prioridade or None
 
         now = time.time()
         # A top-level card is born at the END of its destination column
@@ -481,13 +611,30 @@ class CardStore:
         # which is exactly how a card created in the column being deleted got
         # lost (bug #3 do QA).
         async with self._tx_lock:
+            # Checked under the same lock as the INSERT: a retry racing the
+            # original create must see it, not slip in beside it.
+            if dedup_window is not None and session_key:
+                async with self._conn.execute(
+                    """
+                    SELECT id FROM cards
+                    WHERE session_key = ? AND titulo = ? AND projeto_id = ?
+                      AND parent_id IS ? AND deleted_at IS NULL
+                      AND criado_em >= ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (session_key, titulo, projeto_id, parent_id, now - dedup_window),
+                ) as dup_cursor:
+                    existing = await dup_cursor.fetchone()
+                if existing is not None:
+                    return existing[0], True
             cursor = await self._conn.execute(
                 f"""
                 INSERT INTO cards (
                     titulo, projeto_id, parent_id, status, origem,
                     ultima_atualizacao_por, descricao, session_key,
-                    criado_em, atualizado_em, tipo, prazo, board_position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {position_sql})
+                    criado_em, atualizado_em, tipo, prazo, prioridade,
+                    board_position
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {position_sql})
                 """,
                 (
                     titulo,
@@ -502,11 +649,12 @@ class CardStore:
                     now,
                     tipo,
                     prazo,
+                    prioridade,
                     *position_params,
                 ),
             )
             await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid, False
 
     async def get(self, card_id: int) -> dict | None:
         """Busca um card por id, sem filtrar deleted_at — uso interno (ex:
@@ -602,12 +750,14 @@ class CardStore:
         # failing loud here costs nothing and makes a broken board obvious
         # instead of subtly wrong.
         done_slug = await self.require_done_slug()
+        cards = [self._row_to_card_dict(row) for row in rows]
+        await self._attach_card_children(cards)
+        subcards_by_parent = await self._list_active_subcards(
+            [card["id"] for card in cards]
+        )
         result = []
-        for row in rows:
-            card = self._row_to_card_dict(row)
-            card["imagens"] = await self._list_images(card["id"])
-            card["attachments"] = await self.list_attachments(card["id"])
-            subcards = await self._list_active_subcards(card["id"])
+        for card in cards:
+            subcards = subcards_by_parent[card["id"]]
             card["subcards"] = subcards
             if subcards:
                 feitos = sum(1 for s in subcards if s["status"] == done_slug)
@@ -621,7 +771,8 @@ class CardStore:
         self, card_id: int, *, ultima_atualizacao_por: str, **fields
     ) -> dict | None:
         """PATCH genérico — serve card de topo e subcard indistintamente.
-        Aceita titulo/descricao/status/tipo/prazo como chaves de `fields`; só
+        Aceita titulo/descricao/status/tipo/prazo/projeto_id como chaves de
+        `fields` (projeto_id: ver o bloco de reatribuição abaixo); só
         as chaves presentes E não-None são aplicadas (chaves ausentes ou None
         são tratadas como "não veio no PATCH", não como "limpar o campo").
         Exception: for `tipo` and `prazo`, the empty string "" IS the "clear"
@@ -635,7 +786,27 @@ class CardStore:
         if current is None or current["deleted_at"] is not None:
             return None
 
-        allowed_columns = ("titulo", "descricao", "status", "tipo", "prazo")
+        # Reassigning the card to another client/project. Only a top-level
+        # card can move: a subcard's projeto_id is always derived from its
+        # parent (see `create`), so moving one on its own would split it from
+        # the parent's board. The parent carries its subcards along instead,
+        # inside the same transaction below.
+        new_projeto_id = fields.get("projeto_id")
+        projeto_changing = False
+        if new_projeto_id is not None:
+            new_projeto_id = new_projeto_id.strip()
+            if not new_projeto_id:
+                raise ValueError("projeto_id não pode ser vazio")
+            if new_projeto_id != current["projeto_id"]:
+                if current["parent_id"] is not None:
+                    raise ValueError(
+                        "Subtarefas seguem o projeto do card pai; mova o card pai."
+                    )
+                projeto_changing = True
+
+        allowed_columns = (
+            "titulo", "descricao", "status", "tipo", "prazo", "prioridade"
+        )
         set_clauses = []
         values: list = []
         for column in allowed_columns:
@@ -646,10 +817,14 @@ class CardStore:
             value = fields.get(column)
             if value is None:
                 continue
-            if column in ("tipo", "prazo") and value == "":
+            if column in ("tipo", "prazo", "prioridade") and value == "":
                 value = None
             set_clauses.append(f"{column} = ?")
             values.append(value)
+
+        if projeto_changing:
+            set_clauses.append("projeto_id = ?")
+            values.append(new_projeto_id)
 
         # Moving a top-level card to ANOTHER column re-appends it at the end of
         # the destination — the only ordering a plain status change can produce
@@ -676,6 +851,13 @@ class CardStore:
                 f"UPDATE cards SET {', '.join(set_clauses)} WHERE id = ?",
                 values,
             )
+            if projeto_changing:
+                # Subcards follow the parent. Includes soft-deleted ones so a
+                # later restore cannot resurrect them under the old project.
+                await self._conn.execute(
+                    "UPDATE cards SET projeto_id = ? WHERE parent_id = ?",
+                    (new_projeto_id, card_id),
+                )
             await self._conn.commit()
         return await self.get(card_id)
 
@@ -1396,6 +1578,88 @@ class CardStore:
             await self._conn.commit()
             return cursor.rowcount > 0
 
+    # -- questions (agent asks, user answers) --------------------------------
+
+    MAX_QUESTIONS_PER_CARD = 30
+
+    async def add_questions(
+        self, card_id: int, questions: list[str], asked_by: str
+    ) -> list[dict]:
+        """Inserts one row per question (already stripped and non-empty — the
+        caller validates) and bumps the card's atualizado_em. Raises ValueError
+        when the card would go past MAX_QUESTIONS_PER_CARD; the count and the
+        INSERTs share the lock, so two concurrent calls cannot both squeeze in."""
+        now = time.time()
+        async with self._tx_lock:
+            async with self._conn.execute(
+                "SELECT COUNT(*) FROM card_questions WHERE card_id = ?",
+                (card_id,),
+            ) as cursor:
+                (existing,) = await cursor.fetchone()
+            if existing + len(questions) > self.MAX_QUESTIONS_PER_CARD:
+                raise ValueError(
+                    f"O card {card_id} já tem {existing} pergunta(s); o limite é "
+                    f"{self.MAX_QUESTIONS_PER_CARD} por card."
+                )
+            await self._conn.execute("BEGIN")
+            try:
+                ids = []
+                for question in questions:
+                    cursor = await self._conn.execute(
+                        "INSERT INTO card_questions (card_id, question, asked_by, created_at) "
+                        "VALUES (?, ?, ?, ?)",
+                        (card_id, question, asked_by, now),
+                    )
+                    ids.append(cursor.lastrowid)
+                await self._conn.execute(
+                    "UPDATE cards SET atualizado_em = ? WHERE id = ?", (now, card_id)
+                )
+            except Exception:
+                await self._conn.rollback()
+                raise
+            else:
+                await self._conn.commit()
+        return [q for q in await self.list_questions(card_id) if q["id"] in ids]
+
+    async def answer_question(
+        self, card_id: int, question_id: int, answer: str
+    ) -> dict | None:
+        """Sets (or, with an empty/blank answer, clears) the answer of a
+        question that belongs to `card_id`. Returns the updated question, or
+        None when no such question exists on that card."""
+        answer = (answer or "").strip() or None
+        now = time.time()
+        async with self._tx_lock:
+            cursor = await self._conn.execute(
+                "UPDATE card_questions SET answer = ?, answered_at = ? "
+                "WHERE card_id = ? AND id = ?",
+                (answer, now if answer else None, card_id, question_id),
+            )
+            if cursor.rowcount == 0:
+                await self._conn.commit()
+                return None
+            await self._conn.execute(
+                "UPDATE cards SET atualizado_em = ?, ultima_atualizacao_por = 'bruno' "
+                "WHERE id = ?",
+                (now, card_id),
+            )
+            await self._conn.commit()
+        async with self._conn.execute(
+            f"SELECT {self._QUESTION_COLUMNS} FROM card_questions WHERE id = ?",
+            (question_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return self._row_to_question_dict(row) if row else None
+
+    async def delete_question(self, card_id: int, question_id: int) -> bool:
+        async with self._tx_lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM card_questions WHERE card_id = ? AND id = ?",
+                (card_id, question_id),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
     # -- limpar concluídos ------------------------------------------------
 
     async def _selecionar_alvo_limpar(
@@ -1507,6 +1771,10 @@ class CardStore:
                 )
                 await self._conn.execute(
                     f"DELETE FROM card_attachments WHERE card_id IN ({placeholders})",
+                    alvo,
+                )
+                await self._conn.execute(
+                    f"DELETE FROM card_questions WHERE card_id IN ({placeholders})",
                     alvo,
                 )
                 await self._conn.execute(

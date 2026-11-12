@@ -1223,3 +1223,76 @@ def test_hook_cards_update_rejects_an_unknown_status_and_changes_nothing(client)
     assert card["status"] == "a_fazer"
     # The whole update is refused, not just the status half of it.
     assert card["titulo"] == "Card"
+
+
+# -- prioridade on the agent path --------------------------------------------
+
+
+def test_hook_cards_create_and_update_prioridade(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-0000000000a1")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    created = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "prioridade": "alta",
+    }).json()
+    assert created["success"] is True
+    card_id = created["card_id"]
+    assert _get_card(client, card_id)["prioridade"] == "alta"
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "prioridade": "muito_baixa",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["prioridade"] == "muito_baixa"
+
+    r = client.post("/api/hooks/cards/update", json={
+        "claude_session_id": claude_sid, "card_id": card_id, "prioridade": "",
+    })
+    assert r.json()["success"] is True
+    assert _get_card(client, card_id)["prioridade"] is None
+
+
+def test_hook_cards_invalid_prioridade_is_rejected(client):
+    session_key = "meu-projeto::agente-teste"
+    fixed_uuid = uuid_mod.UUID("11110000-0000-0000-0000-0000000000a2")
+    claude_sid = _register_session(client, session_key, fixed_uuid=fixed_uuid)
+
+    r = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "Card", "prioridade": "urgente",
+    })
+    assert r.json()["success"] is False
+    assert "prioridade inválida" in r.json()["error"]
+    assert client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json() == []
+
+
+# -- card #213: a retried create returns the card it already made -------------
+
+def test_hook_cards_create_retry_with_same_title_returns_the_existing_card(client):
+    claude_sid = _register_session(client, "meu-projeto::agente-teste")
+    payload = {"claude_session_id": claude_sid, "titulo": "Bug do timeout"}
+
+    first = client.post("/api/hooks/cards/create", json=payload).json()
+    retry = client.post("/api/hooks/cards/create", json=payload).json()
+
+    assert first["success"] is True and first["deduplicated"] is False
+    assert retry == {"success": True, "card_id": first["card_id"], "deduplicated": True}
+    cards = client.get("/api/cards", params={"projeto_id": "meu-projeto"}).json()
+    assert [c["titulo"] for c in cards].count("Bug do timeout") == 1
+
+
+def test_hook_cards_create_different_title_or_deleted_card_is_not_deduplicated(client):
+    claude_sid = _register_session(client, "meu-projeto::agente-teste")
+    first = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "A",
+    }).json()
+    other = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "B",
+    }).json()
+    assert other["deduplicated"] is False and other["card_id"] != first["card_id"]
+
+    client.delete(f"/api/cards/{first['card_id']}")
+    again = client.post("/api/hooks/cards/create", json={
+        "claude_session_id": claude_sid, "titulo": "A",
+    }).json()
+    assert again["deduplicated"] is False and again["card_id"] != first["card_id"]
