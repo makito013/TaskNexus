@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import json
 import mimetypes
 import socket
@@ -870,6 +871,73 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
     # `if resume and signature:` below skips the probe entirely and goes
     # straight to full-duplex streaming.
 }
+
+
+# A narrow PTY (ConPTY at cols 43/60) re-renders text with cursor movement
+# instead of literal spaces (`No\x1b[1Cconversation\x1b[1Cfound...`) and may
+# wrap in the middle of the marker, so a plain substring search misses it.
+# Escape sequences are matched in full only; an incomplete one at the end of
+# the buffer is left raw and resolves once the next chunk completes it.
+_PTY_ESCAPE_RE = re.compile(
+    rb"\x1b\[(?P<params>[0-?]*)[ -/]*(?P<final>[@-~])"  # CSI
+    rb"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC (BEL or ST terminated)
+    rb"|\x1b[@-Z\\^_]"  # other two-byte escapes
+)
+_PTY_MAX_CURSOR_FORWARD = 512
+# Digits beyond this are treated as "huge" without calling int() (Python caps
+# int() conversion at 4300 digits and raises ValueError past it).
+_PTY_MAX_PARAM_DIGITS = 4
+# The resume probe only rescans the newest chunk plus this many bytes of the
+# bytes before it. Largest raw marker is ~40 chars; even with a 20-byte escape
+# or wrap after every character that is under 1 KiB, so 4 KiB leaves 4x
+# headroom and also covers an escape sequence split at the chunk boundary.
+_RESUME_PROBE_OVERLAP = 4096
+_ASCII_WHITESPACE_RE = re.compile(rb"\s+")
+
+
+def _pty_escape_replacement(match: "re.Match[bytes]") -> bytes:
+    if match.group("final") == b"C":
+        params = match.group("params")
+        if len(params) > _PTY_MAX_PARAM_DIGITS and params.isdigit():
+            count = _PTY_MAX_CURSOR_FORWARD
+        else:
+            count = int(params) if params.isdigit() else 1
+        return b" " * min(max(count, 1), _PTY_MAX_CURSOR_FORWARD)
+    return b""
+
+
+def _normalize_pty_output(data: bytes) -> bytes:
+    """Turn raw PTY bytes into plain text for marker matching.
+
+    Cursor-forward (`ESC[<n>C`) becomes spaces, every other CSI/OSC/escape
+    sequence is dropped, and CR/LF (inserted by terminal wrapping) are removed.
+    """
+    text = _PTY_ESCAPE_RE.sub(_pty_escape_replacement, data)
+    return text.replace(b"\r", b"").replace(b"\n", b"")
+
+
+def _resume_probe_window(accumulated: bytes, chunk: bytes) -> bytes:
+    """Tail of `accumulated` the resume probe must rescan after `chunk`.
+
+    Bounded by len(chunk) + _RESUME_PROBE_OVERLAP so the per-chunk cost does
+    not grow with the total output; the overlap keeps a marker or escape
+    sequence split across two chunks detectable.
+    """
+    return accumulated[-(len(chunk) + _RESUME_PROBE_OVERLAP):]
+
+
+def _output_contains_marker(data: bytes, markers: tuple[bytes, ...]) -> bool:
+    """True if any marker appears in `data` once PTY rendering noise is gone.
+
+    Whitespace is ignored on both sides: a wrap can land exactly where a space
+    belongs, and the markers are distinctive enough that this stays safe.
+    """
+    if not markers:
+        return False
+    squashed = _ASCII_WHITESPACE_RE.sub(b"", _normalize_pty_output(data))
+    return any(
+        _ASCII_WHITESPACE_RE.sub(b"", marker) in squashed for marker in markers
+    )
 
 
 class _McpServerSpec(TypedDict):
@@ -3438,7 +3506,9 @@ async def pty_endpoint(websocket: WebSocket, session_key: str):
                         break
                     accumulated += chunk
                     await websocket.send_bytes(chunk)
-                    if any(marker in accumulated for marker in markers):
+                    if _output_contains_marker(
+                        _resume_probe_window(accumulated, chunk), markers
+                    ):
                         resume_failed = True
                         break
 
