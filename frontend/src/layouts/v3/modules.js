@@ -74,6 +74,29 @@ export function moduleForPath(pathname) {
   return MODULES.find((module) => module.path === normalized) || null
 }
 
+const CHAT_PREFIX = '/projects/chat/'
+
+// Route of a pathname: { moduleId, view: 'screen' | 'chat', sessionKey } or null.
+//   /projects/chat/<encodeURIComponent(session_key)>  -> the chat of that session (module `projects`);
+//                                                        the key is decoded once; an empty or
+//                                                        malformed key is no route
+//   anything else                                     -> moduleForPath (a module's own screen)
+export function routeForPath(pathname) {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  if (normalized.startsWith(CHAT_PREFIX) || normalized === CHAT_PREFIX.slice(0, -1)) {
+    const encoded = normalized.slice(CHAT_PREFIX.length)
+    let sessionKey
+    try {
+      sessionKey = decodeURIComponent(encoded)
+    } catch {
+      return null
+    }
+    return sessionKey ? { moduleId: 'projects', view: 'chat', sessionKey } : null
+  }
+  const module = moduleForPath(pathname)
+  return module ? { moduleId: module.id, view: 'screen', sessionKey: null } : null
+}
+
 // Every module but the active one, in rail order.
 export function colleaguesOf(moduleId) {
   return MODULES.filter((module) => module.id !== moduleId)

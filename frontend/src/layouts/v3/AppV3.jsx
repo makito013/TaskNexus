@@ -10,9 +10,12 @@ import {
   MODULES,
   colleaguesOf,
   moduleById,
-  moduleForPath,
+  routeForPath,
 } from './modules.js'
+import ChatScreen from './modules/chat/ChatScreen.jsx'
+import ChatSessionHost from './modules/chat/ChatSessionHost.jsx'
 import ProjectsScreen from './modules/projects/ProjectsScreen.jsx'
+import ProjectsSessionsProvider from './sessions/ProjectsSessionsProvider.jsx'
 import TasksScreen from './modules/tasks/TasksScreen.jsx'
 import { useV3Theme } from './theme/useV3Theme.js'
 import './AppV3.css'
@@ -31,7 +34,9 @@ export default function AppV3({ initialTheme }) {
   const [path, navigate, replace] = useRoute()
   const [islandReport, setIslandReport] = useState(null)
 
-  const routed = moduleForPath(path)
+  const route = routeForPath(path)
+  const routed = route ? moduleById(route.moduleId) : null
+  const isChat = route?.view === 'chat'
   const activeModule = routed || moduleById(DEFAULT_MODULE_ID)
 
   // After the redirect `path` is the replaced one (useRoute.replace updates it),
@@ -45,9 +50,10 @@ export default function AppV3({ initialTheme }) {
   const openModule = useCallback(
     (moduleId) => {
       const target = moduleById(moduleId)
-      if (target && target.id !== activeId) navigate(target.path)
+      // From a chat, the module's own entry leads back to the module's screen.
+      if (target && (target.id !== activeId || isChat)) navigate(target.path)
     },
-    [navigate, activeId],
+    [navigate, activeId, isChat],
   )
 
   // Move focus to the screen heading when the module changes, not on first load.
@@ -64,30 +70,36 @@ export default function AppV3({ initialTheme }) {
   const baseState = liveReport?.state ?? (activeModule.ready ? 'idle' : 'sleeping')
   const petState = useTalkingPulse(baseState, message)
 
-  const Screen = SCREENS[activeModule.id]
+  const Screen = isChat ? ChatScreen : SCREENS[activeModule.id]
+  const screenProps = isChat ? { sessionKey: route.sessionKey } : undefined
 
   return (
     <IslandProvider value={setIslandReport}>
-      <ModuleRail
-        modules={MODULES}
-        activeId={activeId}
-        onSelect={openModule}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
-      <div className="v3-main-column v3-shell__column">
-        <Island
-          pet={activeModule.pet}
-          state={petState}
-          message={message}
-          actions={liveReport?.actions}
-          colleagues={colleaguesOf(activeModule.id)}
-          onColleagueSelect={openModule}
-        />
-        <main className="v3-shell__screen">
-          {Screen ? <Screen /> : <ComingSoon key={activeModule.id} module={activeModule} />}
-        </main>
-      </div>
+      <ProjectsSessionsProvider navigate={navigate}>
+        {/* Above <main>: the open conversation's socket outlives the screen (CA38). Inert until a chat is opened. */}
+        <ChatSessionHost activeKey={isChat ? route.sessionKey : null}>
+          <ModuleRail
+            modules={MODULES}
+            activeId={activeId}
+            onSelect={openModule}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+          <div className="v3-main-column v3-shell__column">
+            <Island
+              pet={activeModule.pet}
+              state={petState}
+              message={message}
+              actions={liveReport?.actions}
+              colleagues={colleaguesOf(activeModule.id)}
+              onColleagueSelect={openModule}
+            />
+            <main className="v3-shell__screen">
+              {Screen ? <Screen {...screenProps} /> : <ComingSoon key={activeModule.id} module={activeModule} />}
+            </main>
+          </div>
+        </ChatSessionHost>
+      </ProjectsSessionsProvider>
     </IslandProvider>
   )
 }

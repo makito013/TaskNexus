@@ -1,5 +1,5 @@
 import Chip from '../../components/Chip/Chip.jsx'
-import { OpenSessionButton, agentInitials } from './AgentCard.jsx'
+import { OpenSessionButton, agentInitials, cardSessionKey } from './AgentCard.jsx'
 
 // "Esperando você": every session that needs the user, on top of both tabs. No
 // Permitir/Negar - there is no backend for it yet, so the strip only warns.
@@ -23,12 +23,12 @@ export default function WaitingStrip({ cards }) {
               <div className="v3-waiting__line2 v3-type-caption">{card.location} · {card.title}</div>
             </div>
             <Chip tone="state" accent="fin">{card.resumable ? 'retomável' : 'sessão viva'}</Chip>
-            <OpenSessionButton />
+            <OpenSessionButton agentKind={card.agentKind} sessionKey={cardSessionKey(card)} />
           </li>
         ))}
       </ul>
       <p className="v3-type-caption v3-waiting__foot">
-        Permitir e Negar chegam junto com o chat. Por enquanto esta faixa só avisa.
+        Aprove ou negue abrindo o chat da sessão.
       </p>
     </section>
   )

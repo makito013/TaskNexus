@@ -1,6 +1,7 @@
 import Button from '../../components/Button/Button.jsx'
 import Chip from '../../components/Chip/Chip.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
+import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
 import { cardMeta, cardStateLabel } from './agentBoard.js'
 
 // Two letters of the agent name, as in the canvas ("Cl", "Co", "Te").
@@ -25,9 +26,24 @@ export function StateChip({ item }) {
   )
 }
 
-// "Abrir sessão" waits for the chat to reach the v3: aria-disabled, no handler,
+// The session a card opens. A card that needs the user opens the session that needs the user (a live
+// one first): the card's state is the best of its rows, so the first live row may be a quiet one.
+// Otherwise the one its title comes from (a live one first, else the first).
+export function cardSessionKey(card) {
+  const rows = card.sessions ?? []
+  const waiting = rows.filter((row) => row.state === 'needs_you')
+  const pool = waiting.length > 0 ? waiting : rows
+  return (pool.find((row) => row.live) ?? pool[0])?.key ?? null
+}
+
+// "Abrir sessão": an agent of the Claude kind opens its conversation in the chat (openChat of the
+// sessions context). The other kinds keep waiting for the terminal view: aria-disabled, no handler,
 // described by the (screen-level) note.
-export function OpenSessionButton() {
+export function OpenSessionButton({ agentKind = null, sessionKey = null }) {
+  const { openChat } = useProjectsSessions()
+  if (agentKind === 'claude' && sessionKey) {
+    return <Button size="sm" onClick={() => openChat(sessionKey)}>Abrir sessão</Button>
+  }
   return (
     <Button size="sm" aria-disabled="true" aria-describedby="projects-open-note">Abrir sessão</Button>
   )
@@ -55,8 +71,10 @@ export default function AgentCard({ card }) {
       </p>
       <div className="v3-type-mono-sm v3-agent-card__meta">{cardMeta(card)}</div>
       <div className="v3-agent-card__foot">
-        <OpenSessionButton />
-        <span className="v3-type-caption v3-agent-card__note">Disponível quando o chat chegar à V3</span>
+        <OpenSessionButton agentKind={card.agentKind} sessionKey={cardSessionKey(card)} />
+        {card.agentKind !== 'claude' && (
+          <span className="v3-type-caption v3-agent-card__note">Ainda não disponível para este agente</span>
+        )}
       </div>
     </Panel>
   )

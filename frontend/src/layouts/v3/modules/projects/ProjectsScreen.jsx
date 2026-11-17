@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
 import { useIslandReport } from '../../IslandContext.jsx'
+import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
 import {
   filterBoard,
   filterSessions,
@@ -47,8 +48,10 @@ export default function ProjectsScreen() {
   const [restoreFocus, setRestoreFocus] = useState(null)
   const h1Ref = useRef(null)
 
+  const { projectsLive } = useProjectsSessions()
   const { registry, board, sessions, boardSummary, loading, errors, liveAvailable, refetch } = useProjectsOverview({
     workspaceKey,
+    extraLive: projectsLive,
   })
   const mutations = useRegistryMutations({ onDone: refetch })
 
@@ -217,7 +220,7 @@ export default function ProjectsScreen() {
       )}
 
       <span id="projects-open-note" className="v3-projects__sr-only">
-        Abrir sessão fica disponível quando o chat chegar à V3.
+        O chat da V3 só abre sessões do Claude por enquanto.
       </span>
 
       <div role="tabpanel" id={TABPANEL_ID} aria-labelledby={tabId(tab)} className="v3-projects__layout">
@@ -411,7 +414,7 @@ function SessionsBody({ filtered, rows }) {
   const saved = rows.filter((row) => !row.live).sort(byState)
   return (
     <>
-      <Panel notice="tiq">Abrir e retomar sessões chega com o chat da V3. Esta lista só mostra o estado.</Panel>
+      <Panel notice="tiq">Sessões do Claude abrem no chat.</Panel>
       {filtered.waiting.length > 0 && <WaitingStrip cards={filtered.waiting} />}
       <SessionList id="projects-sessions-active" title="Ativas" rows={active} />
       <SessionList id="projects-sessions-saved" title="Salvas (retomáveis)" rows={saved} />

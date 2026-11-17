@@ -1,0 +1,185 @@
+/*
+ * Approval card (DS ApprovalCard, Designer 5.1). fin-* = "needs you". The 14px radius is the
+ * DS literal. Nothing here declares a containing-block property (position: fixed invariant).
+ */
+.v3-approval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding: 14px var(--v3-space-4);
+  border: 1px solid var(--v3-fin-line);
+  border-radius: 14px;
+  background-color: var(--v3-fin-tint);
+  color: var(--v3-ink);
+  transition:
+    background-color var(--v3-dur-fast) var(--v3-ease-out),
+    border-color var(--v3-dur-fast) var(--v3-ease-out);
+}
+
+.v3-approval__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.v3-approval__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+  color: var(--v3-fin-ink);
+  font-size: var(--v3-type-caption-size);
+  line-height: var(--v3-type-caption-line);
+}
+.v3-approval__who {
+  color: var(--v3-ink);
+  font-weight: 600;
+}
+.v3-approval__context {
+  margin-left: auto;
+  color: var(--v3-fin-ink);
+  overflow-wrap: anywhere;
+}
+.v3-approval__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-fin);
+}
+.v3-approval__dot--quiet {
+  background-color: var(--v3-ink-faint);
+}
+
+.v3-approval__object {
+  display: block;
+  padding: var(--v3-space-2) var(--v3-space-3);
+  border: 1px solid var(--v3-fin-line);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Three lines, then "Ver comando completo": a command is never clipped without telling. */
+.v3-approval__object--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.v3-approval__connector {
+  margin: 0;
+  color: var(--v3-fin-ink);
+}
+
+.v3-approval__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--v3-space-2);
+}
+.v3-approval__session {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v3-approval__hint {
+  color: var(--v3-fin-ink);
+}
+
+/* "Negar e parar": the Button's own custom properties, so hover and focus keep working. */
+.v3-approval__danger.v3-button {
+  --v3-button-bg: var(--v3-danger-tint);
+  --v3-button-fg: var(--v3-danger-ink);
+  border-color: var(--v3-danger-ink);
+}
+.v3-approval .v3-button[aria-disabled="true"] {
+  border-style: dashed;
+  color: var(--v3-ink-muted);
+  cursor: not-allowed;
+}
+.v3-approval .v3-button--primary[aria-disabled="true"] {
+  background-color: var(--v3-surface-2);
+  border-color: var(--v3-line-strong);
+}
+
+.v3-approval__text-button {
+  align-self: flex-start;
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 0;
+  background: none;
+  color: var(--v3-fin-ink);
+  font: inherit;
+  font-size: var(--v3-type-body-sm-size);
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.v3-approval__reason {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}
+.v3-approval__reason-input {
+  height: auto;
+  min-height: 72px;
+  padding: var(--v3-space-2) var(--v3-space-3);
+  resize: vertical;
+}
+
+.v3-approval__error {
+  margin: 0;
+  color: var(--v3-danger-ink);
+}
+
+.v3-approval__details {
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  overflow: auto;
+  max-height: 240px;
+}
+
+/* Resolved: one quiet line, no buttons; the colour change is the only motion. */
+.v3-approval--resolved {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-2) var(--v3-space-4);
+  border-color: var(--v3-line);
+  background-color: var(--v3-surface-2);
+  font-size: var(--v3-type-body-sm-size);
+  line-height: var(--v3-type-body-sm-line);
+}
+.v3-approval--resolved .v3-approval__dot {
+  margin-top: 7px;
+}
+.v3-approval--elsewhere {
+  border-style: dashed;
+}
+.v3-approval__resolved-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.v3-approval__resolved-summary,
+.v3-approval__reason-line {
+  color: var(--v3-ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-approval {
+    transition: none;
+  }
+}

@@ -185,7 +185,7 @@ describe('Projetos e agentes: tabs', () => {
   it('the Sessões tab shows the info banner and the two tables', async () => {
     await renderLoaded()
     fireEvent.click(screen.getByRole('tab', { name: 'Sessões' }))
-    expect(screen.getByText('Abrir e retomar sessões chega com o chat da V3. Esta lista só mostra o estado.')).toBeTruthy()
+    expect(screen.getByText('Sessões do Claude abrem no chat.')).toBeTruthy()
     const active = screen.getByRole('table', { name: /Ativas/ })
     const savedTable = screen.getByRole('table', { name: /Salvas \(retomáveis\)/ })
     expect(within(active).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
@@ -217,21 +217,32 @@ describe('Projetos e agentes: Agentes tab', () => {
     expect(strip.compareDocumentPosition(firstWorkspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(strip.tabIndex).toBe(-1)
     expect(within(strip).getByText('sessão viva')).toBeTruthy()
-    expect(strip.textContent).toContain('Permitir e Negar chegam junto com o chat. Por enquanto esta faixa só avisa.')
+    expect(strip.textContent).toContain('Aprove ou negue abrindo o chat da sessão.')
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
 
-  it('"Abrir sessão" is aria-disabled, does nothing and points at the exact note', async () => {
+  it('"Abrir sessão" of a Claude agent is enabled; the other agents stay aria-disabled and point at the exact note', async () => {
     await renderLoaded()
     const buttons = screen.getAllByRole('button', { name: 'Abrir sessão' })
     expect(buttons.length).toBeGreaterThan(1)
+    let claude = 0
+    let others = 0
     for (const button of buttons) {
-      expect(button.getAttribute('aria-disabled')).toBe('true')
-      expect(document.getElementById(button.getAttribute('aria-describedby')).textContent)
-        .toBe('Abrir sessão fica disponível quando o chat chegar à V3.')
+      const owner = button.closest('article, li')
+      if (owner.textContent.includes('Claude')) {
+        claude += 1
+        expect(button.getAttribute('aria-disabled')).toBeNull()
+      } else {
+        others += 1
+        expect(button.getAttribute('aria-disabled')).toBe('true')
+        expect(document.getElementById(button.getAttribute('aria-describedby')).textContent)
+          .toBe('O chat da V3 só abre sessões do Claude por enquanto.')
+      }
       fireEvent.click(button)
     }
-    expect(screen.getAllByText('Disponível quando o chat chegar à V3').length).toBeGreaterThan(0)
+    expect(claude).toBeGreaterThan(0)
+    expect(others).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ainda não disponível para este agente').length).toBe(others)
   })
 
   it('the board summary is read-only: "Abrir board" is aria-disabled and described by its note', async () => {
