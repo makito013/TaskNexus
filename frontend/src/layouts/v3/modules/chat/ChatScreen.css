@@ -1,5 +1,5 @@
 /*
- * Chat route, desktop (Designer 3 to 7). Only --v3-* tokens; the literals below come from the
+ * Chat route (Designer 3 to 7 for the desktop; the last section, "responsive", is Designer 10). Only --v3-* tokens; the literals below come from the
  * approved prototype and are listed in the Designer's section 12 (14px card radius, 16/4 bubble
  * radii, 32px avatar, 42px indent = avatar + gap, 86%/78% and 760/620px bubble widths).
  *
@@ -518,6 +518,12 @@
   font-size: var(--v3-type-body-size);
   line-height: var(--v3-type-body-line);
 }
+:root[data-layout="v3"] .v3-chat-prose h1,
+:root[data-layout="v3"] .v3-chat-prose h2,
+:root[data-layout="v3"] .v3-chat-prose h3 {
+  margin: 0 0 var(--v3-space-2);
+  line-height: 1.2;
+}
 :root[data-layout="v3"] .v3-chat-prose pre {
   max-width: 100%;
   padding: var(--v3-space-3);
@@ -853,7 +859,9 @@
   left: var(--v3-space-4);
   max-width: 600px;
   max-height: 360px;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-color: var(--v3-line-strong) transparent;
   border: 1px solid var(--v3-line-strong);
   border-radius: var(--v3-radius-xl);
   background-color: var(--v3-surface);
@@ -1221,5 +1229,259 @@
   .v3-chat-dots i {
     animation: none;
     opacity: 0.6;
+  }
+}
+
+/* ---- responsive (Designer 10) ----
+ * Phone <= 767: one column, two views of the same screen (data-view on .v3-chat shows the list or the
+ * conversation; both stay mounted). Tablet 768-1279: list (236px, a constant local to this route) |
+ * conversation. The shell around it (rail, island pill, fixed root) is AppV3.css and Island.css, keyed on
+ * the route attribute of #root. Nothing here is fixed, and nothing creates a containing block. */
+.v3-chat {
+  --chat-list-width-tablet: 236px;
+}
+
+.v3-chat-back {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--v3-control);
+  height: var(--v3-control);
+  margin-left: calc(-1 * var(--v3-space-2));
+  padding: 0;
+  border: 0;
+  border-radius: var(--v3-radius-lg);
+  background: none;
+  color: var(--v3-ink);
+  cursor: pointer;
+}
+.v3-chat-back:hover {
+  background-color: var(--v3-surface-2);
+}
+.v3-chat-list__leave {
+  align-self: flex-start;
+}
+
+/* The approval sheet (a <dialog> sheet; the decisions are in its footer). */
+.v3-approval-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+.v3-approval-sheet__request {
+  margin: 0;
+  font-size: var(--v3-type-body-size);
+  line-height: var(--v3-type-body-line);
+  overflow-wrap: anywhere;
+}
+.v3-approval-sheet__context {
+  display: block;
+  margin-top: 2px;
+  color: var(--v3-fin-ink);
+}
+.v3-approval-sheet__tabs {
+  display: flex;
+  gap: var(--v3-space-1);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-approval-sheet__tab {
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--v3-ink-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.v3-approval-sheet__tab[aria-selected="true"] {
+  border-bottom-color: var(--v3-ink);
+  color: var(--v3-ink);
+}
+.v3-approval-sheet__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+.v3-approval-sheet__object {
+  display: block;
+  max-height: 40vh;
+  padding: var(--v3-space-2) var(--v3-space-3);
+  overflow: auto;
+  border: 1px solid var(--v3-fin-line);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.v3-approval-sheet__details {
+  max-height: none;
+}
+/* "The request continues below": in the footer, next to the decisions, so it cannot be scrolled away.
+   Empty (and then not shown) while everything fits; the region itself stays mounted so the screen
+   reader announces the text when it appears. */
+.v3-approval-sheet__more {
+  margin: 0;
+  color: var(--v3-fin-ink);
+  font-weight: 500;
+  text-align: center;
+}
+.v3-approval-sheet__more:empty {
+  display: none;
+}
+
+/* The sheet footer is the decisions row: it takes the whole width (the footer is a wrapping flex row, so
+   a lone child would shrink to its content). */
+.v3-dialog--sheet .v3-dialog__footer > .v3-approval__actions,
+.v3-dialog--sheet .v3-dialog__footer > .v3-approval__reason,
+.v3-dialog--sheet .v3-dialog__footer > .v3-approval-sheet__more {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1279px) {
+  /* The placeholder stays on ONE line instead of wrapping into a clipped 2nd line. `text-overflow` does
+     nothing on ::placeholder, so the fit is the job of the short text Composer shows on a narrow shell
+     (Designer C5, A1); this is only the safety net. */
+  .v3-chat-composer .v3-chat-composer__input::placeholder {
+    white-space: nowrap;
+  }
+  /* The shell gives the screen the visible height (a fill chain, not 100dvh arithmetic). */
+  .v3-chat {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+  /* "Interromper" is its icon only; the aria-label carries the name. */
+  .v3-chat-header__actions .v3-chat-stop__label,
+  .v3-chat-header__actions .v3-chat-kbd {
+    display: none;
+  }
+  .v3-chat-header__actions .v3-chat-stop.v3-button {
+    min-width: var(--v3-control);
+    min-height: var(--v3-control);
+    padding: 0;
+  }
+  /* Touch targets: 44px for everything the finger meets in the chat (the 36px ones are mouse sizes). */
+  .v3-chat .v3-button--sm {
+    min-height: var(--v3-control);
+  }
+  .v3-chat-header__chips .v3-chat-model-chip {
+    height: var(--v3-control);
+  }
+  .v3-chat-msg__meta .v3-chat-link-button {
+    min-height: var(--v3-control);
+  }
+  .v3-chat-chip .v3-chat-chip__summary {
+    min-height: var(--v3-control);
+  }
+  .v3-chat-rename .v3-chat-rename__input {
+    height: var(--v3-control);
+  }
+  /* No shortcut hints on a touch device (there is no hardware keyboard to read them). */
+  .v3-chat-composer .v3-chat-composer__hints {
+    display: none;
+  }
+  .v3-chat-composer {
+    padding-bottom: calc(var(--v3-space-2) + env(safe-area-inset-bottom));
+  }
+  .v3-chat-thread {
+    padding: var(--v3-space-4);
+  }
+  .v3-chat-msg .v3-chat-msg__body,
+  .v3-chat-msg--user .v3-chat-bubble--user {
+    max-width: 92%;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  /* Tablet header (Designer 10): the long labels (project, model, mode) go, the agent and the state stay. */
+  .v3-chat-header__chips .v3-chat-chip-secondary {
+    display: none;
+  }
+  /* In the 236px list the detail ("1 aprovação pendente", "Turno em andamento") drops to its own line
+     instead of being cut to "1 ..." beside the state chip. */
+  .v3-chat-row__meta {
+    flex-wrap: wrap;
+  }
+  .v3-chat-row__detail {
+    flex-basis: 100%;
+  }
+  .v3-chat {
+    grid-template-columns: var(--chat-list-width-tablet) minmax(0, 1fr);
+    gap: var(--v3-space-3);
+  }
+}
+
+@media (max-width: 767px) {
+  .v3-chat {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .v3-chat[data-view="chat"] .v3-chat-list,
+  .v3-chat[data-view="list"] .v3-chat-panel {
+    display: none;
+  }
+  .v3-chat-list,
+  .v3-chat-panel {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+  .v3-chat-header {
+    padding: var(--v3-space-2) var(--v3-space-3);
+  }
+  .v3-chat-header .v3-chat-header__title {
+    font-size: 16px;
+    line-height: 22px;
+  }
+  /* Only the agent and the state stay in the chip line. */
+  .v3-chat-header__chips .v3-chat-chip-secondary {
+    display: none;
+  }
+  .v3-chat-banners {
+    padding: var(--v3-space-2) var(--v3-space-3) 0;
+  }
+  .v3-chat-thread {
+    padding: var(--v3-space-3);
+  }
+  .v3-chat-msg .v3-chat-msg__body {
+    max-width: calc(100% - 42px);
+  }
+  .v3-chat-msg--user .v3-chat-bubble--user {
+    max-width: 88%;
+  }
+  .v3-chat-card,
+  .v3-chat-turn,
+  .v3-chat-turnmeta {
+    margin-left: 0;
+  }
+  .v3-chat-model {
+    margin: 0 var(--v3-space-2) var(--v3-space-2);
+  }
+  .v3-chat-pending {
+    padding: 0 var(--v3-space-3);
+  }
+  .v3-chat-composer {
+    padding: var(--v3-space-2) var(--v3-space-2) calc(var(--v3-space-2) + env(safe-area-inset-bottom));
+  }
+  /* The "/" menu: full width above the composer, rounded on top, at most 40% of the VISIBLE height
+     (ChatViewportShell publishes it on #root: 100dvh does not follow the soft keyboard). */
+  .v3-chat-composer .v3-chat-slash {
+    right: 0;
+    left: 0;
+    max-width: none;
+    max-height: calc(var(--v3-visible-height, 100dvh) * 0.4);
+    overflow-x: hidden;
+    border-radius: var(--v3-radius-2xl) var(--v3-radius-2xl) 0 0;
+    box-shadow: var(--v3-shadow-dialog);
+  }
+  /* The "⋯" menu: rows of 52px. */
+  .v3-chat-menu__popup {
+    min-width: 240px;
+  }
+  .v3-chat-menu__popup .v3-chat-menu__item {
+    min-height: var(--v3-control-lg);
   }
 }

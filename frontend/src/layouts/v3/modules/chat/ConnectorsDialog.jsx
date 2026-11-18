@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
 import Dialog from '../../components/Dialog/Dialog.jsx'
+import { useMediaQuery } from '../../../../hooks/useMediaQuery.js'
 import { chatApi } from '../../../../services/chatApi.js'
 import './ChatLeaf.css'
+import { PHONE_QUERY, dialogSizeFor } from './viewport.js'
 
 const TITLE_ID = 'dlg-chat-connectors-title'
 
@@ -36,6 +38,7 @@ export default function ConnectorsDialog({ agentId, agentName, onClose, returnFo
   const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState(null) // { tone: 'ok' | 'err', text }
   const firstSwitchRef = useRef(null)
+  const phone = useMediaQuery(PHONE_QUERY)
 
   const adopt = useCallback((payload, { keepSelection = false } = {}) => {
     const known = (Array.isArray(payload?.known) ? payload.known : []).map((entry) => String(entry.name))
@@ -113,7 +116,7 @@ export default function ConnectorsDialog({ agentId, agentName, onClose, returnFo
   return (
     <Dialog
       open
-      size="narrow"
+      size={dialogSizeFor(phone)}
       title={title}
       titleId={TITLE_ID}
       onClose={onClose}

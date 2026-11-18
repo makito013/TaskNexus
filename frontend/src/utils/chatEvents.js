@@ -25,7 +25,8 @@
 //   model, mode  last model / permission mode announced (see "model vocabulary")
 //   lastSeq      highest persisted seq folded in (the `since` of a reconnect)
 //   sessionState last `session.state` frame (ephemeral)
-//   replayComplete, commandsVersion (bumped by `commands.changed`), lastTurn, rejected, rateLimit
+//   replayComplete, resyncing (the socket dropped and the next connection's replay has not ended),
+//   commandsVersion (bumped by `commands.changed`), lastTurn, rejected, rateLimit
 //
 // Model vocabulary: a model change is announced twice, first the alias the user chose
 // (`haiku`) and then the name the CLI resolved (`claude-haiku-...`) in the next `init`. Both
@@ -60,6 +61,7 @@ export function createChatState() {
     sessionState: null,
     sessionInfo: null,
     replayComplete: false,
+    resyncing: false,
     commandsVersion: 0,
     lastTurn: null,
     rejected: null,
@@ -455,6 +457,7 @@ function onReplayComplete(state) {
   return {
     ...state,
     replayComplete: true,
+    resyncing: false,
     turn: running === state.turn.running ? state.turn : { ...state.turn, running, startedAt: running ? state.turn.startedAt ?? Date.now() : null },
   }
 }
@@ -495,9 +498,12 @@ function onLocalSend(state, event) {
 function onConnectionLost(state, event) {
   const keep = new Set(event.keep ?? [])
   const isLost = (item) => item.kind === 'user' && item.status === 'sending' && !keep.has(item.requestId)
-  if (!state.messages.some(isLost)) return state
+  // resyncing: from the drop until the next replay.complete (one per connection) a lost message may still
+  // be echoed back, so the screen does not offer "Enviar de novo" yet.
+  const base = state.resyncing ? state : { ...state, resyncing: true }
+  if (!state.messages.some(isLost)) return base
   return {
-    ...state,
+    ...base,
     messages: state.messages.map((item) => (isLost(item) ? { ...item, status: 'failed', errorCode: 'connection_lost' } : item)),
   }
 }

@@ -26,6 +26,8 @@ function PlusIcon() {
 //   fallbackTitles  { [key]: first message } for chats with no name
 //   loaded / available   provider flags (loading skeleton, partial and total failure)
 //   actions         useChatListActions()
+//   onLeave         phone only: "Voltar para Projetos" (the shell rail is hidden there, so the list view
+//                   is the way out of the chat route)
 export default function ChatList({
   chats,
   activeKey = null,
@@ -38,6 +40,7 @@ export default function ChatList({
   onNewChat,
   onEnd,
   onRetry,
+  onLeave,
 }) {
   const [renamingKey, setRenamingKey] = useState(null)
   const ordered = orderChats(chats, overrides)
@@ -128,8 +131,11 @@ export default function ChatList({
 
   return (
     <nav className="v3-chat-list" aria-label="Chats do projeto">
+      {onLeave ? (
+        <Button variant="text" className="v3-chat-list__leave" onClick={onLeave}>Voltar para Projetos</Button>
+      ) : null}
       <div className="v3-chat-list__head">
-        <h2 className="v3-chat-list__title">Chats</h2>
+        <h2 className="v3-chat-list__title" tabIndex={-1}>Chats</h2>
         <Button variant="primary" onClick={onNewChat}>
           <PlusIcon />
           Novo chat

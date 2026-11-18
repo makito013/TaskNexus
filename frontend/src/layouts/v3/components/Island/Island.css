@@ -104,3 +104,52 @@
 .v3-island__colleague:hover {
   background-color: var(--v3-island-surface);
 }
+
+/*
+ * Chat route, phone (Designer 10): the island becomes a 52px pill with a 36px pet and a two-line message,
+ * and it goes away while the soft keyboard is open. Every selector is scoped by the route attribute that
+ * AppV3 writes on #root, so no other route changes. No containing-block property here either.
+ */
+@media (max-width: 767px) {
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island {
+    box-sizing: border-box;
+    flex: none;
+    align-self: stretch;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: var(--v3-space-3);
+    height: var(--v3-control-lg);
+    margin: var(--v3-space-2) var(--v3-space-2) 0;
+    padding: 0 var(--v3-space-4) 0 var(--v3-space-3);
+    border-top: 1px solid var(--v3-island-line);
+    border-radius: var(--v3-radius-island);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island > svg {
+    flex: none;
+    width: 36px;
+    height: auto;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__text {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__name,
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__actions,
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__divider,
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__colleagues {
+    display: none;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-island__message {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: var(--v3-type-caption-size);
+    line-height: var(--v3-type-caption-line);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"][data-v3-keyboard="open"] .v3-island {
+    display: none;
+  }
+}

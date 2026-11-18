@@ -1,10 +1,18 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
+import { useMediaQuery } from '../../../../hooks/useMediaQuery.js'
 import SlashMenu, { SLASH_LIST_ID, slashOptionId } from './SlashMenu.jsx'
 import { UI_COMMAND_CARDS, commandNameOf, matchCommands } from './slashCommands.js'
+import { NARROW_SHELL_QUERY } from './viewport.js'
 
 const MAX_ROWS = 6
 const SLASH_TEXT = /^\/[^\s]*$/
+
+// `text-overflow` does nothing on ::placeholder, so a text that does not fit is cut mid-word. On a narrow
+// shell (<= 1279: phone and iPad, with "Interromper" beside it) a short text is shown that fits whole
+// (Designer C5, A1); the long one stays from 1280. The aria-label is the same either way.
+const PLACEHOLDER = 'Mensagem para o agente, ou / para comandos'
+const PLACEHOLDER_NARROW = 'Mensagem ou / para comandos'
 
 // Composer of the chat (Designer 7): a textarea that is also the combobox of the "/" menu (the focus
 // never leaves it; the menu is read through aria-activedescendant), the send / interrupt button and the
@@ -43,6 +51,7 @@ const Composer = forwardRef(function Composer(
   const [dismissedFor, setDismissedFor] = useState(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [argHint, setArgHint] = useState(null)
+  const narrow = useMediaQuery(NARROW_SHELL_QUERY)
   const empty = value.trim() === ''
   const locked = disabled || loading
 
@@ -146,7 +155,7 @@ const Composer = forwardRef(function Composer(
           aria-describedby={disabled ? describedBy : undefined}
           aria-disabled={locked ? 'true' : undefined}
           readOnly={locked}
-          placeholder={disabled ? 'Chat indisponível. Veja o aviso acima.' : 'Mensagem para o agente, ou / para comandos'}
+          placeholder={disabled ? 'Chat indisponível. Veja o aviso acima.' : narrow ? PLACEHOLDER_NARROW : PLACEHOLDER}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}

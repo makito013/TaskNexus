@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import Button from '../Button/Button.jsx'
+import { useId, useRef, useState } from 'react'
+import ApprovalActions from './ApprovalActions.jsx'
 import './ApprovalCard.css'
 
 // "Esperando você" card (DS ApprovalCard + Designer 5.1). It executes nothing: it only calls the
@@ -17,6 +17,11 @@ import './ApprovalCard.css'
 //   pendingAction  which button is busy while status is "sending": allow | allowSession | deny | denyStop
 //   denyMessage    the reason the user gave, shown on a denied card
 //   label          aria-label of the group ("Pedido de permissão", "Pergunta do agente"...)
+//   onOpenSummary  phone: when given, the summary (who asks + what) is ONE button of its own that calls
+//                  it (the screen opens the approval sheet); the decision buttons stay beside it, never
+//                  inside it. Without it (desktop, tablet) the summary is plain text, as before.
+//   summaryRef     ref of that button (the sheet gives the focus back to it)
+//   buttonSize     Button size of the decisions ("lg" = 52px on a phone)
 //   onAllow(), onAllowSession(), onDeny(message), onDenyStop()
 //   focusAfterDecision()  called when a decision is sent from inside the card, so the focus does
 //                  not stay on a button that is about to disappear (the consumer focuses the composer)
@@ -57,6 +62,9 @@ export default function ApprovalCard({
   pendingAction = null,
   denyMessage = null,
   label = 'Pedido de permissão',
+  onOpenSummary = null,
+  summaryRef = null,
+  buttonSize = 'md',
   onAllow,
   onAllowSession,
   onDeny,
@@ -64,19 +72,11 @@ export default function ApprovalCard({
   focusAfterDecision,
 }) {
   const rootRef = useRef(null)
-  const reasonRef = useRef(null)
   const baseId = useId()
   const requestId = `${baseId}-request`
   const detailsId = `${baseId}-details`
-  const sessionHintId = `${baseId}-session-hint`
-  const [denying, setDenying] = useState(false)
-  const [reason, setReason] = useState('')
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [fullOpen, setFullOpen] = useState(false)
-
-  useEffect(() => {
-    if (denying) reasonRef.current?.focus()
-  }, [denying])
 
   const verb = summary?.verb ?? 'usar'
   const object = summary?.object ?? null
@@ -116,55 +116,53 @@ export default function ApprovalCard({
     if (hadFocus) focusAfterDecision?.()
   }
 
-  const confirmDeny = () => {
-    decide(onDeny, reason.trim())
-    setDenying(false)
-  }
-
-  const onReasonKey = (event) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      setDenying(false)
-      return
-    }
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault()
-      confirmDeny()
-    }
-  }
-
-  // aria-disabled (not disabled) keeps the button focusable and announced while a decision is out.
-  const busyProps = (action) => ({
-    'aria-disabled': sending ? 'true' : undefined,
-    'aria-busy': sending && pendingAction === action ? 'true' : undefined,
-    'aria-describedby': requestId,
-  })
-  const labelOf = (action, text) => (sending && pendingAction === action ? 'Enviando…' : text)
+  const phoneSummary = typeof onOpenSummary === 'function'
+  const objectNode = object ? (
+    <span
+      className={`v3-approval__object v3-type-mono-sm${(long && !fullOpen) || phoneSummary ? ' v3-approval__object--clamped' : ''}`}
+    >
+      <code className="v3-approval__object-text">{objectText}</code>
+    </span>
+  ) : null
 
   return (
     <div ref={rootRef} className="v3-approval" role="group" aria-label={label} data-status={status}>
-      <div className="v3-approval__head">
-        <span className="v3-approval__dot" aria-hidden="true" />
-        <b className="v3-approval__who">{agentName}</b>
-        <span className="v3-approval__quer">quer {verb}</span>
-        {context ? <span className="v3-approval__context v3-type-mono-sm">{context}</span> : null}
-      </div>
+      {phoneSummary ? (
+        <button
+          ref={summaryRef}
+          type="button"
+          className="v3-approval__summary"
+          aria-haspopup="dialog"
+          aria-label={`Ver pedido completo: ${agentName} quer ${shortSummary}`}
+          onClick={onOpenSummary}
+        >
+          <span className="v3-approval__head">
+            <span className="v3-approval__dot" aria-hidden="true" />
+            <b className="v3-approval__who">{agentName}</b>
+            <span className="v3-approval__quer">quer {verb}</span>
+            {context ? <span className="v3-approval__context v3-type-mono-sm">{context}</span> : null}
+          </span>
+          {objectNode}
+          <span className="v3-approval__summary-more v3-type-caption">Ver pedido completo</span>
+        </button>
+      ) : (
+        <div className="v3-approval__head">
+          <span className="v3-approval__dot" aria-hidden="true" />
+          <b className="v3-approval__who">{agentName}</b>
+          <span className="v3-approval__quer">quer {verb}</span>
+          {context ? <span className="v3-approval__context v3-type-mono-sm">{context}</span> : null}
+        </div>
+      )}
       <span id={requestId} className="v3-approval__sr-only">
         {agentName} quer {shortSummary}
       </span>
 
-      {object ? (
-        <code
-          className={`v3-approval__object v3-type-mono-sm${long && !fullOpen ? ' v3-approval__object--clamped' : ''}`}
-        >
-          {objectText}
-        </code>
-      ) : null}
+      {phoneSummary ? null : objectNode}
       {connector ? (
         <p className="v3-approval__connector v3-type-caption">Conector da sua conta: {connector}</p>
       ) : null}
 
-      {long ? (
+      {long && !phoneSummary ? (
         <button
           type="button"
           className="v3-approval__text-button"
@@ -175,72 +173,30 @@ export default function ApprovalCard({
         </button>
       ) : null}
 
-      {denying ? (
-        <div className="v3-approval__reason">
-          <label className="v3-field__label" htmlFor={`${baseId}-reason`}>Motivo (opcional)</label>
-          <textarea
-            id={`${baseId}-reason`}
-            ref={reasonRef}
-            className="v3-input v3-approval__reason-input"
-            rows={3}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            onKeyDown={onReasonKey}
-          />
-          <div className="v3-approval__actions">
-            <Button size="sm" onClick={confirmDeny}>Confirmar negação</Button>
-            <Button size="sm" variant="text" onClick={() => setDenying(false)}>Cancelar</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="v3-approval__actions">
-          <Button
-            variant="primary"
-            onClick={() => decide(onAllow)}
-            {...busyProps('allow')}
+      <ApprovalActions
+        requestId={requestId}
+        allowSession={allowSession}
+        connector={connector}
+        sending={sending}
+        pendingAction={pendingAction}
+        size={buttonSize}
+        onAllow={() => decide(onAllow)}
+        onAllowSession={() => decide(onAllowSession)}
+        onDeny={(message) => decide(onDeny, message)}
+        onDenyStop={() => decide(onDenyStop)}
+      >
+        {details && !phoneSummary ? (
+          <button
+            type="button"
+            className="v3-approval__text-button"
+            aria-expanded={detailsOpen}
+            aria-controls={detailsId}
+            onClick={() => setDetailsOpen((open) => !open)}
           >
-            {labelOf('allow', 'Permitir')}
-          </Button>
-          {allowSession && !connector ? (
-            <span className="v3-approval__session">
-              <Button
-                onClick={() => decide(onAllowSession)}
-                {...busyProps('allowSession')}
-                aria-describedby={`${requestId} ${sessionHintId}`}
-              >
-                {labelOf('allowSession', 'Permitir nesta conversa')}
-              </Button>
-              <span id={sessionHintId} className="v3-approval__hint v3-type-caption">
-                Vale só até encerrar esta conversa.
-              </span>
-            </span>
-          ) : null}
-          <Button
-            onClick={() => !sending && setDenying(true)}
-            {...busyProps('deny')}
-          >
-            {labelOf('deny', 'Negar')}
-          </Button>
-          <Button
-            className="v3-approval__danger"
-            onClick={() => decide(onDenyStop)}
-            {...busyProps('denyStop')}
-          >
-            {labelOf('denyStop', 'Negar e parar')}
-          </Button>
-          {details ? (
-            <button
-              type="button"
-              className="v3-approval__text-button"
-              aria-expanded={detailsOpen}
-              aria-controls={detailsId}
-              onClick={() => setDetailsOpen((open) => !open)}
-            >
-              {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
-            </button>
-          ) : null}
-        </div>
-      )}
+            {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
+          </button>
+        ) : null}
+      </ApprovalActions>
 
       {status === 'error' ? (
         <p className="v3-approval__error v3-type-body-sm" role="alert">
@@ -248,7 +204,7 @@ export default function ApprovalCard({
         </p>
       ) : null}
 
-      {details && detailsOpen ? (
+      {details && detailsOpen && !phoneSummary ? (
         <div id={detailsId} className="v3-approval__details">{details}</div>
       ) : null}
     </div>

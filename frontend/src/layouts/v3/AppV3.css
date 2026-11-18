@@ -1,8 +1,18 @@
 /*
- * Shell of the v3 layout (desktop only). #root is the grid (rail | content) and
- * the content column is the scroll container (see theme/base.css), so the island
- * can be `position: sticky` and nothing in the chain is fixed or creates a
+ * Shell of the v3 layout. #root is the grid (rail | content) and the content
+ * column is the scroll container (see theme/base.css), so the island can be
+ * `position: sticky` and nothing in the chain is fixed or creates a
  * containing block.
+ *
+ * The ONE exception is the chat route at <= 1279px (decision L7): there the root
+ * must be anchored to the visual viewport when the soft keyboard opens (the Safari
+ * pan cannot be fixed from inside the tree), which needs a `position: fixed` root
+ * for useVisibleViewportShell. It is applied as an inline style by
+ * modules/chat/ChatViewportShell.jsx, which AppV3 mounts only on that route and
+ * width, and which removes it on unmount: no stylesheet of the shell ever
+ * declares it (shellQa.test.jsx keeps proving that), and no other route or width
+ * can see it. The rules at the end of this file only size the content of that
+ * shell; each one starts with `#root[data-v3-route="chat"]`.
  */
 .v3-shell__column {
   display: flex;
@@ -25,4 +35,44 @@
   margin: 0;
   /* Shrink to the text so the focus ring hugs it instead of the full column. */
   align-self: flex-start;
+}
+
+/*
+ * Chat route, tablet and phone (Designer 10, decisions D4 and L7). The prefix repeats the
+ * specificity of base.css (`:root[data-layout="v3"] #root`), which a bare `#root[...]` would lose.
+ */
+@media (max-width: 1279px) {
+  /* The conversation fills what is left of the column (no 100dvh arithmetic: the root already follows
+     the visible viewport) and scrolls inside itself. */
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-main-column {
+    overflow: hidden;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-shell__column {
+    gap: var(--v3-space-3);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-shell__screen {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 var(--v3-space-4) var(--v3-space-4);
+  }
+}
+
+@media (max-width: 767px) {
+  :root[data-layout="v3"] #root[data-v3-route="chat"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-rail {
+    display: none;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-main-column {
+    grid-column: 1;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-shell__column {
+    gap: var(--v3-space-2);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-shell__screen {
+    padding: 0;
+  }
 }

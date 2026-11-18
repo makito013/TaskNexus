@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMediaQuery } from '../../hooks/useMediaQuery.js'
 import { useRoute } from '../../hooks/useRoute.js'
 import ComingSoon from './components/ComingSoon/ComingSoon.jsx'
 import Island from './components/Island/Island.jsx'
@@ -14,6 +15,8 @@ import {
 } from './modules.js'
 import ChatScreen from './modules/chat/ChatScreen.jsx'
 import ChatSessionHost from './modules/chat/ChatSessionHost.jsx'
+import ChatViewportShell from './modules/chat/ChatViewportShell.jsx'
+import { NARROW_SHELL_QUERY } from './modules/chat/viewport.js'
 import ProjectsScreen from './modules/projects/ProjectsScreen.jsx'
 import ProjectsSessionsProvider from './sessions/ProjectsSessionsProvider.jsx'
 import TasksScreen from './modules/tasks/TasksScreen.jsx'
@@ -47,6 +50,19 @@ export default function AppV3({ initialTheme }) {
 
   const activeId = activeModule.id
 
+  // The chat route has its own responsive shell (phone/tablet, decision D4): the stylesheets key on this
+  // attribute of #root, written here and removed on leaving, so no other route is ever affected.
+  useEffect(() => {
+    if (!isChat) return undefined
+    const root = document.getElementById('root')
+    if (!root) return undefined
+    root.dataset.v3Route = 'chat'
+    return () => {
+      delete root.dataset.v3Route
+    }
+  }, [isChat])
+  const narrowShell = useMediaQuery(NARROW_SHELL_QUERY)
+
   const openModule = useCallback(
     (moduleId) => {
       const target = moduleById(moduleId)
@@ -78,6 +94,8 @@ export default function AppV3({ initialTheme }) {
       <ProjectsSessionsProvider navigate={navigate}>
         {/* Above <main>: the open conversation's socket outlives the screen (CA38). Inert until a chat is opened. */}
         <ChatSessionHost activeKey={isChat ? route.sessionKey : null}>
+          {/* Anchors the shell root to the visual viewport (soft keyboard) only on the chat route, <= 1279. */}
+          {isChat && narrowShell ? <ChatViewportShell /> : null}
           <ModuleRail
             modules={MODULES}
             activeId={activeId}

@@ -67,8 +67,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* Three lines, then "Ver comando completo": a command is never clipped without telling. */
-.v3-approval__object--clamped {
+/* Three lines, then "Ver comando completo": a command is never clipped without telling. The clamp is on an
+   inner box with no padding: on the padded box itself the 4th line showed through the bottom padding. */
+.v3-approval__object--clamped > .v3-approval__object-text {
+  /* <code> is inline by default: the box needs to be one for the clamp. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -176,6 +178,50 @@
 .v3-approval__resolved-summary,
 .v3-approval__reason-line {
   color: var(--v3-ink-muted);
+}
+
+/*
+ * Phone (Designer 10). The summary is ONE button of its own (44px at least) that opens the approval
+ * sheet; the decisions stay beside it as full-width 52px buttons in a column. The button holds
+ * phrasing content only (spans, <b>, <code>), so no control sits inside another control.
+ */
+.v3-approval__summary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--v3-space-2);
+  width: 100%;
+  min-height: var(--v3-control);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.v3-approval__summary-more {
+  color: var(--v3-fin-ink);
+  text-decoration: underline;
+}
+
+/* Phone: the decisions stack and take 52px (Designer 10). Scoped to the chat route like every other
+   media rule of the v3 shell: this card is a component of the design system, and the same rule written
+   bare would reach any other screen that shows it. In the chat it applies to every card that uses
+   .v3-approval__actions (permission, question, plan) and to the approval sheet, a <dialog> inside #root. */
+@media (max-width: 767px) {
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-approval__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-approval__actions .v3-button {
+    width: 100%;
+    min-height: var(--v3-control-lg);
+  }
+  :root[data-layout="v3"] #root[data-v3-route="chat"] .v3-approval__session {
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

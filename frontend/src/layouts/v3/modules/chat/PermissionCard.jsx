@@ -1,5 +1,7 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ApprovalCard from '../../components/ApprovalCard/ApprovalCard.jsx'
 import { summarizeTool } from '../../../../utils/toolSummaries.js'
+import ApprovalSheet from './ApprovalSheet.jsx'
 import { cardStatus } from './chatLabels.js'
 import PlanCard from './cards/PlanCard.jsx'
 import QuestionCard from './cards/QuestionCard.jsx'
@@ -34,7 +36,9 @@ function toolDetails(summary, card) {
   return <TextBlock>{summary.detail}</TextBlock>
 }
 
-export default function PermissionCard({ card, agentName, context, decision, onDecide, focusAfterDecision }) {
+// `phone`: the summary of a generic request becomes a button that opens the approval sheet and the
+// decisions are 52px (Designer 10). The question and plan cards stay inline on every width.
+export default function PermissionCard({ card, agentName, context, decision, onDecide, focusAfterDecision, phone = false }) {
   const status = cardStatus(card, decision)
   if (card.kind === 'question') {
     return (
@@ -60,24 +64,103 @@ export default function PermissionCard({ card, agentName, context, decision, onD
       />
     )
   }
-  const summary = summarizeTool(card.toolName, card.input)
   return (
-    <ApprovalCard
+    <ToolPermission
+      card={card}
       agentName={agentName}
-      summary={summary.request}
       context={context}
-      connector={card.connector ?? summary.connector ?? null}
-      allowSession={card.allowSession}
-      details={toolDetails(summary, card)}
-      label="Pedido de permissão"
       status={status}
-      pendingAction={decision?.kind ?? null}
-      denyMessage={card.message}
-      onAllow={() => onDecide(card, { behavior: 'allow' })}
-      onAllowSession={() => onDecide(card, { behavior: 'allow', scope: 'session' })}
-      onDeny={(message) => onDecide(card, { behavior: 'deny', message: message || undefined })}
-      onDenyStop={() => onDecide(card, { behavior: 'deny', interrupt: true })}
+      decision={decision}
+      onDecide={onDecide}
       focusAfterDecision={focusAfterDecision}
+      phone={phone}
     />
+  )
+}
+
+// A request to use a tool: the ApprovalCard, plus (on a phone) the sheet that shows it in full. The
+// card and the sheet get the same status and the same decision callbacks; a decision taken in the sheet
+// closes it and hands the focus to the composer, a sheet closed without one decides nothing.
+function ToolPermission({ card, agentName, context, status, decision, onDecide, focusAfterDecision, phone }) {
+  const summaryRef = useRef(null)
+  const focusPendingRef = useRef(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const summary = summarizeTool(card.toolName, card.input)
+  const details = toolDetails(summary, card)
+  const connector = card.connector ?? summary.connector ?? null
+  const sheetOnPhone = phone && sheetOpen
+
+  // The sheet closes with a decision: the focus goes to the composer once the dialog has handed it back
+  // (its own cleanup returns the focus to the summary button first, so this runs after it). `sheetOpen` is
+  // a dependency too: a sheet that stops being a phone surface closes in two steps (phone, then the state).
+  useEffect(() => {
+    if (sheetOnPhone || !focusPendingRef.current) return
+    focusPendingRef.current = false
+    focusAfterDecision?.()
+  }, [sheetOnPhone, sheetOpen, focusAfterDecision])
+
+  const closeSheet = useCallback(() => setSheetOpen(false), [])
+  // The sheet closing WITHOUT the person doing anything (the request was settled on another device, it
+  // expired, the device rotated past 767): the focus would fall on <body>, so it goes to the composer
+  // like after a decision. Esc / "Fechar" / the scrim are the person's own act and go through closeSheet,
+  // which returns the focus to the summary button.
+  const settleSheet = useCallback(() => {
+    focusPendingRef.current = true
+    setSheetOpen(false)
+  }, [])
+  // Rotating a tablet past 767px: the sheet is a phone-only surface, it must not reopen on the way back.
+  useEffect(() => {
+    if (!phone && sheetOpen) settleSheet()
+  }, [phone, sheetOpen, settleSheet])
+  const decideFromSheet = (payload) => {
+    if (status === 'sending') return
+    focusPendingRef.current = true
+    setSheetOpen(false)
+    onDecide(card, payload)
+  }
+
+  return (
+    <>
+      <ApprovalCard
+        agentName={agentName}
+        summary={summary.request}
+        context={context}
+        connector={connector}
+        allowSession={card.allowSession}
+        details={details}
+        label="Pedido de permissão"
+        status={status}
+        pendingAction={decision?.kind ?? null}
+        denyMessage={card.message}
+        onOpenSummary={phone ? () => setSheetOpen(true) : null}
+        summaryRef={summaryRef}
+        buttonSize={phone ? 'lg' : 'md'}
+        onAllow={() => onDecide(card, { behavior: 'allow' })}
+        onAllowSession={() => onDecide(card, { behavior: 'allow', scope: 'session' })}
+        onDeny={(message) => onDecide(card, { behavior: 'deny', message: message || undefined })}
+        onDenyStop={() => onDecide(card, { behavior: 'deny', interrupt: true })}
+        focusAfterDecision={focusAfterDecision}
+      />
+      {sheetOnPhone ? (
+        <ApprovalSheet
+          agentName={agentName}
+          summary={summary.request}
+          context={context}
+          connector={connector}
+          allowSession={card.allowSession}
+          details={details}
+          hasDiff={Boolean(summary.diff)}
+          status={status}
+          pendingAction={decision?.kind ?? null}
+          returnFocusTo={summaryRef}
+          onClose={closeSheet}
+          onSettled={settleSheet}
+          onAllow={() => decideFromSheet({ behavior: 'allow' })}
+          onAllowSession={() => decideFromSheet({ behavior: 'allow', scope: 'session' })}
+          onDeny={(message) => decideFromSheet({ behavior: 'deny', message: message || undefined })}
+          onDenyStop={() => decideFromSheet({ behavior: 'deny', interrupt: true })}
+        />
+      ) : null}
+    </>
   )
 }

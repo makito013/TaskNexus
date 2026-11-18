@@ -6,6 +6,14 @@ import ActionMenu from './ActionMenu.jsx'
 import { modeLabel } from './chatLabels.js'
 import RenameField from './RenameField.jsx'
 
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 4.5L6.5 10l5.5 5.5" />
+    </svg>
+  )
+}
+
 function StopIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
@@ -21,6 +29,9 @@ function StopIcon() {
 //                   otherwise it is a plain chip
 //   onOpenConnectors  when given, the menu offers "Conectores do agente…"
 //   onRename(name) -> Promise<boolean>      onEnd()      onInterrupt()
+//   onBack         phone only (the screen passes it below 768): "Voltar" to the list of chats, 44x44. The
+//                  stylesheet keeps only the agent and the state chips on a phone and shrinks "Interromper"
+//                  to its icon below 1280 (the button keeps its aria-label either way).
 export default function ChatHeader({
   title,
   agentName,
@@ -38,6 +49,7 @@ export default function ChatHeader({
   onInterrupt,
   onOpenModel,
   onOpenConnectors,
+  onBack,
 }) {
   const [renaming, setRenaming] = useState(false)
 
@@ -50,6 +62,11 @@ export default function ChatHeader({
   return (
     <header className="v3-chat-header">
       <div className="v3-chat-header__row">
+        {onBack ? (
+          <button type="button" className="v3-chat-back" aria-label="Voltar para a lista de chats" onClick={onBack}>
+            <BackIcon />
+          </button>
+        ) : null}
         {renaming ? (
           <RenameField
             initial={title}
@@ -85,12 +102,12 @@ export default function ChatHeader({
           <span className="v3-chat-avatar v3-chat-avatar--mini" aria-hidden="true">{agentInitials(agentName)}</span>
           {agentName}
         </Chip>
-        {projectName ? <Chip>{projectName}</Chip> : null}
+        {projectName ? <Chip className="v3-chat-chip-secondary">{projectName}</Chip> : null}
         {model ? (
           onOpenModel ? (
             <button
               type="button"
-              className="v3-chat-model-chip"
+              className="v3-chat-model-chip v3-chat-chip-secondary"
               aria-label={`Modelo atual: ${model}. Trocar modelo`}
               aria-disabled={disabled ? 'true' : undefined}
               onClick={() => !disabled && onOpenModel()}
@@ -98,11 +115,11 @@ export default function ChatHeader({
               {model}
             </button>
           ) : (
-            <Chip>{model}</Chip>
+            <Chip className="v3-chat-chip-secondary">{model}</Chip>
           )
         ) : null}
-        <Chip>{modeLabel(mode)}</Chip>
-        {stateInfo ? <Chip tone="state" accent={stateInfo.accent} className={stateInfo.className}>{stateInfo.label}</Chip> : null}
+        <Chip className="v3-chat-chip-secondary">{modeLabel(mode)}</Chip>
+        {stateInfo ? <Chip tone="state" accent={stateInfo.accent} className={`v3-chat-chip-state ${stateInfo.className}`.trim()}>{stateInfo.label}</Chip> : null}
       </div>
     </header>
   )

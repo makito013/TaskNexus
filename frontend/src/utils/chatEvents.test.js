@@ -381,3 +381,19 @@ describe('optimistic user messages and rejections', () => {
     expect(state.rejected).toEqual({ requestId: 'r1', code: 'capacity_exceeded', message: 'full' })
   })
 })
+
+describe('resyncing (a drop until the next replay.complete)', () => {
+  it('is false at the start, true after a connection loss, and false again at replay.complete', () => {
+    let state = createChatState()
+    expect(state.resyncing).toBe(false)
+    state = reduceChat(state, { type: 'local.connection_lost', keep: [] })
+    expect(state.resyncing).toBe(true)
+    state = reduceChat(state, { type: 'replay.complete', session_key: 'k', seq: null, last_seq: 0 })
+    expect(state.resyncing).toBe(false)
+  })
+
+  it('a second loss while resyncing keeps the same state object', () => {
+    const lost = reduceChat(createChatState(), { type: 'local.connection_lost', keep: [] })
+    expect(reduceChat(lost, { type: 'local.connection_lost', keep: [] })).toBe(lost)
+  })
+})

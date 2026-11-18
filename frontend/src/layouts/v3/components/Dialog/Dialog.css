@@ -197,3 +197,39 @@
   white-space: nowrap;
   border: 0;
 }
+
+/*
+ * Bottom sheet (chat on a phone: approval sheet, connectors). Additive modifier, so the base
+ * `.v3-dialog` rule above is untouched; it only exists <= 767px. It is still a <dialog> in the top layer
+ * (no position: fixed of ours) and enters by opacity only: a slide would need a transform.
+ */
+@media (max-width: 767px) {
+  .v3-dialog--sheet {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    animation: v3-sheet-in var(--v3-dur-fast) var(--v3-ease-out) both;
+  }
+  .v3-dialog--sheet .v3-dialog__panel {
+    max-height: 85vh;
+    max-height: 85dvh;
+    border-bottom: 0;
+    border-radius: var(--v3-radius-2xl) var(--v3-radius-2xl) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .v3-dialog--sheet .v3-dialog__header,
+  .v3-dialog--sheet .v3-dialog__body,
+  .v3-dialog--sheet .v3-dialog__footer {
+    padding-right: var(--v3-space-4);
+    padding-left: var(--v3-space-4);
+  }
+}
+@keyframes v3-sheet-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v3-dialog--sheet {
+    animation: none;
+  }
+}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
+import { useMediaQuery } from '../../../../hooks/useMediaQuery.js'
 import { api } from '../../../../services/api.js'
 import { useIslandReport } from '../../IslandContext.jsx'
 import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
@@ -24,6 +25,8 @@ import { useChatCommands } from './useChatCommands.js'
 import { useChatListActions } from './useChatListActions.js'
 import { useFirstMessages } from './useFirstMessages.js'
 import { useProjectName } from './useProjectName.js'
+import { useStickToEnd } from './useStickToEnd.js'
+import { PHONE_QUERY } from './viewport.js'
 import './ChatScreen.css'
 
 const REFUSED_STATES = ['not_found']
@@ -108,18 +111,31 @@ function usePtyLookup(sessionKey, refused, livePty) {
 // The chat route: list of the project's chats | the open conversation. The conversation state comes
 // from ChatSessionHost (above <main>, so the socket survives a module switch); this component only
 // shows it.
+//
+// On a phone (<= 767) the two are two VIEWS of one screen (Designer 10): the conversation, and the list
+// (reached by "Voltar"). Both stay mounted and the stylesheet shows one: switching views never touches
+// the socket (it lives in the host) nor the thread's scroll. The view is plain local state: it needs no
+// provider because nothing outside this screen reads it.
 function ChatView({ sessionKey, session }) {
   const sessions = useProjectsSessions()
   const { chats, liveByKey, graceKeys, loaded, liveAvailable, refresh, openChat, registerCreated, setFocusedKey, goTo } = sessions
   const { state, connection } = session
   const [agents, setAgents] = useState([])
-  const [newChatOpen, setNewChatOpen] = useState(false)
   const [endTarget, setEndTarget] = useState(null)
   const [modelOpen, setModelOpen] = useState(false)
   // null | { origin: 'menu' | 'banner' }: where the connectors dialog was opened from.
   const [connectors, setConnectors] = useState(null)
   const threadRef = useRef(null)
   const composerRef = useRef(null)
+  const screenRef = useRef(null)
+  // Which "Novo chat" dialog is open: a token per opening (null = none). A creation that answers after its
+  // dialog was cancelled carries the OLD token, so it can never navigate nor close a later dialog.
+  const [newChatToken, setNewChatToken] = useState(null)
+  const activeNewChatRef = useRef(null)
+  const newChatSeqRef = useRef(0)
+  const previousViewRef = useRef('chat')
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [view, setView] = useState('chat') // phone only: 'chat' | 'list'
   const actions = useChatListActions({ onChanged: refresh })
 
   // Agent names are cosmetic: when the list is unavailable the key's agent id stands in.
@@ -141,6 +157,14 @@ function ChatView({ sessionKey, session }) {
     return () => setFocusedKey(null)
   }, [sessionKey, setFocusedKey])
 
+  // The view that disappears takes the focus with it: land on the heading of the one that appears.
+  useEffect(() => {
+    if (previousViewRef.current === view) return
+    previousViewRef.current = view
+    const target = view === 'list' ? '.v3-chat-list__title' : '.v3-chat-header__title'
+    screenRef.current?.querySelector(target)?.focus()
+  }, [view])
+
   const meta = chats.find((chat) => chat.session_key === sessionKey) ?? null
   const parsed = parseSessionKey(sessionKey)
   const agentId = meta?.agent_id ?? parsed.agentId
@@ -157,6 +181,16 @@ function ChatView({ sessionKey, session }) {
   const running = state.turn.running
   const pending = state.cards.filter((card) => card.status === 'pending')
   const commands = useChatCommands(sessionKey, state.commandsVersion)
+  // "Enviar de novo" only while nothing else is in flight: during the opening replay, with no live socket
+  // (reconnecting, offline), while a turn runs, or while the reducer is resyncing (`resyncing`: from the
+  // lost connection until the replay of the next one completes, the window in which the replay may still
+  // echo the message back). In any of those a second send could duplicate the message the server already
+  // has (C4 review, ressalva 3 and L2#4; ratified option B of the C5 report).
+  const canResend = state.replayComplete && connection.state === 'open' && !state.resyncing && !running
+  // The thread element exists only when the conversation is shown (not the skeleton, the empty chat or
+  // the refusals): the observer of the stick-to-end hook is attached again each time that flips.
+  const emptyChat = state.replayComplete && state.messages.length === 0 && state.cards.length === 0 && !failureBanner
+  useStickToEnd(threadRef, !notFound && !loading && !emptyChat)
 
   const projectChats = useMemo(
     () => (meta ? chats.filter((chat) => chat.project_ref === projectRef) : chats),
@@ -198,9 +232,12 @@ function ChatView({ sessionKey, session }) {
   }
 
   // Esc interrupts a running turn from anywhere inside the panel. Whatever handles Esc itself
-  // (a menu, a rename box, the reason box of a denial) stops it before it gets here.
+  // (a menu, a rename box, the reason box of a denial) stops it before it gets here. A <dialog> (the
+  // approval sheet, connectors, end chat...) is a child of the panel in the DOM but its Esc belongs to
+  // the dialog: it only closes it, so a key pressed inside one never interrupts the turn.
   const onPanelKeyDown = (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented || !running || state.turn.interrupting) return
+    if (event.target instanceof Element && event.target.closest('dialog')) return
     event.preventDefault()
     session.interrupt()
   }
@@ -232,14 +269,37 @@ function ChatView({ sessionKey, session }) {
     if (key === sessionKey) goTo('/projects')
   }
 
-  const onCreated = (key) => {
-    setNewChatOpen(false)
+  const openNewChat = () => {
+    newChatSeqRef.current += 1
+    activeNewChatRef.current = newChatSeqRef.current
+    setNewChatToken(newChatSeqRef.current)
+  }
+  const closeNewChat = () => {
+    activeNewChatRef.current = null
+    setNewChatToken(null)
+  }
+
+  // A dialog cancelled while its request was still out creates the chat all the same: it is registered
+  // and listed, but the user said no, so the screen does not navigate to it (C4 review, L2#5) and does not
+  // touch whatever dialog is open now (C5 review, ressalva 1): `token` is the one of the opening that asked.
+  const onCreated = (key, token) => {
+    const cancelled = activeNewChatRef.current !== token
     registerCreated(key)
+    if (cancelled) {
+      refresh()
+      return
+    }
+    closeNewChat()
     openChat(key)
   }
 
+  const onOpenFromList = (key) => {
+    if (phone && key === sessionKey) setView('chat')
+    else openChat(key)
+  }
+
   return (
-    <section className="v3-chat" aria-label="Chat" data-session-key={sessionKey}>
+    <section ref={screenRef} className="v3-chat" aria-label="Chat" data-session-key={sessionKey} data-view={view}>
       <ChatList
         chats={projectChats}
         activeKey={sessionKey}
@@ -248,10 +308,11 @@ function ChatView({ sessionKey, session }) {
         loaded={loaded}
         available={liveAvailable}
         actions={actions}
-        onOpen={openChat}
-        onNewChat={() => setNewChatOpen(true)}
+        onOpen={onOpenFromList}
+        onNewChat={openNewChat}
         onEnd={(chat) => setEndTarget(chat)}
         onRetry={refresh}
+        onLeave={phone ? () => goTo('/projects') : undefined}
       />
 
       <div className="v3-chat-panel" onKeyDown={onPanelKeyDown}>
@@ -282,6 +343,7 @@ function ChatView({ sessionKey, session }) {
               onInterrupt={session.interrupt}
               onOpenModel={() => setModelOpen(true)}
               onOpenConnectors={() => setConnectors({ origin: 'menu' })}
+              onBack={phone ? () => setView('list') : undefined}
             />
             <StatusBanner banner={state.banner} connection={connection} canOpenConnectors onAction={onBannerAction} />
             {session.actionError ? (
@@ -291,7 +353,7 @@ function ChatView({ sessionKey, session }) {
             ) : null}
             {loading ? (
               <ThreadSkeleton />
-            ) : state.replayComplete && state.messages.length === 0 && state.cards.length === 0 && !failureBanner ? (
+            ) : emptyChat ? (
               <EmptyThread agentName={agentName} />
             ) : (
               <MessageList
@@ -303,7 +365,7 @@ function ChatView({ sessionKey, session }) {
                 turn={state.turn}
                 lastTurn={state.lastTurn}
                 agentName={agentName}
-                onResend={session.send}
+                onResend={canResend ? session.send : undefined}
                 renderCard={(card) => (
                   <PermissionCard
                     card={card}
@@ -312,6 +374,7 @@ function ChatView({ sessionKey, session }) {
                     decision={session.decisions[card.id]}
                     onDecide={session.decide}
                     focusAfterDecision={focusComposer}
+                    phone={phone}
                   />
                 )}
               />
@@ -348,12 +411,13 @@ function ChatView({ sessionKey, session }) {
         )}
       </div>
 
-      {newChatOpen ? (
+      {newChatToken !== null ? (
         <NewChatDialog
+          key={newChatToken}
           projectRef={projectRef}
           projectName={projectName}
-          onClose={() => setNewChatOpen(false)}
-          onCreated={onCreated}
+          onClose={closeNewChat}
+          onCreated={(key) => onCreated(key, newChatToken)}
         />
       ) : null}
       {notFound && ptyLookup === 'pty' ? (
