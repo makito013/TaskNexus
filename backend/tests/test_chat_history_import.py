@@ -152,3 +152,75 @@ async def test_a_log_whose_assistant_messages_are_not_in_the_transcript_imports_
     events = await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: TRANSCRIPT, known=known)
 
     assert len(events) == 4  # the same four events an unfiltered import yields
+    assert [(e.kind, e.payload.get("text")) for e in events] == [
+        ("message.user", "The secret word is PTYWORD"), ("message.assistant", None), ("tool.result", None),
+        ("message.user", "and then?")]
+
+
+def _shape(events):
+    return [(e.kind, e.payload.get("text") or (e.payload["blocks"][0]["text"] if e.payload.get("blocks") else None))
+            for e in events]
+
+
+async def test_with_no_assistant_message_in_the_log_the_unanswered_user_message_is_not_imported_again():
+    known = _known(trailing=["after reset"])
+    transcript = [
+        _msg("user", "after reset"),
+        _msg("user", "typed in the terminal"),
+        _msg("assistant", [{"type": "text", "text": "terminal answer"}], id="term-1", model="opus"),
+    ]
+
+    events = await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript, known=known)
+
+    assert _shape(events) == [("message.user", "typed in the terminal"), ("message.assistant", "terminal answer")]
+
+
+async def test_the_interrupt_notice_is_never_imported_as_a_user_message():
+    transcript = [
+        _msg("user", "[Request interrupted by user]"),
+        _msg("user", [{"type": "text", "text": "[Request interrupted by user for tool use]"}]),
+        _msg("user", [{"type": "tool_result", "tool_use_id": "t5", "content": "body", "is_error": False}]),
+        _msg("user", "a real message"),
+    ]
+
+    events = await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript)
+
+    assert [(e.kind, e.payload.get("text"), e.payload.get("tool_use_id")) for e in events] == [
+        ("tool.result", None, "t5"), ("message.user", "a real message", None)]
+    assert not any("[Request interrupted" in (e.payload.get("text") or "") for e in events)
+
+
+async def test_an_interrupted_chat_turn_read_back_from_the_transcript_imports_nothing():
+    known = _known(trailing=["Write a 1500-word essay"])
+    transcript = [_msg("user", "Write a 1500-word essay"), _msg("user", "[Request interrupted by user]")]
+
+    assert await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript, known=known) == []
+
+
+@pytest.mark.parametrize("notice", ["[Request interrupted by user]", "[Request interrupted by user for tool use]"])
+async def test_both_interrupt_notice_variants_are_dropped_as_a_string_and_as_a_text_block(notice):
+    transcript = [_msg("user", notice), _msg("user", [{"type": "text", "text": notice}]),
+                  _msg("user", f"  {notice}\n")]
+
+    assert await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript) == []
+
+
+@pytest.mark.parametrize("typed", [
+    "I pasted this log: [Request interrupted by user] and it kept going",
+    "[Request interrupted by user] is what the CLI prints",
+])
+async def test_a_real_message_quoting_the_interrupt_notice_is_still_imported(typed):
+    transcript = [_msg("user", typed), _msg("user", [{"type": "text", "text": typed}])]
+
+    events = await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript)
+
+    assert _shape(events) == [("message.user", typed), ("message.user", typed)]
+
+
+async def test_a_repeated_text_consumes_one_logged_occurrence_per_copy_and_the_extra_one_is_imported():
+    known = _known(trailing=["ok"])
+    transcript = [_msg("user", "ok"), _msg("user", "ok")]
+
+    events = await import_history("sid", "C:/work", {}, reader=lambda sid, cwd: transcript, known=known)
+
+    assert _shape(events) == [("message.user", "ok")]

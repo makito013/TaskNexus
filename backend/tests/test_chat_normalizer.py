@@ -142,3 +142,13 @@ def test_a_first_init_with_the_requested_id_or_with_nothing_requested_reports_no
     assert _kinds(Normalizer(NormalizerState(claude_session_id=SID, resuming=True)).feed(init_message(SID))) == [
         "session.resumed"]
     assert _kinds(Normalizer().feed(init_message(SID))) == ["session.started"]
+
+
+def test_the_interrupt_notice_is_recognised_exactly_and_a_message_quoting_it_is_not():
+    from app.chat.normalizer import is_interrupt_notice
+
+    assert is_interrupt_notice("[Request interrupted by user]")
+    assert is_interrupt_notice(" [Request interrupted by user for tool use]\n")
+    assert not is_interrupt_notice("see: [Request interrupted by user] in the log")
+    assert not is_interrupt_notice("[Request interrupted by user] and more")
+    assert not is_interrupt_notice("")

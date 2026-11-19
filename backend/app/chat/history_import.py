@@ -11,7 +11,7 @@ import logging
 from typing import Callable, Mapping
 
 from .sdk_engine import read_session_messages
-from .normalizer import ChatEvent, tool_result_event
+from .normalizer import ChatEvent, is_interrupt_notice, tool_result_event
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +35,12 @@ def _events_from(messages: list) -> list[ChatEvent]:
         content = body.get("content")
         if role == "user":
             if isinstance(content, str):
-                if content.strip():
+                if content.strip() and not is_interrupt_notice(content):
                     events.append(ChatEvent("message.user", {"client_msg_id": None, "text": content, "origin": "import"}))
                 continue
             for block in content or []:
-                if block.get("type") == "text" and block.get("text", "").strip():
+                if block.get("type") == "text" and block.get("text", "").strip() \
+                        and not is_interrupt_notice(block["text"]):
                     events.append(ChatEvent("message.user", {"client_msg_id": None, "text": block["text"], "origin": "import"}))
                 elif block.get("type") == "tool_result":
                     events.append(tool_result_event(
@@ -70,16 +71,19 @@ def _events_from(messages: list) -> list[ChatEvent]:
 def _only_new(events: list[ChatEvent], known: Mapping) -> list[ChatEvent]:
     """Drop what the log already holds, so going back and forth between the terminal and the
     chat never duplicates a message, and a turn done in the terminal in between is still
-    imported. The cut is the last transcript message the log has (by assistant message id);
-    after it, a tool result the log has (by `tool_use_id`) and a user message the log has
-    typed after its last assistant message are skipped."""
+    imported. `known` only covers the current segment (after the last reset).
+    R2: the cut is the last transcript message the log has (by assistant message id); after it,
+    a tool result the log has (by `tool_use_id`) and a user message the log has typed after its
+    last assistant message are skipped. R3: the segment has answers and none is in the
+    transcript, so it is another conversation and all of it is new. R4: the segment has no
+    answers, so the same filter runs from the start of the transcript."""
     anchor = -1
     for index, event in enumerate(events):
         if event.kind == "message.assistant" and event.payload.get("message_id") in known["assistant_ids"]:
             anchor = index
     if anchor == -1 and known["assistant_ids"]:
-        # None of the log's assistant messages is in the transcript: another conversation (the
-        # log is from before a reset), so there is nothing to duplicate and all of it is new.
+        # The current segment ran another conversation (e.g. `/clear` in the terminal): none of
+        # it can be in this transcript, so all of the transcript is new.
         return events
     trailing = list(known["trailing_user_texts"])
     fresh: list[ChatEvent] = []

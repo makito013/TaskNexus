@@ -19,9 +19,15 @@ _SUMMARY_CHARS = 160
 _LOCAL_COMMAND_RE = re.compile(
     r"<local-command-(?:stdout|stderr)>(.*?)</local-command-(?:stdout|stderr)>", re.DOTALL
 )
-_INTERRUPT_MARK = "[Request interrupted by user"
+_INTERRUPT_NOTICES = frozenset({"[Request interrupted by user]", "[Request interrupted by user for tool use]"})
 _SYNTHETIC_MODEL = "<synthetic>"
 _KEPT_BLOCKS = ("text", "tool_use")
+
+
+def is_interrupt_notice(text: str) -> bool:
+    """The CLI's own "[Request interrupted by user...]" entry: it is not something the user typed.
+    Exact match (ignoring surrounding whitespace): a real message that quotes the marker is kept."""
+    return text.strip() in _INTERRUPT_NOTICES
 
 
 @dataclass
@@ -167,7 +173,7 @@ class Normalizer:
 
     def _on_user_text(self, message: EngineMessage) -> list[ChatEvent]:
         text = message.text or ""
-        if _INTERRUPT_MARK in text:
+        if is_interrupt_notice(text):
             return []
         local = _LOCAL_COMMAND_RE.findall(text)
         if local:

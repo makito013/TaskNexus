@@ -2037,6 +2037,9 @@ async def reset_session(session_key: str):
         raise HTTPException(status_code=404, detail=f"No active session: {session_key}")
     if await _is_chat_key(session_key):
         await chat_service.reset(session_key)
+    elif await store.was_chat(session_key):
+        # A chat key on the terminal: the chat log learns of the reset (no `chat_sessions` row, no write).
+        await chat_service.note_terminal_reset(session_key)
     # Idempotente e seguro mesmo se o processo já morreu sozinho (caso comum:
     # o resume_failed detectado acima já deixou o proc morto, sem removê-lo
     # de pty_manager — terminate() aqui só limpa a entrada).

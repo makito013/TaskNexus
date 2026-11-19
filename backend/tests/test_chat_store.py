@@ -665,3 +665,70 @@ async def test_cancel_permission_closes_one_pending_request_once(store):
     assert (await store.get_permission("p1"))["status"] == "cancelled"
     assert (await store.get_permission("p2"))["status"] == "pending"
     assert await store.pending_count(KEY) == 1
+
+
+@pytest.mark.asyncio
+async def test_logged_conversation_only_holds_the_segment_after_the_last_reset(store):
+    await store.append_event(KEY, "message.user", {"text": "one"})
+    await store.append_event(KEY, "message.assistant", {"message_id": "m1", "blocks": []})
+    await store.append_event(KEY, "tool.result", {"tool_use_id": "t1"})
+    await store.append_event(KEY, "message.user", {"text": "two"})
+    await store.append_event(KEY, "session.reset", {})
+    await store.append_event(KEY, "message.user", {"text": "after reset"})
+
+    known = await store.logged_conversation(KEY)
+
+    assert known == {"assistant_ids": set(), "tool_use_ids": set(), "trailing_user_texts": ["after reset"]}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_import_after_the_last_reset_counts_as_a_transcript_seen(store):
+    await store.append_event(KEY, "history.import_failed", {"reason": "unreadable"})
+    await store.append_event(KEY, "session.reset", {})
+    assert await store.transcript_seen_since_last_reset(KEY) is False
+
+    await store.append_event(KEY, "history.imported", {"count": 0})
+    assert await store.transcript_seen_since_last_reset(KEY) is False
+
+    await store.append_event(KEY, "history.import_failed", {"reason": "timeout"})
+    assert await store.transcript_seen_since_last_reset(KEY) is True
+
+
+@pytest.mark.asyncio
+async def test_a_no_session_failure_after_the_last_reset_does_not_count_as_a_transcript_seen(store):
+    await store.append_event(KEY, "session.reset", {})
+    await store.append_event(KEY, "history.import_failed", {"reason": "no_session"})
+
+    assert await store.transcript_seen_since_last_reset(KEY) is False
+
+
+@pytest.mark.asyncio
+async def test_a_failed_read_followed_by_an_empty_import_no_longer_counts_as_a_transcript_seen(store):
+    await store.append_event(KEY, "session.reset", {})
+    await store.append_event(KEY, "history.import_failed", {"reason": "unreadable"})
+    assert await store.transcript_seen_since_last_reset(KEY) is True
+
+    await store.append_event(KEY, "history.imported", {"count": 0})
+
+    assert await store.transcript_seen_since_last_reset(KEY) is False
+
+    await store.append_event(KEY, "history.import_failed", {"reason": "timeout"})
+    assert await store.transcript_seen_since_last_reset(KEY) is True
+
+
+@pytest.mark.asyncio
+async def test_an_import_that_brought_messages_keeps_counting_after_a_later_empty_import(store):
+    await store.append_event(KEY, "session.reset", {})
+    await store.append_event(KEY, "history.imported", {"count": 2})
+    await store.append_event(KEY, "history.imported", {"count": 0})
+
+    assert await store.transcript_seen_since_last_reset(KEY) is True
+
+
+@pytest.mark.asyncio
+async def test_a_no_session_failure_does_not_hide_a_failed_read_before_it(store):
+    await store.append_event(KEY, "session.reset", {})
+    await store.append_event(KEY, "history.import_failed", {"reason": "unreadable"})
+    await store.append_event(KEY, "history.import_failed", {"reason": "no_session"})
+
+    assert await store.transcript_seen_since_last_reset(KEY) is True

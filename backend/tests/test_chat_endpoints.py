@@ -1181,3 +1181,278 @@ def test_a_failing_chat_shutdown_does_not_skip_the_rest_of_the_shutdown(tmp_path
         closed = main_mod.chat_store._conn is None
 
     assert reached == ["pty"] and closed
+
+
+# -- N2: conversation identity of the history import ---------------------------------------------------------
+
+OTHER_ID = "44444444-4444-4444-8444-444444444444"
+
+
+def _user_entry(text):
+    return SimpleNamespace(type="user", message={"role": "user", "content": text})
+
+
+def _assistant_entry(text, message_id):
+    return SimpleNamespace(type="assistant", message={
+        "role": "assistant", "id": message_id, "model": "haiku", "content": [{"type": "text", "text": text}]})
+
+
+def _unique_ids(engine, silent=()):
+    """Like the real CLI: every assistant message has its own id. A text in `silent` gets no answer."""
+    from itertools import count
+
+    from tests.chat_fakes import assistant_text, result_message
+
+    ids = count(1)
+
+    async def on_query(process, text):
+        process._turns += 1
+        if process._turns == 1:
+            process.push(init_message(process.session_id, model=process.model))
+        if text in silent:
+            return
+        process.push(assistant_text(f"echo: {text}", message_id=f"live-{next(ids)}"), result_message())
+
+    engine.on_query = on_query
+
+
+def _set_stored_id(env, key, session_id):
+    conn = sqlite3.connect(env.db)
+    conn.execute("UPDATE sessions SET claude_session_id = ? WHERE session_key = ?", (session_id, key))
+    conn.commit()
+    conn.close()
+
+
+def _to_pty(env, key):
+    return env.client.post(f"/api/chat/sessions/{key}/switch-engine", json={"engine": "pty"}).json()
+
+
+def _to_chat(env, key, transcript):
+    env.main.chat_service.history_reader = lambda sid, cwd: transcript
+    return env.client.post(f"/api/chat/sessions/{key}/switch-engine", json={"engine": "chat", "confirm": True}).json()
+
+
+def _logged_users(env, key):
+    return [(e["payload"]["text"], e["payload"].get("origin")) for e in env.events(key)["events"]
+            if e["kind"] == "message.user"]
+
+
+def _open_spec(env, key):
+    assert env.client.post(f"/api/chat/sessions/{key}/open").status_code == 200
+    return env.engine.specs[-1]
+
+
+def _first_turn(env, silent=()):
+    _unique_ids(env.engine, silent=silent)
+    key = env.create(first_message="hello")
+    wait_until(lambda: "turn.ended" in env.kinds(key))
+    return key
+
+
+def test_a_chat_message_left_unanswered_after_a_reset_is_not_duplicated_by_a_round_trip_through_the_terminal(env):
+    key = _first_turn(env, silent=("after reset",))
+    env.client.post(f"/api/sessions/{key}/reset")
+    _open_spec(env, key)
+    new_id = _stored_id(env, key)
+    _send_by_ws(env, key, "after reset")
+    _to_pty(env, key)
+    assert _stored_id(env, key) == new_id
+
+    back = _to_chat(env, key, [_user_entry("after reset"), _user_entry("typed in the terminal"),
+                               _assistant_entry("terminal answer", "term-1")])
+
+    assert back["history"] == {"imported": 2}
+    assert _logged_users(env, key) == [("hello", "ui"), ("after reset", "ui"), ("typed in the terminal", "import")]
+    spec = _open_spec(env, key)
+    assert spec.resume == new_id and spec.session_id is None
+
+
+def test_a_terminal_turn_with_no_answer_after_a_reset_is_imported_once_across_round_trips(env):
+    key = _first_turn(env)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _to_pty(env, key)
+    _set_stored_id(env, key, TERMINAL_ID)
+    transcript = [_user_entry("typed in the terminal, interrupted"), _user_entry("[Request interrupted by user]")]
+
+    counts = []
+    for round_trip in range(3):
+        if round_trip:
+            _to_pty(env, key)
+        counts.append(_to_chat(env, key, transcript)["history"]["imported"])
+
+    assert counts == [1, 0, 0]
+    assert _logged_users(env, key) == [("hello", "ui"), ("typed in the terminal, interrupted", "import")]
+    assert _open_spec(env, key).resume == TERMINAL_ID
+
+
+def test_a_reset_done_in_the_terminal_opens_a_new_segment_and_its_conversation_is_imported_once(env):
+    key = _first_turn(env)
+    _to_pty(env, key)
+
+    assert env.client.post(f"/api/sessions/{key}/reset").json()["status"] == "reset"
+
+    assert env.kinds(key).count("session.reset") == 1
+    assert env.sql("SELECT status FROM chat_sessions WHERE session_key = ?", (key,)) == [("switched_to_pty",)]
+    _set_stored_id(env, key, TERMINAL_ID)
+    transcript = [_user_entry("typed in the terminal"), _assistant_entry("terminal answer", "term-1")]
+    assert _to_chat(env, key, transcript)["history"] == {"imported": 2}
+    _to_pty(env, key)
+    assert _to_chat(env, key, transcript)["history"] == {"imported": 0}
+    assert _logged_users(env, key) == [("hello", "ui"), ("typed in the terminal", "import")]
+    assert _open_spec(env, key).resume == TERMINAL_ID
+
+
+def test_after_a_terminal_reset_with_nothing_typed_the_chat_starts_the_new_id_instead_of_resuming_it(env):
+    key = _first_turn(env)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _to_pty(env, key)
+    _set_stored_id(env, key, TERMINAL_ID)
+    transcript = [_user_entry("typed in the terminal"), _assistant_entry("terminal answer", "term-1")]
+    assert _to_chat(env, key, transcript)["history"] == {"imported": 2}
+    _to_pty(env, key)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _set_stored_id(env, key, OTHER_ID)  # the terminal started a new conversation and nothing was typed
+
+    assert _to_chat(env, key, [])["history"] == {"imported": 0}
+
+    spec = _open_spec(env, key)
+    assert spec.session_id == OTHER_ID and spec.resume is None
+
+
+def test_a_terminal_reset_without_a_chat_reset_also_drops_the_imported_origin_resume(env):
+    key = _first_turn(env)
+    _to_pty(env, key)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _set_stored_id(env, key, OTHER_ID)
+
+    assert _to_chat(env, key, [])["history"] == {"imported": 0}
+
+    spec = _open_spec(env, key)
+    assert spec.session_id == OTHER_ID and spec.resume is None
+
+
+def test_after_a_reset_a_failed_import_still_resumes_the_terminal_id(env):
+    key = _first_turn(env)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _to_pty(env, key)
+    _set_stored_id(env, key, TERMINAL_ID)
+
+    def unreadable(sid, cwd):
+        raise OSError("transcript locked")
+
+    env.main.chat_service.history_reader = unreadable
+    back = env.client.post(f"/api/chat/sessions/{key}/switch-engine", json={"engine": "chat", "confirm": True}).json()
+
+    assert back["history"] == {"failed": "unreadable"}
+    spec = _open_spec(env, key)
+    assert spec.resume == TERMINAL_ID and spec.session_id is None
+
+
+def test_a_terminal_reset_of_a_key_that_never_was_a_chat_writes_nothing_to_the_chat_tables(env):
+    key = _seed_pty(env)
+
+    answer = env.client.post(f"/api/sessions/{key}/reset").json()
+
+    assert answer == {"status": "reset", "session_key": key}
+    assert env.sql("SELECT COUNT(*) FROM chat_events WHERE session_key = ?", (key,)) == [(0,)]
+    assert env.sql("SELECT COUNT(*) FROM chat_sessions WHERE session_key = ?", (key,)) == [(0,)]
+
+
+def test_a_no_session_failure_after_a_chat_reset_keeps_the_new_id_across_open_close_open(env):
+    key = _first_turn(env)
+    assert env.client.post(f"/api/sessions/{key}/reset").status_code == 200
+    _to_pty(env, key)
+
+    back = _to_chat(env, key, [])
+
+    assert back["history"] == {"failed": "no_session"}
+    first = _open_spec(env, key)
+    assert first.resume is None and first.session_id
+    assert env.client.post(f"/api/chat/sessions/{key}/close").status_code == 200
+    second = _open_spec(env, key)
+    assert second.resume is None and second.session_id == first.session_id
+
+
+def test_a_failed_read_followed_by_an_empty_import_opens_with_the_new_id_instead_of_resuming_it(env):
+    key = _first_turn(env)
+    env.client.post(f"/api/sessions/{key}/reset")
+    _to_pty(env, key)
+    _set_stored_id(env, key, TERMINAL_ID)
+
+    def unreadable(sid, cwd):
+        raise OSError("transcript locked")
+
+    env.main.chat_service.history_reader = unreadable
+    assert env.client.post(f"/api/chat/sessions/{key}/switch-engine",
+                           json={"engine": "chat", "confirm": True}).json()["history"] == {"failed": "unreadable"}
+    _to_pty(env, key)
+    assert _to_chat(env, key, [])["history"] == {"imported": 0}
+
+    spec = _open_spec(env, key)
+    assert spec.session_id == TERMINAL_ID and spec.resume is None
+
+
+def test_resetting_a_chat_key_that_was_on_the_terminal_before_records_exactly_one_session_reset(env):
+    key = _first_turn(env)
+    _to_pty(env, key)
+    _to_chat(env, key, [])
+    _open_spec(env, key)
+
+    assert env.client.post(f"/api/sessions/{key}/reset").status_code == 200
+
+    assert env.kinds(key).count("session.reset") == 1
+
+
+def _record_chat_hub_use(env, monkeypatch):
+    used = []
+    real_hub = env.main.chat_service.hub
+
+    def hub(key):
+        used.append(key)
+        return real_hub(key)
+
+    monkeypatch.setattr(env.main.chat_service, "hub", hub)
+    return used
+
+
+def test_a_terminal_reset_of_a_key_with_a_chat_row_but_no_chat_history_flag_writes_nothing(env, monkeypatch):
+    key = _seed_pty(env)
+    conn = sqlite3.connect(env.db)
+    conn.execute("INSERT INTO chat_sessions (session_key, project_ref, agent_id, cwd, created_at, updated_at) "
+                 "VALUES (?, 'p', 'a', 'C:/work', 1, 1)", (key,))
+    conn.commit()
+    conn.close()
+    used = _record_chat_hub_use(env, monkeypatch)
+
+    assert env.client.post(f"/api/sessions/{key}/reset").status_code == 200
+
+    assert used == [] and env.sql("SELECT COUNT(*) FROM chat_events WHERE session_key = ?", (key,)) == [(0,)]
+
+
+def test_a_terminal_reset_of_a_key_flagged_as_chat_but_without_a_chat_row_writes_nothing(env, monkeypatch):
+    key = _seed_pty(env)
+    conn = sqlite3.connect(env.db)
+    conn.execute("INSERT INTO session_was_chat (session_key) VALUES (?)", (key,))
+    conn.commit()
+    conn.close()
+    used = _record_chat_hub_use(env, monkeypatch)
+
+    assert env.client.post(f"/api/sessions/{key}/reset").status_code == 200
+
+    assert used == [] and env.sql("SELECT COUNT(*) FROM chat_events WHERE session_key = ?", (key,)) == [(0,)]
+
+
+def test_a_failure_noting_the_terminal_reset_in_the_chat_log_does_not_stop_the_terminal_reset(env, monkeypatch):
+    key = _first_turn(env)
+    _to_pty(env, key)
+    _set_stored_id(env, key, TERMINAL_ID)
+
+    def locked(_key):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(env.main.chat_service, "hub", locked)
+
+    answer = env.client.post(f"/api/sessions/{key}/reset")
+
+    assert answer.status_code == 200 and answer.json() == {"status": "reset", "session_key": key}
+    assert env.sql("SELECT COALESCE(claude_session_id, '') FROM sessions WHERE session_key = ?", (key,)) == [("",)]
