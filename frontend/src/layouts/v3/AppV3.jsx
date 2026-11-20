@@ -11,6 +11,7 @@ import {
   MODULES,
   colleaguesOf,
   moduleById,
+  pushSessionKey,
   routeForPath,
 } from './modules.js'
 import ChatScreen from './modules/chat/ChatScreen.jsx'
@@ -18,12 +19,26 @@ import ChatSessionHost from './modules/chat/ChatSessionHost.jsx'
 import ChatViewportShell from './modules/chat/ChatViewportShell.jsx'
 import { NARROW_SHELL_QUERY } from './modules/chat/viewport.js'
 import ProjectsScreen from './modules/projects/ProjectsScreen.jsx'
-import ProjectsSessionsProvider from './sessions/ProjectsSessionsProvider.jsx'
+import ProjectsSessionsProvider, { chatPath } from './sessions/ProjectsSessionsProvider.jsx'
+import { useProjectsSessions } from './sessions/useProjectsSessions.js'
 import TasksScreen from './modules/tasks/TasksScreen.jsx'
 import { useV3Theme } from './theme/useV3Theme.js'
 import './AppV3.css'
 
 const SCREENS = { tasks: TasksScreen, projects: ProjectsScreen }
+
+// A push notification opens `/?session=<key>`. Once the first poll answered, a key that is a chat goes
+// to its conversation and any other key goes to Projects (the V2 terminal keys have no screen here).
+// Renders nothing; replace (not push) keeps the back button out of the redirect.
+function PushLinkRedirect({ sessionKey, replace }) {
+  const { chats, loaded } = useProjectsSessions()
+  useEffect(() => {
+    if (!loaded) return
+    const isChat = chats.some((chat) => chat?.session_key === sessionKey)
+    replace(isChat ? chatPath(sessionKey) : moduleById('projects').path)
+  }, [loaded, chats, sessionKey, replace])
+  return null
+}
 
 // The v3 shell (desktop): module rail | content column with the sticky island on
 // top and the screen of the open module below. The route table is modules.js;
@@ -37,6 +52,10 @@ export default function AppV3({ initialTheme }) {
   const [path, navigate, replace] = useRoute()
   const [islandReport, setIslandReport] = useState(null)
 
+  // Read once: after the redirect the query string is gone from the address.
+  const [linkedKey] = useState(() => pushSessionKey(window.location.pathname, window.location.search))
+  const pendingPushKey = linkedKey && path === '/' ? linkedKey : null
+
   const route = routeForPath(path)
   const routed = route ? moduleById(route.moduleId) : null
   const isChat = route?.view === 'chat'
@@ -45,8 +64,8 @@ export default function AppV3({ initialTheme }) {
   // After the redirect `path` is the replaced one (useRoute.replace updates it),
   // so nothing below reads a stale "/" or an unknown path.
   useEffect(() => {
-    if (!routed) replace(moduleById(DEFAULT_MODULE_ID).path)
-  }, [routed, replace])
+    if (!routed && !pendingPushKey) replace(moduleById(DEFAULT_MODULE_ID).path)
+  }, [routed, pendingPushKey, replace])
 
   const activeId = activeModule.id
 
@@ -92,6 +111,7 @@ export default function AppV3({ initialTheme }) {
   return (
     <IslandProvider value={setIslandReport}>
       <ProjectsSessionsProvider navigate={navigate}>
+        {pendingPushKey ? <PushLinkRedirect sessionKey={pendingPushKey} replace={replace} /> : null}
         {/* Above <main>: the open conversation's socket outlives the screen (CA38). Inert until a chat is opened. */}
         <ChatSessionHost activeKey={isChat ? route.sessionKey : null}>
           {/* Anchors the shell root to the visual viewport (soft keyboard) only on the chat route, <= 1279. */}

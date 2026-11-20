@@ -71,17 +71,18 @@ describe('ProjectsSessionsProvider polling (CA38)', () => {
     expect(chatApi.health.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('pauses while the tab is hidden and ticks when it is visible again', async () => {
+  it('keeps polling while the tab is hidden and ticks at once when it is visible again', async () => {
     mount()
     await flush()
     hidden = true
     document.dispatchEvent(new Event('visibilitychange'))
     await advance(60000)
-    expect(chatApi.listSessions).toHaveBeenCalledTimes(1)
+    expect(chatApi.listSessions.mock.calls.length).toBeGreaterThanOrEqual(9)
+    const before = chatApi.listSessions.mock.calls.length
     hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await flush()
-    expect(chatApi.listSessions).toHaveBeenCalledTimes(2)
+    expect(chatApi.listSessions).toHaveBeenCalledTimes(before + 1)
   })
 
   it('swallows every failure into liveAvailable=false and keeps the last known data', async () => {

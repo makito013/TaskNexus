@@ -13,6 +13,7 @@ export const INERT_SESSIONS = Object.freeze({
   chats: Object.freeze([]),
   liveByKey: Object.freeze({}),
   projectsLive: EMPTY_PROJECTS_LIVE,
+  ptyPersisted: Object.freeze({}),
   health: null,
   liveAvailable: false,
   loaded: false,
@@ -23,6 +24,7 @@ export const INERT_SESSIONS = Object.freeze({
   goTo: () => {},
   registerCreated: () => {},
   refresh: () => {},
+  clearAttention: () => {},
 })
 
 export const ProjectsSessionsContext = createContext(INERT_SESSIONS)

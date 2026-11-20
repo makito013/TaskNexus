@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { api } from '../../../../services/api.js'
 import { chatApi } from '../../../../services/chatApi.js'
 import { connect } from '../../../../services/chatSocket.js'
 import { createChatState, reduceChat } from '../../../../utils/chatEvents.js'
+import { shouldAckChat, shouldAckTerminal } from '../../../../utils/chatNotifications.js'
+import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
 
 // Owner of the WebSocket of ONE conversation: opens /ws/chat/{key}, folds every frame into the chat
 // state (utils/chatEvents.js) and exposes the actions the screen needs. It is one of the five
@@ -34,6 +37,10 @@ function newClientId() {
   return `c${Date.now().toString(36)}-${idCounter}`
 }
 
+function isDocumentVisible() {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
+}
+
 function decisionKind({ behavior, scope, interrupt }) {
   if (behavior === 'allow') return scope === 'session' ? 'allowSession' : 'allow'
   return interrupt ? 'denyStop' : 'deny'
@@ -41,7 +48,9 @@ function decisionKind({ behavior, scope, interrupt }) {
 
 // `enabled: false` keeps the key (state, draft) but opens no socket: the screen shows the terminal for
 // this key, and a chat reader left open behind it would be a second motor on the conversation.
-export function useChatSession(sessionKey, { enabled = true } = {}) {
+// `terminal: true` says the screen shows this key as the terminal: its `ack` then goes over REST
+// (`api.ackSession`), since the chat socket is closed.
+export function useChatSession(sessionKey, { enabled = true, terminal = false } = {}) {
   const [state, dispatch] = useReducer(sessionReducer, undefined, createChatState)
   const [connection, setConnection] = useState(IDLE_CONNECTION)
   // { [permissionId]: { phase: 'sending' | 'sent' | 'error', kind } } for the decisions this client made.
@@ -82,6 +91,43 @@ export function useChatSession(sessionKey, { enabled = true } = {}) {
       if (socketRef.current === socket) socketRef.current = null
     }
   }, [sessionKey, enabled])
+
+  // `ack`: the user is looking at this conversation (it is the open one of the screen, the tab is
+  // visible, the socket is open) and the server still marks it "needs attention" (the "Turno
+  // concluído" mark). The server clears it; the shell drops its local mark at once. If the ack is
+  // lost the next poll flips the mark back on and the effect sends it again.
+  //
+  // In the terminal view (`terminal`) there is no socket: the same rule acks over REST, and the row can
+  // also be a terminal session that has no chat row (codex, agy, the plain terminal).
+  const { chats, ptyPersisted, focusedKey, clearAttention } = useProjectsSessions()
+  const [documentVisible, setDocumentVisible] = useState(isDocumentVisible)
+  useEffect(() => {
+    const sync = () => setDocumentVisible(isDocumentVisible())
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('focus', sync)
+    }
+  }, [])
+  const chat = sessionKey ? chats.find((candidate) => candidate?.session_key === sessionKey) : null
+  const focused = sessionKey != null && focusedKey === sessionKey
+  const mustAck = shouldAckChat({ chat, focused, documentVisible, socketOpen: connection.state === 'open' })
+  useEffect(() => {
+    if (!mustAck) return
+    socketRef.current?.send({ type: 'ack' })
+    clearAttention?.(sessionKey)
+  }, [mustAck, sessionKey, clearAttention])
+  const mustAckOverRest = Boolean(terminal) && shouldAckTerminal({
+    row: chat ?? (sessionKey ? ptyPersisted?.[sessionKey] : null) ?? null,
+    focused,
+    documentVisible,
+  })
+  useEffect(() => {
+    if (!mustAckOverRest) return
+    api.ackSession(sessionKey).catch(() => { /* the next poll restores the mark and this effect runs again */ })
+    clearAttention?.(sessionKey)
+  }, [mustAckOverRest, sessionKey, clearAttention])
 
   const send = useCallback((text) => {
     const socket = socketRef.current

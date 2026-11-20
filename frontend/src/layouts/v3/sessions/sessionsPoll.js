@@ -3,7 +3,8 @@
 // never overlapped by the next one.
 //   - the first tick runs at start();
 //   - the next one is scheduled `intervalMs` after the previous one FINISHED;
-//   - while the page is hidden nothing is scheduled; becoming visible ticks at once;
+//   - the poll keeps its cadence while the page is hidden (the sound and the browser notification of
+//     a chat that needs the user depend on it, as in the V2); becoming visible ticks at once;
 //   - `withHealth` is true on the first tick and again every `healthIntervalMs`.
 export const POLL_INTERVAL_MS = 7000
 export const HEALTH_INTERVAL_MS = 5 * 60 * 1000
@@ -13,7 +14,6 @@ export function createSessionsPoll({
   run,
   intervalMs = POLL_INTERVAL_MS,
   healthIntervalMs = HEALTH_INTERVAL_MS,
-  isHidden = () => document.hidden,
   now = () => Date.now(),
 } = {}) {
   let timer = null
@@ -31,14 +31,13 @@ export function createSessionsPoll({
 
   function schedule() {
     clearTimer()
-    if (stopped || isHidden()) return
+    if (stopped) return
     timer = setTimeout(tick, intervalMs)
   }
 
   async function tick() {
     timer = null
     if (stopped || running) return
-    if (isHidden()) return
     running = true
     const at = now()
     const withHealth = lastHealthAt === null || at - lastHealthAt >= healthIntervalMs
@@ -58,7 +57,7 @@ export function createSessionsPoll({
       if (!stopped) return
       stopped = false
       visibilityHandler = () => {
-        if (!isHidden() && !running) {
+        if (!document.hidden && !running) {
           clearTimer()
           void tick()
         }

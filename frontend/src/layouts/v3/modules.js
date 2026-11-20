@@ -97,6 +97,14 @@ export function routeForPath(pathname) {
   return module ? { moduleId: module.id, view: 'screen', sessionKey: null } : null
 }
 
+// The session key a push notification asks for: the service worker opens `/?session=<key>` (shared with
+// the V2, it does not change). Only the root path carries it; anything else (or an empty value) is null.
+export function pushSessionKey(pathname, search) {
+  if (pathname !== '/') return null
+  const key = new URLSearchParams(search || '').get('session')
+  return key ? key : null
+}
+
 // Every module but the active one, in rail order.
 export function colleaguesOf(moduleId) {
   return MODULES.filter((module) => module.id !== moduleId)

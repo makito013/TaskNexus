@@ -25,7 +25,11 @@ export default function ChatSessionHost({ activeKey = null, children }) {
     if (activeKey) setHeldKey(activeKey)
   }, [activeKey])
   const sessionKey = activeKey || heldKey
-  const session = useChatSession(sessionKey, { enabled: sessionKey != null && visions[sessionKey] === 'chat' })
+  // A key shown as the terminal has no chat socket: its `ack` goes over REST (the hook does it).
+  const session = useChatSession(sessionKey, {
+    enabled: sessionKey != null && visions[sessionKey] === 'chat',
+    terminal: sessionKey != null && visions[sessionKey] === 'terminal',
+  })
   const reportVision = useCallback((key, vision) => {
     setVisions((current) => (current[key] === vision ? current : { ...current, [key]: vision }))
   }, [])
