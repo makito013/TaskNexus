@@ -39,7 +39,9 @@ function decisionKind({ behavior, scope, interrupt }) {
   return interrupt ? 'denyStop' : 'deny'
 }
 
-export function useChatSession(sessionKey) {
+// `enabled: false` keeps the key (state, draft) but opens no socket: the screen shows the terminal for
+// this key, and a chat reader left open behind it would be a second motor on the conversation.
+export function useChatSession(sessionKey, { enabled = true } = {}) {
   const [state, dispatch] = useReducer(sessionReducer, undefined, createChatState)
   const [connection, setConnection] = useState(IDLE_CONNECTION)
   // { [permissionId]: { phase: 'sending' | 'sent' | 'error', kind } } for the decisions this client made.
@@ -54,7 +56,7 @@ export function useChatSession(sessionKey) {
     setDecisions({})
     setActionError(null)
     setDraftState(sessionKey ? draftsRef.current.get(sessionKey) ?? '' : '')
-    if (!sessionKey) {
+    if (!sessionKey || !enabled) {
       setConnection(IDLE_CONNECTION)
       return undefined
     }
@@ -79,7 +81,7 @@ export function useChatSession(sessionKey) {
       socket.close()
       if (socketRef.current === socket) socketRef.current = null
     }
-  }, [sessionKey])
+  }, [sessionKey, enabled])
 
   const send = useCallback((text) => {
     const socket = socketRef.current

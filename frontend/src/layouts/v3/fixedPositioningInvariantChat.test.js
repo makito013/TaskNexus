@@ -74,6 +74,14 @@ export const CHAT_CHAIN_SOURCES = [
   './modules/chat/useStickToEnd.js',
   './modules/chat/useContinuesBelow.js',
   './modules/chat/viewport.js',
+  // C6: the terminal view (modules/chat/terminal/). The xterm frame is measured by FitAddon, so it is in the
+  // chain like every other container: no containing-block property, no position: fixed, no script that sets it.
+  './modules/chat/terminal/TerminalView.jsx',
+  './modules/chat/terminal/TerminalView.css',
+  './modules/chat/terminal/TerminalFrame.jsx',
+  './modules/chat/terminal/TerminalKeysBar.jsx',
+  './modules/chat/terminal/terminalTheme.js',
+  './modules/chat/terminal/ptySessionKey.js',
   './sessions/ProjectsSessionsProvider.jsx',
   './sessions/useProjectsSessions.js',
   './sessions/sessionsPoll.js',
@@ -175,6 +183,8 @@ describe('fixed-positioning invariant on the chat chain', () => {
     expect(onDisk).toEqual(expect.arrayContaining([
       './modules/chat/ChatScreen.jsx', './modules/chat/cards/ModelCard.jsx', './sessions/ProjectsSessionsProvider.jsx',
       './components/ApprovalCard/ApprovalCard.css', CHAT_LEAF_STYLESHEET,
+      // C6: the walk is recursive, so the files of the terminal view are on disk AND on the list.
+      './modules/chat/terminal/TerminalView.jsx', './modules/chat/terminal/TerminalView.css',
     ]))
     expect(unlistedFiles(CHAT_CHAIN_SOURCES, onDisk)).toEqual([])
   })

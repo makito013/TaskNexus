@@ -9,6 +9,14 @@ import RenameField from './RenameField.jsx'
 
 const SKELETON_ROWS = 3
 
+// The one engine switch a row can offer: a conversation in the terminal goes to the chat, any other to the terminal.
+function engineItems(session, { onOpenTerminal, onOpenChat }) {
+  if (session.engine === 'pty') {
+    return onOpenChat ? [{ id: 'open-chat', label: 'Abrir no chat', onSelect: () => onOpenChat(session) }] : []
+  }
+  return onOpenTerminal ? [{ id: 'open-terminal', label: 'Abrir no terminal', onSelect: () => onOpenTerminal(session) }] : []
+}
+
 function PlusIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -26,6 +34,9 @@ function PlusIcon() {
 //   fallbackTitles  { [key]: first message } for chats with no name
 //   loaded / available   provider flags (loading skeleton, partial and total failure)
 //   actions         useChatListActions()
+//   onOpenTerminal(chat) / onOpenChat(chat)   when given, a row's menu offers the engine switch that fits its
+//                   engine: "Abrir no terminal" for a chat, "Abrir no chat" for a conversation that lives in the
+//                   terminal (the screen owns the confirmation dialogs)
 //   onLeave         phone only: "Voltar para Projetos" (the shell rail is hidden there, so the list view
 //                   is the way out of the chat route)
 export default function ChatList({
@@ -41,6 +52,8 @@ export default function ChatList({
   onEnd,
   onRetry,
   onLeave,
+  onOpenTerminal,
+  onOpenChat,
 }) {
   const [renamingKey, setRenamingKey] = useState(null)
   const ordered = orderChats(chats, overrides)
@@ -119,6 +132,7 @@ export default function ChatList({
                 items={[
                   { id: 'open', label: 'Abrir', onSelect: () => onOpen(key) },
                   { id: 'rename', label: 'Renomear', onSelect: () => setRenamingKey(key) },
+                  ...engineItems(session, { onOpenTerminal, onOpenChat }),
                   { id: 'end', label: 'Encerrar', tone: 'danger', separatorBefore: true, onSelect: () => onEnd(session) },
                 ]}
               />

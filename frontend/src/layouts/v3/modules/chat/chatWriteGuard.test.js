@@ -119,6 +119,8 @@ describe('chat write guard', () => {
     expect(names).toEqual(expect.arrayContaining([
       ...Object.keys(WRITERS_BY_FILE), 'ChatSessionHost.jsx', 'PermissionCard.jsx', 'ChatScreen.jsx', 'ApprovalCard.jsx',
       'ProjectsSessionsProvider.jsx', 'ProjectsScreen.jsx', 'ModelCard.jsx',
+      // C6: modules/chat/terminal/ is walked too (the walk is recursive): none of its files may write.
+      'TerminalView.jsx', 'TerminalFrame.jsx', 'TerminalKeysBar.jsx', 'terminalTheme.js', 'ptySessionKey.js',
     ]))
   })
 

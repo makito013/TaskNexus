@@ -10,7 +10,12 @@ const CLI_REASONS = new Set(['cli_not_found', 'cli_invalid', 'cli_version_unsupp
 //   retry            "Tentar de novo" / "Abrir de novo"  (open the conversation again)
 //   new_conversation "Iniciar nova conversa"             (reset)
 //   connectors       "Conectores no chat"                (only offered when the screen can open it)
-export function describeBanner(banner, { canOpenConnectors = false } = {}) {
+//   open_terminal    "Abrir no terminal"                 (engine_unavailable and resume_failed, only when the
+//                                                         screen can switch the conversation to the terminal:
+//                                                         a Claude agent, Designer 6); on history_import_failed the
+//                                                         same action reads "Ver no terminal" (the history is there)
+export function describeBanner(banner, { canOpenConnectors = false, canOpenTerminal = false } = {}) {
+  const openTerminal = canOpenTerminal ? [{ id: 'open_terminal', label: 'Abrir no terminal' }] : []
   switch (banner?.kind) {
     case 'spawn_failed': {
       if (CLI_REASONS.has(banner.reason)) {
@@ -53,21 +58,21 @@ export function describeBanner(banner, { canOpenConnectors = false } = {}) {
         tone: 'danger',
         title: 'O chat ainda não está disponível neste servidor',
         text: 'Falta atualizar as dependências. Peça um deploy normal ou rode pip install -r.',
-        actions: [],
+        actions: openTerminal,
       }
     case 'resume_failed':
       return {
         tone: 'danger',
         title: 'Não foi possível retomar esta conversa',
         text: 'O histórico abaixo continua guardado, mas o agente não lembra dele.',
-        actions: [{ id: 'new_conversation', label: 'Iniciar nova conversa', primary: true }],
+        actions: [{ id: 'new_conversation', label: 'Iniciar nova conversa', primary: true }, ...openTerminal],
       }
     case 'history_import_failed':
       return {
         tone: 'tiq',
         title: 'Não foi possível importar o histórico',
         text: 'Ele continua disponível no terminal.',
-        actions: [],
+        actions: canOpenTerminal ? [{ id: 'open_terminal', label: 'Ver no terminal' }] : [],
       }
     default:
       return null
@@ -148,9 +153,9 @@ function Banner({ spec, id, onAction }) {
 export const FAILURE_BANNER_ID = 'chat-failure-banner'
 
 // The banners over the thread: the network one first, then the server status one.
-export default function StatusBanner({ banner, connection, canOpenConnectors = false, onAction }) {
+export default function StatusBanner({ banner, connection, canOpenConnectors = false, canOpenTerminal = false, onAction }) {
   const network = describeConnection(connection)
-  const status = describeBanner(banner, { canOpenConnectors })
+  const status = describeBanner(banner, { canOpenConnectors, canOpenTerminal })
   if (!network && !status) return null
   return (
     <div className="v3-chat-banners">

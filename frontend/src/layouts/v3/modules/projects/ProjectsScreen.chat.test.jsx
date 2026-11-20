@@ -93,13 +93,13 @@ describe('Projetos with chats', () => {
     expect(openChat).toHaveBeenCalledWith(livePty)
   })
 
-  it('"Abrir sessão" of an agent that is not Claude stays disabled and does not call openChat', async () => {
+  it('"Abrir sessão" of an agent that is not Claude opens its session too (the terminal view)', async () => {
     const { openChat } = await renderScreen()
     const card = screen.getByRole('article', { name: /^Codex em/ })
     const button = within(card).getByRole('button', { name: 'Abrir sessão' })
-    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(button)
-    expect(openChat).not.toHaveBeenCalled()
+    expect(openChat).toHaveBeenCalledWith(PTY_KEY)
   })
 
   it('a chat waiting for approval shows as "Precisa de você" in the card and in the "Esperando você" strip', async () => {
@@ -140,9 +140,8 @@ describe('Projetos with chats', () => {
     expect(link.getAttribute('href')).toBe(`/projects/chat/${encodeURIComponent(CHAT_KEY)}`)
     expect(fireEvent.click(link)).toBe(false) // preventDefault: no navigation of the page
     expect(openChat).toHaveBeenCalledWith(CHAT_KEY)
-    // the title of a terminal session (not Claude) is plain text
-    expect(screen.queryByRole('link', { name: 'bash' })).toBeNull()
-    expect(screen.getByText('bash')).toBeTruthy()
+    // the title of a terminal session (not Claude) is a link to the chat route too (the terminal view)
+    expect(screen.getByRole('link', { name: 'bash' }).getAttribute('href')).toBe(`/projects/chat/${encodeURIComponent(PTY_KEY)}`)
   })
 
   it('a modified click on the link is left to the browser (new tab)', async () => {

@@ -14,6 +14,14 @@ function BackIcon() {
   )
 }
 
+function TerminalIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 5.5l4.5 4.5L4 14.5M10.5 14.5H16" />
+    </svg>
+  )
+}
+
 function StopIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
@@ -29,6 +37,10 @@ function StopIcon() {
 //                   otherwise it is a plain chip
 //   onOpenConnectors  when given, the menu offers "Conectores do agente…"
 //   onRename(name) -> Promise<boolean>      onEnd()      onInterrupt()
+//   terminal       the header of a terminal view (codex, agy, the plain terminal, a claude conversation that was
+//                  sent to the terminal): no mode chip, no rename or connectors, no state chip
+//   onOpenTerminal when given (a chat of a Claude agent): the "Abrir no terminal" button and its menu item
+//   onOpenChat     when given (a Claude conversation that lives in the terminal): the "Abrir no chat" menu item
 //   onBack         phone only (the screen passes it below 768): "Voltar" to the list of chats, 44x44. The
 //                  stylesheet keeps only the agent and the state chips on a phone and shrinks "Interromper"
 //                  to its icon below 1280 (the button keeps its aria-label either way).
@@ -50,11 +62,19 @@ export default function ChatHeader({
   onOpenModel,
   onOpenConnectors,
   onBack,
+  terminal = false,
+  onOpenTerminal,
+  onOpenChat,
 }) {
   const [renaming, setRenaming] = useState(false)
 
+  const engineItems = [
+    ...(onOpenTerminal ? [{ id: 'open-terminal', label: 'Abrir no terminal', onSelect: onOpenTerminal }] : []),
+    ...(onOpenChat ? [{ id: 'open-chat', label: 'Abrir no chat', onSelect: onOpenChat }] : []),
+  ]
   const items = [
-    { id: 'rename', label: 'Renomear chat', onSelect: () => setRenaming(true) },
+    ...(terminal ? [] : [{ id: 'rename', label: 'Renomear chat', onSelect: () => setRenaming(true) }]),
+    ...engineItems,
     ...(onOpenConnectors ? [{ id: 'connectors', label: 'Conectores do agente…', onSelect: onOpenConnectors }] : []),
     { id: 'end', label: 'Encerrar chat', tone: 'danger', separatorBefore: true, onSelect: onEnd },
   ]
@@ -94,6 +114,17 @@ export default function ChatHeader({
               {interrupting ? null : <kbd className="v3-chat-kbd">Esc</kbd>}
             </Button>
           ) : null}
+          {onOpenTerminal ? (
+            <Button
+              size="sm"
+              className="v3-chat-terminal-button"
+              aria-label="Abrir no terminal"
+              onClick={onOpenTerminal}
+            >
+              <TerminalIcon />
+              <span className="v3-chat-terminal-button__label">Abrir no terminal</span>
+            </Button>
+          ) : null}
           <ActionMenu label="Mais ações do chat" items={items} />
         </div>
       </div>
@@ -118,7 +149,7 @@ export default function ChatHeader({
             <Chip className="v3-chat-chip-secondary">{model}</Chip>
           )
         ) : null}
-        <Chip className="v3-chat-chip-secondary">{modeLabel(mode)}</Chip>
+        {terminal ? null : <Chip className="v3-chat-chip-secondary">{modeLabel(mode)}</Chip>}
         {stateInfo ? <Chip tone="state" accent={stateInfo.accent} className={`v3-chat-chip-state ${stateInfo.className}`.trim()}>{stateInfo.label}</Chip> : null}
       </div>
     </header>

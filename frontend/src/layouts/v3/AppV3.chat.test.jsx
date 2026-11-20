@@ -129,10 +129,11 @@ describe('AppV3 chat route', () => {
       expect(document.querySelector('[data-session-key]').getAttribute('data-session-key')).toBe('Pessoal/x::claude::other1'),
     )
   })
-  it('opens exactly one conversation socket for the chat route', () => {
+  it('opens exactly one conversation socket for the chat route', async () => {
     startAt(CHAT_PATH)
     render(<AppV3 initialTheme="light" />)
-    expect(FakeWebSocket.instances).toHaveLength(1)
+    // The socket waits for the screen to decide chat vs terminal (the agent list), so it opens a tick later.
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     expect(FakeWebSocket.instances[0].url).toContain('/ws/chat/Pessoal/tn-sandbox%3A%3Aclaude%3A%3Ak3x9q2')
   })
 
@@ -147,7 +148,7 @@ describe('AppV3 chat route', () => {
   it('switching to Tarefas and back to the same chat keeps the SAME socket (one WebSocket, never closed)', async () => {
     startAt(CHAT_PATH)
     render(<AppV3 initialTheme="light" />)
-    expect(FakeWebSocket.instances).toHaveLength(1)
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     const first = FakeWebSocket.instances[0]
 
     fireEvent.click(screen.getByRole('button', { name: 'Tarefas' }))
@@ -168,6 +169,7 @@ describe('AppV3 chat route', () => {
   it('opening another chat closes the previous socket and opens exactly one more', async () => {
     startAt(CHAT_PATH)
     render(<AppV3 initialTheme="light" />)
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     const first = FakeWebSocket.instances[0]
     fireEvent.click(screen.getByRole('button', { name: 'Abrir outro chat' }))
     await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
@@ -176,9 +178,10 @@ describe('AppV3 chat route', () => {
     expect(FakeWebSocket.instances[1].readyState).not.toBe(3)
   })
 
-  it('closes the conversation socket when the shell unmounts', () => {
+  it('closes the conversation socket when the shell unmounts', async () => {
     startAt(CHAT_PATH)
     const { unmount } = render(<AppV3 initialTheme="light" />)
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
     const first = FakeWebSocket.instances[0]
     unmount()
     expect(first.readyState).toBe(3)

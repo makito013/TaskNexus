@@ -1400,6 +1400,14 @@
   .v3-chat-header__chips .v3-chat-chip-secondary {
     display: none;
   }
+  /* "Abrir no terminal" of the header is its icon only; the aria-label carries the name (Designer 4.1). */
+  .v3-chat .v3-chat-header__actions .v3-chat-terminal-button__label {
+    display: none;
+  }
+  .v3-chat .v3-chat-header__actions .v3-chat-terminal-button.v3-button {
+    min-width: var(--v3-control);
+    padding: 0;
+  }
   /* In the 236px list the detail ("1 aprovação pendente", "Turno em andamento") drops to its own line
      instead of being cut to "1 ..." beside the state chip. */
   .v3-chat-row__meta {
@@ -1484,4 +1492,12 @@
   .v3-chat-menu__popup .v3-chat-menu__item {
     min-height: var(--v3-control-lg);
   }
+}
+
+/* Designer A2: the initial focus of a switch dialog is set by script. After a mouse click the browser's
+   :focus-visible heuristic hides the ring of that focus (the primary of "Abrir no terminal?" showed none), so the
+   dialogs of this route show the same ring as theme/base.css whenever the initial-focus button has the focus. */
+:root[data-layout="v3"] .v3-chat .v3-dialog [data-autofocus]:focus {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
 }

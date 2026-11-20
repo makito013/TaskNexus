@@ -36,17 +36,15 @@ export function cardSessionKey(card) {
   return (pool.find((row) => row.live) ?? pool[0])?.key ?? null
 }
 
-// "Abrir sessão": an agent of the Claude kind opens its conversation in the chat (openChat of the
-// sessions context). The other kinds keep waiting for the terminal view: aria-disabled, no handler,
-// described by the (screen-level) note.
-export function OpenSessionButton({ agentKind = null, sessionKey = null }) {
+// "Abrir sessão": every agent opens its session on the chat route (openChat of the sessions context); the
+// route decides the view: the conversation for a Claude chat, the terminal view for everything else (C6).
+// Only a card with no session to open stays aria-disabled (nothing to point at; "Novo chat" starts one).
+export function OpenSessionButton({ sessionKey = null }) {
   const { openChat } = useProjectsSessions()
-  if (agentKind === 'claude' && sessionKey) {
+  if (sessionKey) {
     return <Button size="sm" onClick={() => openChat(sessionKey)}>Abrir sessão</Button>
   }
-  return (
-    <Button size="sm" aria-disabled="true" aria-describedby="projects-open-note">Abrir sessão</Button>
-  )
+  return <Button size="sm" aria-disabled="true">Abrir sessão</Button>
 }
 
 export default function AgentCard({ card }) {
@@ -71,10 +69,7 @@ export default function AgentCard({ card }) {
       </p>
       <div className="v3-type-mono-sm v3-agent-card__meta">{cardMeta(card)}</div>
       <div className="v3-agent-card__foot">
-        <OpenSessionButton agentKind={card.agentKind} sessionKey={cardSessionKey(card)} />
-        {card.agentKind !== 'claude' && (
-          <span className="v3-type-caption v3-agent-card__note">Ainda não disponível para este agente</span>
-        )}
+        <OpenSessionButton sessionKey={cardSessionKey(card)} />
       </div>
     </Panel>
   )

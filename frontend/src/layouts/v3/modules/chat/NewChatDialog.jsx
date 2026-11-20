@@ -3,15 +3,19 @@ import Button from '../../components/Button/Button.jsx'
 import Dialog from '../../components/Dialog/Dialog.jsx'
 import { api } from '../../../../services/api.js'
 import { chatApi } from '../../../../services/chatApi.js'
+import { newPtySessionKey } from './terminal/ptySessionKey.js'
 
 const TITLE_ID = 'dlg-new-chat-title'
 const EMPTY_HINT_ID = 'new-chat-empty'
 
-// "Novo chat" (Designer 3.3): the project is fixed (the chat opens inside it), the agent is one of
-// the Claude agents (the only ones that open in a chat), the title is optional. Mount it only while
-// it is open: its form starts clean every time.
+// "Novo chat" (Designer 3.3): the project is fixed (the chat opens inside it), the agent is any registered
+// agent, the title is optional. A Claude agent opens in a chat (POST /api/chat/sessions); every other one opens
+// in the terminal view (C6): there is nothing to create on the server, the PTY is spawned by the first
+// /ws/pty connection, so the dialog only mints the session key (ptySessionKey.js) and has no title to keep.
+// Mount it only while it is open: its form starts clean every time.
 //   projectRef / projectName   the project the chat belongs to
-//   onCreated(sessionKey)      after POST /api/chat/sessions (the screen registers the grace window and navigates)
+//   onCreated(sessionKey)      after POST /api/chat/sessions, or with the new key of a terminal session (the screen
+//                              registers the grace window and navigates)
 //   onClose()                  Esc, "Cancelar", the backdrop
 export default function NewChatDialog({ projectRef, projectName, onClose, onCreated, returnFocusTo = null }) {
   const [agents, setAgents] = useState({ status: 'loading', list: [] })
@@ -24,9 +28,9 @@ export default function NewChatDialog({ projectRef, projectName, onClose, onCrea
     setAgents({ status: 'loading', list: [] })
     api.fetchAgents().then(
       (all) => {
-        const list = (Array.isArray(all) ? all : []).filter((agent) => agent.ia === 'claude')
+        const list = Array.isArray(all) ? all : []
         setAgents({ status: 'ready', list })
-        setAgentId((current) => current || list[0]?.id || '')
+        setAgentId((current) => current || (list.find((agent) => agent.ia === 'claude') ?? list[0])?.id || '')
       },
       () => setAgents({ status: 'error', list: [] }),
     )
@@ -38,12 +42,18 @@ export default function NewChatDialog({ projectRef, projectName, onClose, onCrea
 
   const noAgents = agents.status === 'ready' && agents.list.length === 0
   const blocked = agents.status !== 'ready' || noAgents || !agentId
+  // A terminal session: any agent that is not Claude.
+  const terminal = agents.list.some((agent) => agent.id === agentId && agent.ia !== 'claude')
 
   const submit = async (event) => {
     event?.preventDefault()
     if (blocked || submitting) return
     setSubmitting(true)
     setFailed(false)
+    if (terminal) {
+      onCreated(newPtySessionKey(projectRef, agentId))
+      return
+    }
     try {
       const created = await chatApi.createSession({ projectRef, agentId })
       const name = title.trim()
@@ -77,7 +87,7 @@ export default function NewChatDialog({ projectRef, projectName, onClose, onCrea
             aria-describedby={noAgents ? EMPTY_HINT_ID : undefined}
             onClick={submit}
           >
-            {submitting ? 'Iniciando…' : 'Iniciar chat'}
+            {submitting ? 'Iniciando…' : terminal ? 'Abrir terminal' : 'Iniciar chat'}
           </Button>
         </>
       )}
@@ -91,7 +101,7 @@ export default function NewChatDialog({ projectRef, projectName, onClose, onCrea
         <div className="v3-field">
           <label className="v3-field__label" htmlFor="new-chat-agent">Agente</label>
           {noAgents ? (
-            <p id={EMPTY_HINT_ID} className="v3-msg v3-msg--warn">Nenhum agente Claude cadastrado.</p>
+            <p id={EMPTY_HINT_ID} className="v3-msg v3-msg--warn">Nenhum agente cadastrado.</p>
           ) : (
             // Never `disabled`: the dialog's initial focus goes to this field and a disabled field cannot take it.
             <select
@@ -123,10 +133,13 @@ export default function NewChatDialog({ projectRef, projectName, onClose, onCrea
             className="v3-input"
             value={title}
             maxLength={120}
+            disabled={terminal}
             placeholder="Sem título"
             onChange={(event) => setTitle(event.target.value)}
           />
-          <span className="v3-field__help">Se vazio, usamos a sua primeira mensagem.</span>
+          <span className="v3-field__help">
+            {terminal ? 'O terminal não guarda título.' : 'Se vazio, usamos a sua primeira mensagem.'}
+          </span>
         </div>
         <button type="submit" hidden />
       </form>

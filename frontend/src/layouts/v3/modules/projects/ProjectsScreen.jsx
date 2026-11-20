@@ -219,10 +219,6 @@ export default function ProjectsScreen() {
         />
       )}
 
-      <span id="projects-open-note" className="v3-projects__sr-only">
-        O chat da V3 só abre sessões do Claude por enquanto.
-      </span>
-
       <div role="tabpanel" id={TABPANEL_ID} aria-labelledby={tabId(tab)} className="v3-projects__layout">
         <div className="v3-projects__main">
           {loading && <LoadingState />}
@@ -414,7 +410,7 @@ function SessionsBody({ filtered, rows }) {
   const saved = rows.filter((row) => !row.live).sort(byState)
   return (
     <>
-      <Panel notice="tiq">Sessões do Claude abrem no chat.</Panel>
+      <Panel notice="tiq">Abra uma sessão para continuar no chat ou no terminal.</Panel>
       {filtered.waiting.length > 0 && <WaitingStrip cards={filtered.waiting} />}
       <SessionList id="projects-sessions-active" title="Ativas" rows={active} />
       <SessionList id="projects-sessions-saved" title="Salvas (retomáveis)" rows={saved} />

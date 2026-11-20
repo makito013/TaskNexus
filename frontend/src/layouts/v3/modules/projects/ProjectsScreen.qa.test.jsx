@@ -185,7 +185,7 @@ describe('Projetos e agentes: tabs', () => {
   it('the Sessões tab shows the info banner and the two tables', async () => {
     await renderLoaded()
     fireEvent.click(screen.getByRole('tab', { name: 'Sessões' }))
-    expect(screen.getByText('Sessões do Claude abrem no chat.')).toBeTruthy()
+    expect(screen.getByText('Abra uma sessão para continuar no chat ou no terminal.')).toBeTruthy()
     const active = screen.getByRole('table', { name: /Ativas/ })
     const savedTable = screen.getByRole('table', { name: /Salvas \(retomáveis\)/ })
     expect(within(active).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
@@ -221,7 +221,7 @@ describe('Projetos e agentes: Agentes tab', () => {
     expect(container.querySelectorAll('h1')).toHaveLength(1)
   })
 
-  it('"Abrir sessão" of a Claude agent is enabled; the other agents stay aria-disabled and point at the exact note', async () => {
+  it('"Abrir sessão" is enabled for every agent that has a session (Claude opens the chat, the others the terminal view)', async () => {
     await renderLoaded()
     const buttons = screen.getAllByRole('button', { name: 'Abrir sessão' })
     expect(buttons.length).toBeGreaterThan(1)
@@ -229,20 +229,15 @@ describe('Projetos e agentes: Agentes tab', () => {
     let others = 0
     for (const button of buttons) {
       const owner = button.closest('article, li')
-      if (owner.textContent.includes('Claude')) {
-        claude += 1
-        expect(button.getAttribute('aria-disabled')).toBeNull()
-      } else {
-        others += 1
-        expect(button.getAttribute('aria-disabled')).toBe('true')
-        expect(document.getElementById(button.getAttribute('aria-describedby')).textContent)
-          .toBe('O chat da V3 só abre sessões do Claude por enquanto.')
-      }
+      if (owner.textContent.includes('Claude')) claude += 1
+      else others += 1
+      expect(button.getAttribute('aria-disabled')).toBeNull()
+      expect(button.getAttribute('aria-describedby')).toBeNull()
       fireEvent.click(button)
     }
     expect(claude).toBeGreaterThan(0)
     expect(others).toBeGreaterThan(0)
-    expect(screen.getAllByText('Ainda não disponível para este agente').length).toBe(others)
+    expect(screen.queryByText('Ainda não disponível para este agente')).toBeNull()
   })
 
   it('the board summary is read-only: "Abrir board" is aria-disabled and described by its note', async () => {

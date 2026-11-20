@@ -23,7 +23,7 @@ export default function WaitingStrip({ cards }) {
               <div className="v3-waiting__line2 v3-type-caption">{card.location} · {card.title}</div>
             </div>
             <Chip tone="state" accent="fin">{card.resumable ? 'retomável' : 'sessão viva'}</Chip>
-            <OpenSessionButton agentKind={card.agentKind} sessionKey={cardSessionKey(card)} />
+            <OpenSessionButton sessionKey={cardSessionKey(card)} />
           </li>
         ))}
       </ul>

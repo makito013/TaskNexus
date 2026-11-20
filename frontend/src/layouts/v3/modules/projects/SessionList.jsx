@@ -4,7 +4,8 @@ import { chatPath } from '../../sessions/ProjectsSessionsProvider.jsx'
 import { StateChip, agentInitials } from './AgentCard.jsx'
 
 // One block of the Sessões tab ("Ativas" / "Salvas (retomáveis)"): an ARIA table
-// with a row per session. The title of a session of a Claude agent is a link that opens it in the chat.
+// with a row per session. The title of a session is a link that opens it on the chat route (the conversation
+// for a Claude chat, the terminal view for any other session).
 export default function SessionList({ id, title, rows }) {
   const { openChat } = useProjectsSessions()
   return (
@@ -44,7 +45,6 @@ export default function SessionList({ id, title, rows }) {
 // Same target as a click on the link with the mouse, without reloading the page; the href keeps
 // "open in a new tab" and copy-link working.
 function SessionTitle({ row, openChat }) {
-  if (row.agentKind !== 'claude') return <b>{row.label}</b>
   const onClick = (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()

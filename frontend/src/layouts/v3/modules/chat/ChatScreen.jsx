@@ -26,6 +26,7 @@ import { useChatListActions } from './useChatListActions.js'
 import { useFirstMessages } from './useFirstMessages.js'
 import { useProjectName } from './useProjectName.js'
 import { useStickToEnd } from './useStickToEnd.js'
+import TerminalView from './terminal/TerminalView.jsx'
 import { PHONE_QUERY } from './viewport.js'
 import './ChatScreen.css'
 
@@ -53,6 +54,17 @@ function EmptyThread({ agentName }) {
   )
 }
 
+// The agent list failed and nothing else says which motor shows this key: asking again is the only way out.
+function AgentsFailed({ onRetry }) {
+  return (
+    <div className="v3-chat-state">
+      <h1 className="v3-chat-state__title" tabIndex={-1}>Não foi possível abrir esta conversa.</h1>
+      <p className="v3-chat-state__text v3-type-body-sm" role="alert">Não conseguimos carregar a lista de agentes.</p>
+      <Button onClick={onRetry}>Tentar de novo</Button>
+    </div>
+  )
+}
+
 function NotFound({ onBack }) {
   return (
     <div className="v3-chat-state">
@@ -75,6 +87,29 @@ function InTerminal() {
 }
 
 const hasOwn = (object, key) => object != null && Object.prototype.hasOwnProperty.call(object, key)
+
+// Which motor shows this key (CA46, CA47; a key is never both). Only ONE of the two views is ever mounted:
+//   'terminal'  an agent that is not Claude (codex, agy, the plain terminal), a Claude conversation the user sent
+//               to the terminal (its chat row says engine 'pty', or the switch just answered)
+//   'chat'      everything else; a Claude conversation of the V2 terminal (no chat row) takes the C4 path: the
+//               chat socket is refused and the screen offers the R-AV dialog
+//   'pending'   nothing trustworthy says which yet: the key has no chat row and the agent list is still loading,
+//               FAILED to load, or the sessions poll has not answered once. The chat's frame shows its opening
+//               skeleton (or, after a failed list, an error with "Tentar de novo") and never "not found", so a
+//               terminal key does not flash a refusal. It NEVER falls to 'chat' on an unreliable input.
+// `override` is what the last switch answered ('chat' | 'terminal'): it beats the poll, which lags behind.
+// `agentsLoaded` is true only when the list ARRIVED (a failure is not a loaded list: the screen keeps the failure
+// apart, in `agentsStatus`). `providerLoaded` is the sessions poll's first answer (defaults to true for callers
+// that do not care): without a chat row, 'chat' is decided only with both.
+export function visionOf({ override, meta, agent, agentsLoaded, providerLoaded = true }) {
+  if (override === 'terminal') return 'terminal'
+  if (override === 'chat') return 'chat'
+  if (meta?.engine === 'pty') return 'terminal'
+  if (agent && agent.ia !== 'claude') return 'terminal'
+  if (meta) return 'chat'
+  if (!agentsLoaded || !providerLoaded) return 'pending'
+  return 'chat'
+}
 
 // Tells a conversation that lives in the terminal apart from one that does not exist, once the chat
 // socket refused the key (close 4404): a live PTY is in the sessions poll (`engine: 'pty'`); a saved one
@@ -116,15 +151,23 @@ function usePtyLookup(sessionKey, refused, livePty) {
 // (reached by "Voltar"). Both stay mounted and the stylesheet shows one: switching views never touches
 // the socket (it lives in the host) nor the thread's scroll. The view is plain local state: it needs no
 // provider because nothing outside this screen reads it.
-function ChatView({ sessionKey, session }) {
+function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
   const sessions = useProjectsSessions()
   const { chats, liveByKey, graceKeys, loaded, liveAvailable, refresh, openChat, registerCreated, setFocusedKey, goTo } = sessions
   const { state, connection } = session
   const [agents, setAgents] = useState([])
+  // 'loading' | 'ok' | 'failed': a failed list is NOT a loaded one (it decides the motor of a key with no chat row).
+  const [agentsStatus, setAgentsStatus] = useState('loading')
+  const [agentsAttempt, setAgentsAttempt] = useState(0)
   const [endTarget, setEndTarget] = useState(null)
   const [modelOpen, setModelOpen] = useState(false)
   // null | { origin: 'menu' | 'banner' }: where the connectors dialog was opened from.
   const [connectors, setConnectors] = useState(null)
+  // null | { key, direction: 'pty' | 'chat' }: the engine switch the user is confirming (Designer 8).
+  const [switchDialog, setSwitchDialog] = useState(null)
+  // Bumped when a switch to the chat answered: the effect below asks for a fresh chat socket AFTER the commit
+  // that unmounted the terminal, so the two sockets are never alive at once (CA47).
+  const [chatResume, setChatResume] = useState(0)
   const threadRef = useRef(null)
   const composerRef = useRef(null)
   const screenRef = useRef(null)
@@ -138,18 +181,27 @@ function ChatView({ sessionKey, session }) {
   const [view, setView] = useState('chat') // phone only: 'chat' | 'list'
   const actions = useChatListActions({ onChanged: refresh })
 
-  // Agent names are cosmetic: when the list is unavailable the key's agent id stands in.
+  // The list names the agents AND says which motor a key with no chat row uses (`ia`): a failure leaves the key
+  // undecided (never the chat) until "Tentar de novo" asks again. The key's agent id is never a stand-in for `ia`.
   useEffect(() => {
     let cancelled = false
     api.fetchAgents().then(
       (list) => {
-        if (!cancelled) setAgents(Array.isArray(list) ? list : [])
+        if (cancelled) return
+        setAgents(Array.isArray(list) ? list : [])
+        setAgentsStatus('ok')
       },
-      () => {},
+      () => {
+        if (!cancelled) setAgentsStatus('failed')
+      },
     )
     return () => {
       cancelled = true
     }
+  }, [agentsAttempt])
+  const retryAgents = useCallback(() => {
+    setAgentsStatus('loading')
+    setAgentsAttempt((count) => count + 1)
   }, [])
 
   useEffect(() => {
@@ -168,15 +220,28 @@ function ChatView({ sessionKey, session }) {
   const meta = chats.find((chat) => chat.session_key === sessionKey) ?? null
   const parsed = parseSessionKey(sessionKey)
   const agentId = meta?.agent_id ?? parsed.agentId
-  const agentName = agents.find((agent) => agent.id === agentId)?.nome ?? agentId ?? 'Agente'
+  const agent = agents.find((candidate) => candidate.id === agentId) ?? null
+  const agentName = agent?.nome ?? agentId ?? 'Agente'
+  const engineOverride = engineOverrides[sessionKey] ?? null
+  const vision = visionOf({
+    override: engineOverride,
+    meta,
+    agent,
+    agentsLoaded: agentsStatus === 'ok',
+    providerLoaded: loaded,
+  })
+  const inTerminal = vision === 'terminal'
+  // 'shell': codex, agy, the plain terminal. 'claude': a Claude conversation that lives in the terminal.
+  const terminalKind = agent && agent.ia !== 'claude' ? 'shell' : 'claude'
   const projectRef = meta?.project_ref ?? parsed.projectKey
   const projectName = useProjectName(projectRef)
   const firstMessage = state.messages.find((item) => item.kind === 'user')?.text ?? ''
-  const title = chatTitle(meta, firstMessage)
+  const title = inTerminal ? meta?.display_name?.trim() || agentName : chatTitle(meta, firstMessage)
 
   const failureBanner = state.banner && FAILURE_BANNER_KINDS.includes(state.banner.kind) ? state.banner : null
-  const notFound = REFUSED_STATES.includes(connection.state) && !graceKeys.includes(sessionKey)
-  const loading = !state.replayComplete && !failureBanner && (WAITING_STATES.includes(connection.state) || graceKeys.includes(sessionKey))
+  const visionPending = vision === 'pending'
+  const notFound = !visionPending && REFUSED_STATES.includes(connection.state) && !graceKeys.includes(sessionKey)
+  const loading = visionPending || (!state.replayComplete && !failureBanner && (WAITING_STATES.includes(connection.state) || graceKeys.includes(sessionKey)))
   const ptyLookup = usePtyLookup(sessionKey, notFound, liveByKey?.[sessionKey]?.engine === 'pty')
   const running = state.turn.running
   const pending = state.cards.filter((card) => card.status === 'pending')
@@ -190,7 +255,7 @@ function ChatView({ sessionKey, session }) {
   // The thread element exists only when the conversation is shown (not the skeleton, the empty chat or
   // the refusals): the observer of the stick-to-end hook is attached again each time that flips.
   const emptyChat = state.replayComplete && state.messages.length === 0 && state.cards.length === 0 && !failureBanner
-  useStickToEnd(threadRef, !notFound && !loading && !emptyChat)
+  useStickToEnd(threadRef, vision === 'chat' && !notFound && !loading && !emptyChat)
 
   const projectChats = useMemo(
     () => (meta ? chats.filter((chat) => chat.project_ref === projectRef) : chats),
@@ -217,6 +282,38 @@ function ChatView({ sessionKey, session }) {
     [agentName, state.pendingCount, running, failureBanner, notFound, ptyLookup],
   )
   useIslandReport('projects', island)
+
+  // The poll caught up with the switch: its answer is the truth again.
+  useEffect(() => {
+    if (engineOverride && meta?.engine === (engineOverride === 'terminal' ? 'pty' : 'chat')) setEngineOverride(sessionKey, null)
+  }, [engineOverride, meta?.engine, sessionKey, setEngineOverride])
+
+  // Tells the host which motor this key shows: only the chat view gets a /ws/chat reader (one motor per key).
+  // 'pending' reports nothing: a key never decided has no reader yet, and one decided before (the screen
+  // came back from another module) keeps its reader, so the socket survives the return (CA38).
+  const { reportVision } = session
+  useEffect(() => {
+    if (vision !== 'pending') reportVision?.(sessionKey, vision)
+  }, [reportVision, sessionKey, vision])
+
+  // The view that replaces the other (chat <-> terminal) takes the focus with it: the heading of the new one.
+  const previousVisionRef = useRef(vision)
+  useEffect(() => {
+    if (previousVisionRef.current === vision) return
+    const wasPending = previousVisionRef.current === 'pending'
+    previousVisionRef.current = vision
+    if (!wasPending) screenRef.current?.querySelector('.v3-chat-header__title')?.focus()
+  }, [vision])
+
+  // A switch to the chat answered and the terminal is gone: ask for the chat socket and a fresh poll.
+  useEffect(() => {
+    if (chatResume === 0) return
+    registerCreated(sessionKey)
+    session.retryNow()
+    refresh()
+    // Runs once per answered switch; the callbacks are the context's and may change identity every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatResume])
 
   const send = useCallback(() => {
     if (session.send(session.draft)) session.setDraft('')
@@ -247,18 +344,35 @@ function ChatView({ sessionKey, session }) {
     else if (id === 'new_conversation') session.reset()
     else if (id === 'retry_now') session.retryNow()
     else if (id === 'connectors') setConnectors({ origin: 'banner' })
+    else if (id === 'open_terminal') setSwitchDialog({ key: sessionKey, direction: 'pty' })
   }
 
   const onUiCommand = (name) => {
     if (UI_COMMAND_CARDS[name] === 'model') setModelOpen(true)
   }
 
-  // R-AV accepted: the conversation is a chat now. The socket gave up on this key (4404) and the poll
-  // does not know it yet, so the screen asks for a fresh socket and a fresh poll.
-  const onSwitched = () => {
-    registerCreated(sessionKey)
-    session.retryNow()
+  // A switch answered. To the terminal: the view of that key becomes the terminal (another key: open it). To the
+  // chat (R-AV accepted): the conversation is a chat now; the chat socket gave up on this key (4404) or sits idle
+  // and the poll does not know it yet, so the screen asks for a fresh socket and a fresh poll (`chatResume`).
+  const finishSwitch = (key, result) => {
+    const toTerminal = result?.engine === 'pty'
+    setEngineOverride(key, toTerminal ? 'terminal' : 'chat')
+    setSwitchDialog(null)
+    if (key !== sessionKey) {
+      registerCreated(key)
+      openChat(key)
+    } else if (!toTerminal) {
+      setChatResume((count) => count + 1)
+    }
     refresh()
+  }
+  const onSwitched = (result) => finishSwitch(sessionKey, result ?? { engine: 'chat' })
+
+  // "Sair do terminal": the focus has to leave the terminal (xterm keeps Tab for itself). On a phone the list is
+  // the other view; elsewhere the list is beside it.
+  const exitTerminal = () => {
+    if (phone) setView('list')
+    else screenRef.current?.querySelector('.v3-chat-list__title')?.focus()
   }
 
   const confirmEnd = async () => {
@@ -313,10 +427,38 @@ function ChatView({ sessionKey, session }) {
         onEnd={(chat) => setEndTarget(chat)}
         onRetry={refresh}
         onLeave={phone ? () => goTo('/projects') : undefined}
+        onOpenTerminal={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'pty' })}
+        onOpenChat={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'chat' })}
       />
 
       <div className="v3-chat-panel" onKeyDown={onPanelKeyDown}>
-        {notFound ? (
+        {visionPending && agentsStatus === 'failed' ? (
+          <AgentsFailed onRetry={retryAgents} />
+        ) : inTerminal ? (
+          <>
+            <ChatHeader
+              terminal
+              title={title}
+              agentName={agentName}
+              projectName={projectName}
+              model={null}
+              mode={null}
+              stateInfo={null}
+              onEnd={() => setEndTarget(meta ?? { session_key: sessionKey, display_name: title })}
+              onOpenChat={terminalKind === 'claude' ? () => setSwitchDialog({ key: sessionKey, direction: 'chat' }) : undefined}
+              onBack={phone ? () => setView('list') : undefined}
+            />
+            <TerminalView
+              sessionKey={sessionKey}
+              agentName={agentName}
+              folderLabel={projectName}
+              kind={terminalKind}
+              phone={phone}
+              onOpenChat={() => setSwitchDialog({ key: sessionKey, direction: 'chat' })}
+              onExit={exitTerminal}
+            />
+          </>
+        ) : notFound ? (
           ptyLookup === 'pty' ? (
             <InTerminal />
           ) : ptyLookup === 'none' ? (
@@ -343,9 +485,10 @@ function ChatView({ sessionKey, session }) {
               onInterrupt={session.interrupt}
               onOpenModel={() => setModelOpen(true)}
               onOpenConnectors={() => setConnectors({ origin: 'menu' })}
+              onOpenTerminal={failureBanner?.kind === 'spawn_failed' ? undefined : () => setSwitchDialog({ key: sessionKey, direction: 'pty' })}
               onBack={phone ? () => setView('list') : undefined}
             />
-            <StatusBanner banner={state.banner} connection={connection} canOpenConnectors onAction={onBannerAction} />
+            <StatusBanner banner={state.banner} connection={connection} canOpenConnectors canOpenTerminal onAction={onBannerAction} />
             {session.actionError ? (
               <p className="v3-msg v3-msg--err v3-chat-action-error" role="alert">
                 Não foi possível concluir a ação. Tente de novo.
@@ -420,8 +563,19 @@ function ChatView({ sessionKey, session }) {
           onCreated={(key) => onCreated(key, newChatToken)}
         />
       ) : null}
-      {notFound && ptyLookup === 'pty' ? (
+      {vision === 'chat' && notFound && ptyLookup === 'pty' ? (
         <SwitchEngineDialog sessionKey={sessionKey} onCancel={() => goTo('/projects')} onSwitched={onSwitched} />
+      ) : null}
+      {switchDialog ? (
+        <SwitchEngineDialog
+          key={`${switchDialog.direction}:${switchDialog.key}`}
+          sessionKey={switchDialog.key}
+          direction={switchDialog.direction}
+          turnRunning={switchDialog.key === sessionKey && running}
+          projectRef={chats.find((chat) => chat.session_key === switchDialog.key)?.project_ref ?? projectRef}
+          onCancel={() => setSwitchDialog(null)}
+          onSwitched={(result) => finishSwitch(switchDialog.key, result)}
+        />
       ) : null}
       {connectors ? (
         <ConnectorsDialog
@@ -443,8 +597,25 @@ function ChatView({ sessionKey, session }) {
   )
 }
 
+// What the last engine switch of each key answered ({ [key]: 'chat' | 'terminal' }). It lives here, above the
+// per-key view, so "Abrir no terminal" on ANOTHER row of the list can open that key already as a terminal.
+function useEngineOverrides() {
+  const [overrides, setOverrides] = useState({})
+  const setOverride = useCallback((key, value) => {
+    setOverrides((current) => {
+      if ((current[key] ?? null) === value) return current
+      const next = { ...current }
+      if (value === null) delete next[key]
+      else next[key] = value
+      return next
+    })
+  }, [])
+  return [overrides, setOverride]
+}
+
 export default function ChatScreen({ sessionKey }) {
   const session = useChatSessionContext()
+  const [engineOverrides, setEngineOverride] = useEngineOverrides()
   // The host adopts the route's key in an effect: for one render the key can still be the previous one.
   if (!session || session.sessionKey !== sessionKey) {
     return (
@@ -455,5 +626,5 @@ export default function ChatScreen({ sessionKey }) {
       </section>
     )
   }
-  return <ChatView key={sessionKey} sessionKey={sessionKey} session={session} />
+  return <ChatView key={sessionKey} sessionKey={sessionKey} session={session} engineOverrides={engineOverrides} setEngineOverride={setEngineOverride} />
 }

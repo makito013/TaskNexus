@@ -47,10 +47,10 @@ describe('NewChatDialog content', () => {
     expect(screen.getByText('Só agentes Claude abrem em chat. Os outros abrem em terminal.')).toBeTruthy()
   })
 
-  it('lists only the Claude agents, the first one chosen, and focuses the agent field', async () => {
+  it('lists every agent, the first Claude one chosen, and focuses the agent field', async () => {
     setup()
     await ready()
-    expect([...agentSelect().options].map((option) => option.textContent)).toEqual(['Claude', 'Revisor'])
+    expect([...agentSelect().options].map((option) => option.textContent)).toEqual(['Claude', 'Codex', 'Revisor', 'Terminal'])
     expect(agentSelect().value).toBe('claude')
     expect(document.activeElement).toBe(agentSelect())
   })
@@ -64,10 +64,10 @@ describe('NewChatDialog content', () => {
     expect(startButton().getAttribute('aria-disabled')).toBe('true')
   })
 
-  it('with no Claude agent it says so and blocks the start with a description', async () => {
-    api.fetchAgents.mockResolvedValue([AGENTS[1], AGENTS[3]])
+  it('with no agent at all it says so and blocks the start with a description', async () => {
+    api.fetchAgents.mockResolvedValue([])
     const { onCreated } = setup()
-    const message = await screen.findByText('Nenhum agente Claude cadastrado.')
+    const message = await screen.findByText('Nenhum agente cadastrado.')
     expect(startButton().getAttribute('aria-disabled')).toBe('true')
     expect(startButton().getAttribute('aria-describedby')).toBe(message.id)
     fireEvent.click(startButton())
@@ -82,7 +82,7 @@ describe('NewChatDialog content', () => {
     expect(startButton().getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await ready()
-    expect([...agentSelect().options]).toHaveLength(2)
+    expect([...agentSelect().options]).toHaveLength(4)
   })
 })
 

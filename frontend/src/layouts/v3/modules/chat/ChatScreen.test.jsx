@@ -628,12 +628,12 @@ describe('ChatScreen status banners (R-REC)', () => {
     expect(details.textContent).toContain('connect timed out after 60s')
   })
 
-  it('engine_unavailable: no retry', async () => {
+  it('engine_unavailable: no retry, only the way to the terminal', async () => {
     await ready()
     play(f('status', 1, { code: 'engine_unavailable', detail: 'sdk missing' }))
     expect(bannerText()).toContain('O chat ainda não está disponível neste servidor')
     expect(bannerText()).toContain('Falta atualizar as dependências. Peça um deploy normal ou rode pip install -r.')
-    expect(within(screen.getByRole('alert')).queryAllByRole('button')).toHaveLength(0)
+    expect(within(screen.getByRole('alert')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Abrir no terminal'])
   })
 
   it('resume_failed: "Iniciar nova conversa" resets, and the history stays visible', async () => {
@@ -811,10 +811,10 @@ describe('ChatScreen header actions and the island', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeTruthy())
   })
 
-  it('the menu of the header offers rename, the connectors of the agent and ending the chat', async () => {
+  it('the menu of the header offers rename, the terminal, the connectors of the agent and ending the chat', async () => {
     await ready()
     fireEvent.click(screen.getByRole('button', { name: 'Mais ações do chat' }))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Renomear chat', 'Conectores do agente…', 'Encerrar chat'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Renomear chat', 'Abrir no terminal', 'Conectores do agente…', 'Encerrar chat'])
   })
 
   it('ending the chat asks first, with the focus on Cancelar, then terminates and goes back to Projects', async () => {
