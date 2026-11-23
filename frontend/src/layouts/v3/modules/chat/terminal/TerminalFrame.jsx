@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { encodePtySessionKey } from '../../../../../services/sessionKey.js'
 import { useTerminalSurface } from '../../../../../terminal/useTerminalSurface.js'
 import { FONTS_READY_TIMEOUT_MS } from '../../../../../terminal/xtermDefaults.js'
 import { parseSessionKey } from '../../projects/agentBoard.js'
@@ -89,7 +90,7 @@ const TerminalSurface = forwardRef(function TerminalSurface({ sessionKey, onStat
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const { status, sendControlByte, focus, termRef } = useTerminalSurface({
     containerRef,
-    wsUrl: `${protocol}//${window.location.host}/ws/pty/${sessionKey}`,
+    wsUrl: `${protocol}//${window.location.host}/ws/pty/${encodePtySessionKey(sessionKey)}`,
     projectId: projectKey,
     agentId,
     visible: true,

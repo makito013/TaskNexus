@@ -9,6 +9,10 @@
 // Errors: every failure is a ChatApiError { status, code, message }. `code` comes from the
 // backend's `detail.code`; a response without it gets `http_error`, and a request that never
 // got an answer (network down, bad URL) is status 0 / `network_error`.
+import { encodeSessionKey } from './sessionKey.js'
+
+export { encodeSessionKey }
+
 const BASE = '/api'
 
 export class ChatApiError extends Error {
@@ -18,12 +22,6 @@ export class ChatApiError extends Error {
     this.status = status
     this.code = code
   }
-}
-
-// Session keys contain '/' (sub-project paths) and '::'. The backend routes use `:path`, so the
-// slashes stay as separators and every segment is encoded on its own.
-export function encodeSessionKey(sessionKey) {
-  return String(sessionKey).split('/').map(encodeURIComponent).join('/')
 }
 
 function jsonRequest(method, body) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ApprovalCard from '../../components/ApprovalCard/ApprovalCard.jsx'
 import { summarizeTool } from '../../../../utils/toolSummaries.js'
+import { markInvisibleChars } from '../../../../utils/visibleControlChars.js'
 import ApprovalSheet from './ApprovalSheet.jsx'
 import { cardStatus } from './chatLabels.js'
 import PlanCard from './cards/PlanCard.jsx'
@@ -16,7 +17,7 @@ function DiffView({ diff }) {
         <div key={index} className={`v3-chat-diff__line v3-chat-diff__line--${line.type} v3-type-mono-sm`}>
           <span className="v3-chat-diff__sign" aria-hidden="true">{line.type === 'add' ? '+' : '−'}</span>
           <span className="v3-chat-sr-only">{line.type === 'add' ? 'adicionada: ' : 'removida: '}</span>
-          <span className="v3-chat-diff__text">{line.text}</span>
+          <span className="v3-chat-diff__text">{markInvisibleChars(line.text)}</span>
         </div>
       ))}
       {diff.truncated ? <p className="v3-type-caption v3-chat-diff__note">Mostrando só o começo das alterações.</p> : null}
@@ -25,7 +26,7 @@ function DiffView({ diff }) {
 }
 
 function TextBlock({ children }) {
-  return <pre className="v3-chat-details v3-type-mono-sm">{children}</pre>
+  return <pre className="v3-chat-details v3-type-mono-sm">{markInvisibleChars(children)}</pre>
 }
 
 function toolDetails(summary, card) {

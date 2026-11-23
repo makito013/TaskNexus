@@ -1,4 +1,5 @@
 import { PET_NAMES } from './components/Pet/petShapes.js'
+import { isSafeSessionKey } from '../../services/sessionKey.js'
 
 export { PET_NAMES }
 
@@ -91,7 +92,8 @@ export function routeForPath(pathname) {
     } catch {
       return null
     }
-    return sessionKey ? { moduleId: 'projects', view: 'chat', sessionKey } : null
+    // A key the app could never have made (a `..` segment, `?`, `#`...) is no route: nothing is requested for it.
+    return isSafeSessionKey(sessionKey) ? { moduleId: 'projects', view: 'chat', sessionKey } : null
   }
   const module = moduleForPath(pathname)
   return module ? { moduleId: module.id, view: 'screen', sessionKey: null } : null
@@ -102,7 +104,7 @@ export function routeForPath(pathname) {
 export function pushSessionKey(pathname, search) {
   if (pathname !== '/') return null
   const key = new URLSearchParams(search || '').get('session')
-  return key ? key : null
+  return isSafeSessionKey(key) ? key : null
 }
 
 // Every module but the active one, in rail order.

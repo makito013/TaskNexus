@@ -657,8 +657,10 @@ def test_mutating_routes_check_the_origin(env, origin, status):
         assert response.json()["detail"]["code"] == "origin_not_allowed"
 
 
-def test_reads_do_not_check_the_origin(env):
-    assert env.client.get("/api/chat/sessions", headers={"Origin": "http://evil.example"}).status_code == 200
+def test_reads_check_the_origin_too(env):
+    # Superseded by stage 10 (R1): this used to assert 200, which is the hole (another site read the log).
+    assert env.client.get("/api/chat/sessions", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert env.client.get("/api/chat/sessions", headers={"Origin": "http://testserver"}).status_code == 200
 
 
 def test_chat_allowed_origins_lets_a_dev_server_through(tmp_path, monkeypatch):

@@ -23,6 +23,8 @@
 // `status` event (spawn_failed, resume_failed, engine_unavailable): in those states a
 // dropped socket stays down until the user asks (retryNow). 4408 (slow reader) reconnects at
 // once with `since`, without counting as a failure.
+import { encodeSessionKey } from './sessionKey.js'
+
 export const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000]
 export const MAX_BACKOFF_MS = 30000
 export const OFFLINE_AFTER_FAILURES = 5
@@ -49,8 +51,7 @@ export function backoffDelay(failures) {
 
 function socketUrl(sessionKey, since) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const path = String(sessionKey).split('/').map(encodeURIComponent).join('/')
-  return `${protocol}//${window.location.host}/ws/chat/${path}?since=${since}`
+  return `${protocol}//${window.location.host}/ws/chat/${encodeSessionKey(sessionKey)}?since=${since}`
 }
 
 let requestCounter = 0

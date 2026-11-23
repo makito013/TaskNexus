@@ -13,7 +13,7 @@ import uvicorn
 from typing import Literal, TypedDict
 from contextlib import asynccontextmanager, contextmanager
 from fastapi import (
-    FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
+    Depends, FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
     Query, UploadFile, File,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +24,7 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
 from app.chat.availability import CliResolver, sdk_status, warn_if_session_env_inherited
-from app.chat.api import allowed_origins_from_env, create_chat_router
+from app.chat.api import allowed_hosts_from_env, allowed_origins_from_env, create_chat_router, create_request_guard
 from app.chat.engine import SpawnFailed
 from app.chat.manager import ChatManager
 from app.chat.sdk_engine import AgentSdkEngine
@@ -1969,7 +1969,14 @@ async def _is_chat_key(session_key: str) -> bool:
     return await store.get_engine(session_key) == "chat" or chat_manager.get(session_key) is not None
 
 
-@app.post("/api/sessions/{session_key:path}/terminate")
+# Stage 10 (R1): the two V2 routes that reach into the chat get the chat's host + origin guard. The V2
+# client is same-origin and a non-browser client sends no Origin, so neither is affected.
+_chat_allowed_origins = allowed_origins_from_env()
+_chat_allowed_hosts = allowed_hosts_from_env()
+_chat_request_guard = create_request_guard(_chat_allowed_origins, _chat_allowed_hosts)
+
+
+@app.post("/api/sessions/{session_key:path}/terminate", dependencies=[Depends(_chat_request_guard)])
 async def terminate_session(session_key: str):
     """Terminates a PTY session (if one is running) and clears its stored
     session row. Returns 404 only when the session_key is unknown to BOTH the
@@ -2018,7 +2025,7 @@ async def terminate_session(session_key: str):
     return {"status": "terminated", "session_key": session_key}
 
 
-@app.post("/api/sessions/{session_key:path}/reset")
+@app.post("/api/sessions/{session_key:path}/reset", dependencies=[Depends(_chat_request_guard)])
 async def reset_session(session_key: str):
     """Bug 2 fix: confirmação explícita do usuário (botão "Iniciar nova
     conversa" no overlay de resume_failed) para descartar o claude_session_id
@@ -3363,7 +3370,7 @@ chat_service = ChatService(
     sdk_status=sdk_status,
     config=chat_config,
 )
-app.include_router(create_chat_router(chat_service, allowed_origins_from_env()))
+app.include_router(create_chat_router(chat_service, _chat_allowed_origins, _chat_allowed_hosts))
 
 
 @app.websocket("/ws/pty/{session_key:path}")

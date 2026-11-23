@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import ApprovalActions from '../../components/ApprovalCard/ApprovalActions.jsx'
 import Dialog from '../../components/Dialog/Dialog.jsx'
+import { INVISIBLE_CHARS_NOTICE, hasInvisibleChars, markInvisibleChars } from '../../../../utils/visibleControlChars.js'
 import { useContinuesBelow } from './useContinuesBelow.js'
 import { SHEET_DIALOG_SIZE } from './viewport.js'
 
@@ -51,7 +52,8 @@ export default function ApprovalSheet({
   const requestId = `${baseId}-request`
   const [tab, setTab] = useState('summary')
   const verb = summary?.verb ?? 'usar'
-  const object = summary?.object ?? null
+  const rawObject = summary?.object ?? null
+  const object = rawObject ? markInvisibleChars(rawObject) : null
   const showTabs = hasDiff && Boolean(details)
   const contentRef = useRef(null)
   // The command box scrolls inside the body of the sheet, and the body scrolls too: both can hide the end.
@@ -142,6 +144,7 @@ export default function ApprovalSheet({
         {!showTabs || tab === 'summary' ? (
           <div id={`${baseId}-panel-summary`} role={showTabs ? 'tabpanel' : undefined} aria-labelledby={showTabs ? `${baseId}-tab-summary` : undefined} className="v3-approval-sheet__panel">
             {object ? <code className="v3-approval-sheet__object v3-type-mono-sm">{object}</code> : null}
+            {hasInvisibleChars(rawObject) ? <p className="v3-approval__connector v3-type-caption" role="note">{INVISIBLE_CHARS_NOTICE}</p> : null}
             {connector ? <p className="v3-approval__connector v3-type-caption">Conector da sua conta: {connector}</p> : null}
             {!hasDiff && details ? <div className="v3-approval__details v3-approval-sheet__details">{details}</div> : null}
           </div>

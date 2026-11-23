@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import ApprovalActions from './ApprovalActions.jsx'
+import { INVISIBLE_CHARS_NOTICE, hasInvisibleChars, markInvisibleChars } from '../../../../utils/visibleControlChars.js'
 import './ApprovalCard.css'
 
 // "Esperando você" card (DS ApprovalCard + Designer 5.1). It executes nothing: it only calls the
@@ -79,7 +80,9 @@ export default function ApprovalCard({
   const [fullOpen, setFullOpen] = useState(false)
 
   const verb = summary?.verb ?? 'usar'
-  const object = summary?.object ?? null
+  const rawObject = summary?.object ?? null
+  // What decides the request is shown with the invisible and reordering characters made visible (stage 10, Y1).
+  const object = rawObject ? markInvisibleChars(rawObject) : null
   const shortSummary = oneLine(object ? `${verb} ${object}` : verb, SUMMARY_MAX)
   const resolved = status in RESOLVED_TEXT
 
@@ -158,6 +161,9 @@ export default function ApprovalCard({
       </span>
 
       {phoneSummary ? null : objectNode}
+      {hasInvisibleChars(rawObject) ? (
+        <p className="v3-approval__connector v3-type-caption" role="note">{INVISIBLE_CHARS_NOTICE}</p>
+      ) : null}
       {connector ? (
         <p className="v3-approval__connector v3-type-caption">Conector da sua conta: {connector}</p>
       ) : null}
