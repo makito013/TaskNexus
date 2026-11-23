@@ -1,8 +1,8 @@
 """Adaptador MCP standalone: ponte entre as tools de card expostas ao `claude`
 CLI (via --mcp-config) — `criar_card`, `mover_card`, `editar_card`,
-`excluir_card`, `ver_card`, `listar_cards`, `anexar_arquivo_card` — e o backend
-FastAPI do Escritório (endpoints POST
-/api/hooks/cards/{create,move,update,delete,get,list,attach}).
+`excluir_card`, `ver_card`, `listar_cards`, `anexar_arquivo_card`,
+`perguntar_card` — e o backend FastAPI do Escritório (endpoints POST
+/api/hooks/cards/{create,move,update,delete,get,list,attach,questions}).
 
 Roda como PROCESSO FILHO do `claude` CLI (subprocess separado do backend
 FastAPI, spawnado pelo próprio CLI a partir do comando/args em
@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import ssl
 import sys
 import urllib.error
@@ -71,6 +72,9 @@ HOOK_LIST_URL = os.environ.get(
 HOOK_ATTACH_URL = os.environ.get(
     "ESCRITORIO_HOOK_ATTACH_URL", "http://localhost:8000/api/hooks/cards/attach"
 )
+HOOK_ASK_URL = os.environ.get(
+    "ESCRITORIO_HOOK_ASK_URL", "http://localhost:8000/api/hooks/cards/questions"
+)
 
 # Contexto SSL que não valida certificado — seguro aqui porque a conexão é
 # estritamente loopback (127.0.0.1). Necessário quando o deploy usa TLS: o
@@ -83,6 +87,37 @@ _CONNECTIVITY_ERROR_TEXT = (
     "Não foi possível conectar ao backend do Escritório para processar esta ação."
 )
 
+# Seconds each hook request may take. It used to be a fixed 3 s, and a board
+# poll hydrating every card was enough to push a create past it (card #213).
+# Read once at import, like the URLs; invalid or <= 0 falls back to default.
+DEFAULT_HOOK_TIMEOUT_SECONDS = 30.0
+
+
+def _read_hook_timeout() -> float:
+    try:
+        value = float(os.environ.get("ESCRITORIO_HOOK_TIMEOUT", ""))
+    except ValueError:
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    if value != value or value <= 0:  # NaN or non-positive
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    return value
+
+
+HOOK_TIMEOUT_SECONDS = _read_hook_timeout()
+
+# Returned by `_post_json` when the request was sent but no answer came back
+# in time. Distinct from None (no connection at all): the backend may have
+# applied the action, so a write tool must not tell the agent it failed.
+TIMED_OUT = object()
+
+_WRITE_TIMEOUT_TEXT = (
+    "O backend do Escritório não respondeu a tempo. A ação PODE ter sido "
+    "aplicada. Confira com listar_cards ou ver_card antes de repetir."
+)
+_READ_TIMEOUT_TEXT = (
+    "O backend do Escritório demorou para responder. Tente de novo."
+)
+
 # Manual copy of models.CARD_TIPOS: the literal list of valid tipo values
 # announced in the inputSchema. This adapter is pure-stdlib Python 3.9 and runs
 # as a child process of the `claude` CLI, so it cannot import from `app/` —
@@ -91,6 +126,19 @@ _CONNECTIVITY_ERROR_TEXT = (
 # editar_card) together: a value forgotten here fails silently (the agent
 # never gets it). Defined up here because TOOL_CRIAR_CARD already references it.
 _TIPO_ENUM = ["bug", "hotfix", "historia"]
+
+# Manual copy of models.CARD_PRIORIDADES, same reasoning (and same "update
+# together" rule, including test_mcp_card_adapter.py) as _TIPO_ENUM above.
+_PRIORIDADE_ENUM = ["muito_baixa", "baixa", "media", "alta", "muito_alta"]
+
+_PRIORIDADE_PROPERTY = {
+    "type": "string",
+    "enum": _PRIORIDADE_ENUM,
+    "description": (
+        "Prioridade do card, da menor para a maior: muito_baixa, baixa, "
+        "media, alta, muito_alta."
+    ),
+}
 
 TOOL_CRIAR_CARD = {
     "name": "criar_card",
@@ -129,6 +177,7 @@ TOOL_CRIAR_CARD = {
                     "fluxo do agente."
                 ),
             },
+            "prioridade": _PRIORIDADE_PROPERTY,
             "parent_id": {"type": "integer"},
             "projeto_id": {
                 "type": "string",
@@ -172,9 +221,9 @@ TOOL_MOVER_CARD = {
 TOOL_EDITAR_CARD = {
     "name": "editar_card",
     "description": (
-        "Edita o conteúdo de um card existente: título, descrição, status "
-        "e/ou tipo. Campos omitidos ficam inalterados; `tipo` com string "
-        "vazia limpa o campo. Use para corrigir ou completar o texto de um "
+        "Edita o conteúdo de um card existente: título, descrição, status, "
+        "tipo e/ou prioridade. Campos omitidos ficam inalterados; `tipo` ou "
+        "`prioridade` com string vazia limpa o campo. Use para corrigir ou completar o texto de um "
         "card já criado. Só é possível editar cards do mesmo cliente da "
         "conversa atual — cards de outro cliente não podem ser editados."
     ),
@@ -201,6 +250,7 @@ TOOL_EDITAR_CARD = {
                     "fluxo do agente."
                 ),
             },
+            "prioridade": _PRIORIDADE_PROPERTY,
         },
         "required": ["card_id"],
     },
@@ -224,9 +274,13 @@ TOOL_VER_CARD = {
     "name": "ver_card",
     "description": (
         "Mostra os dados de um card específico pelo id (título, descrição, "
-        "status, projeto, origem, datas). Use antes de editar para revisar o "
-        "conteúdo atual. Só é possível consultar cards do mesmo cliente da "
-        "conversa atual."
+        "status, projeto, origem, datas, anexos e perguntas). Use antes de "
+        "editar para revisar o conteúdo atual. O campo `questions` traz as "
+        "perguntas feitas com perguntar_card: `answer` é a resposta do usuário "
+        "(null = ainda sem resposta). Quando o usuário mandar seguir com um "
+        "card em que você deixou perguntas, chame ver_card e leia as respostas "
+        "em vez de perguntar de novo no chat. Só é possível consultar cards do "
+        "mesmo cliente da conversa atual."
     ),
     "inputSchema": {
         "type": "object",
@@ -286,6 +340,35 @@ TOOL_ANEXAR_ARQUIVO_CARD = {
     },
 }
 
+TOOL_PERGUNTAR_CARD = {
+    "name": "perguntar_card",
+    "description": (
+        "Registra uma ou mais perguntas num card do board para o usuário "
+        "responder direto no card (seção \"Perguntas do agente\" do modal). "
+        "Use quando precisar de decisões ou informações do usuário para seguir "
+        "com o card: faça todas as perguntas de uma vez, avise no chat que "
+        "elas estão no card e pare. Quando o usuário mandar seguir, chame "
+        "ver_card e leia as respostas no campo `questions`. Limite de 30 "
+        "perguntas por card. Só para cards do mesmo cliente da conversa atual."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "card_id": {"type": "integer"},
+            "perguntas": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": (
+                    "Lista de perguntas, uma por item, cada uma autoexplicativa "
+                    "(o usuário lê no card, fora do contexto do chat)."
+                ),
+            },
+        },
+        "required": ["card_id", "perguntas"],
+    },
+}
+
 TOOLS = [
     TOOL_CRIAR_CARD,
     TOOL_MOVER_CARD,
@@ -294,12 +377,13 @@ TOOLS = [
     TOOL_VER_CARD,
     TOOL_LISTAR_CARDS,
     TOOL_ANEXAR_ARQUIVO_CARD,
+    TOOL_PERGUNTAR_CARD,
 ]
 
 _TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
 
 # Tipos JSON Schema usados nos inputSchema acima -> nome legível na mensagem.
-_SCHEMA_TYPE_LABEL = {"integer": "inteiro", "string": "texto"}
+_SCHEMA_TYPE_LABEL = {"integer": "inteiro", "string": "texto", "array": "lista de textos"}
 
 
 def _validate_arguments(tool: dict, arguments: dict):
@@ -344,6 +428,14 @@ def _validate_arguments(tool: dict, arguments: dict):
         elif expected == "string" and not isinstance(value, str):
             problems.append("{0} deve ser texto (recebido: {1})".format(
                 name, json.dumps(value, ensure_ascii=False)))
+        elif expected == "array":
+            # Only arrays of strings exist in these schemas (perguntar_card).
+            # A bare string is the most common slip: accept it as one item.
+            if isinstance(value, str):
+                validated[name] = [value]
+            elif not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                problems.append("{0} deve ser uma lista de textos (recebido: {1})".format(
+                    name, json.dumps(value, ensure_ascii=False)))
 
     if not problems:
         return validated, None
@@ -397,10 +489,14 @@ def _post_json(url: str, body: dict):
 
     Diferente do `_post_task` fire-and-forget de mcp_task_adapter.py: aqui o
     chamador PRECISA do corpo da resposta (`{success, error}` /
-    `{success, card_id}`) para decidir o que reportar ao agente. Só retorna
-    None quando a requisição genuinamente não pôde ser completada (erro de
-    rede/timeout) ou a resposta não é JSON válido — nesses casos o chamador
-    trata como falha de conectividade, nunca como sucesso silencioso.
+    `{success, card_id}`) para decidir o que reportar ao agente.
+
+    Failure results, never a silent success:
+    - TIMED_OUT: no answer within HOOK_TIMEOUT_SECONDS. The backend may still
+      have applied the action, so `_format_result` words it per tool kind.
+    - None: no connection at all (refused, DNS, ...). Nothing was applied.
+    - `{"success": False, ...}`: the backend answered with an HTTP error or
+      with a body that is not JSON.
     """
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -411,18 +507,36 @@ def _post_json(url: str, body: dict):
     )
     try:
         ctx = _SSL_CTX if url.startswith("https://") else None
-        with urllib.request.urlopen(req, timeout=3, context=ctx) as resp:
+        with urllib.request.urlopen(
+            req, timeout=HOOK_TIMEOUT_SECONDS, context=ctx
+        ) as resp:
             raw = resp.read()
-        return json.loads(raw)
     except urllib.error.HTTPError as exc:
         # O backend RESPONDEU (422 de validação do Pydantic, 500, ...): não é
         # falha de conectividade. Reportar como tal faz o agente concluir que
         # o backend caiu e repetir a mesma chamada inválida em vez de
-        # corrigi-la. Precisa vir antes do `except Exception` porque
+        # corrigi-la. Precisa vir antes do `except URLError` porque
         # HTTPError é subclasse de URLError.
         return {"success": False, "error": _http_error_text(exc)}
+    except urllib.error.URLError as exc:
+        # urllib wraps errors raised while SENDING (connect included) in
+        # URLError; a timeout there still means "no answer in time".
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            return TIMED_OUT
+        return None
+    except (socket.timeout, TimeoutError):
+        # Raised bare while waiting for / reading the response: the request
+        # was sent, so the backend may well have applied it.
+        return TIMED_OUT
     except Exception:
         return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {
+            "success": False,
+            "error": "O backend do Escritório devolveu uma resposta inválida.",
+        }
 
 
 def _http_error_text(exc) -> str:
@@ -449,7 +563,7 @@ def _http_error_text(exc) -> str:
     return text
 
 
-def _format_result(result, success_text: str) -> str:
+def _format_result(result, success_text: str, read_only: bool = False) -> str:
     """Traduz o corpo JSON de qualquer /api/hooks/cards/* para o texto que a
     tool devolve ao agente. `success: False` -> texto de erro de negócio
     (regra violada, permissão negada); `success: True` -> `success_text`;
@@ -461,7 +575,12 @@ def _format_result(result, success_text: str) -> str:
     Nas tools de consulta (ver_card/listar_cards) e no excluir_card, o
     `success_text` NÃO é uma frase fixa: o chamador o monta a partir do
     próprio payload (o card, a lista, a contagem de subcards) — é o payload
-    que interessa ao agente, não a confirmação."""
+    que interessa ao agente, não a confirmação.
+
+    `read_only` only changes the timeout text: a query is safe to repeat,
+    while a write that timed out may already have been applied."""
+    if result is TIMED_OUT:
+        return _READ_TIMEOUT_TEXT if read_only else _WRITE_TIMEOUT_TEXT
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is False:
@@ -478,6 +597,7 @@ def _handle_criar_card(arguments: dict) -> str:
         "status": arguments.get("status", "a_fazer"),
         "descricao": arguments.get("descricao"),
         "tipo": arguments.get("tipo"),
+        "prioridade": arguments.get("prioridade"),
         "parent_id": arguments.get("parent_id"),
         # Opcional (Tarefa 6): sub-projeto do mesmo cliente. Só entra no corpo
         # quando o agente informa — omitido -> backend usa o projeto da
@@ -486,11 +606,17 @@ def _handle_criar_card(arguments: dict) -> str:
     }
     result = _post_json(HOOK_CREATE_URL, body)
     card_id = result.get("card_id") if isinstance(result, dict) else None
-    success_text = (
-        "Card criado com sucesso (id {0}).".format(card_id)
-        if card_id is not None
-        else "Card criado com sucesso."
-    )
+    if isinstance(result, dict) and result.get("deduplicated"):
+        # The backend found this conversation's card with the same title made
+        # moments ago (usually a retry after a timeout) and returned it.
+        success_text = (
+            "Este card já tinha sido criado há pouco nesta conversa (id {0}); "
+            "nenhum card novo foi criado."
+        ).format(card_id)
+    elif card_id is not None:
+        success_text = "Card criado com sucesso (id {0}).".format(card_id)
+    else:
+        success_text = "Card criado com sucesso."
     return _format_result(result, success_text)
 
 
@@ -512,6 +638,7 @@ def _handle_editar_card(arguments: dict) -> str:
         "descricao": arguments.get("descricao"),
         "status": arguments.get("status"),
         "tipo": arguments.get("tipo"),
+        "prioridade": arguments.get("prioridade"),
     }
     result = _post_json(HOOK_UPDATE_URL, body)
     return _format_result(result, "Card editado com sucesso.")
@@ -544,7 +671,7 @@ def _handle_ver_card(arguments: dict) -> str:
         if card is not None
         else "Card não encontrado."
     )
-    return _format_result(result, success_text)
+    return _format_result(result, success_text, read_only=True)
 
 
 def _handle_listar_cards(arguments: dict) -> str:
@@ -568,7 +695,7 @@ def _handle_listar_cards(arguments: dict) -> str:
         # Lista vazia continua sendo sucesso (o backend devolve success=True
         # com cards=[]); _format_result só chega aqui nesse caso.
         success_text = "Nenhum card encontrado."
-    return _format_result(result, success_text)
+    return _format_result(result, success_text, read_only=True)
 
 
 def _handle_anexar_arquivo_card(arguments: dict) -> str:
@@ -585,6 +712,22 @@ def _handle_anexar_arquivo_card(arguments: dict) -> str:
         )
     else:
         success_text = "Arquivo anexado ao card."
+    return _format_result(result, success_text)
+
+
+def _handle_perguntar_card(arguments: dict) -> str:
+    body = {
+        "claude_session_id": os.environ.get("ESCRITORIO_CLAUDE_SESSION_ID", ""),
+        "card_id": arguments.get("card_id"),
+        "perguntas": arguments.get("perguntas"),
+    }
+    result = _post_json(HOOK_ASK_URL, body)
+    questions = result.get("questions") if isinstance(result, dict) else None
+    count = len(questions) if questions else 0
+    success_text = (
+        "{0} pergunta(s) registrada(s) no card {1}. Avise o usuário que elas "
+        "estão no card e aguarde; depois leia as respostas com ver_card."
+    ).format(count, arguments.get("card_id"))
     return _format_result(result, success_text)
 
 
@@ -614,6 +757,8 @@ def _handle_tools_call(request: dict) -> dict:
         text = _handle_listar_cards(arguments)
     elif tool_name == TOOL_ANEXAR_ARQUIVO_CARD["name"]:
         text = _handle_anexar_arquivo_card(arguments)
+    elif tool_name == TOOL_PERGUNTAR_CARD["name"]:
+        text = _handle_perguntar_card(arguments)
     else:
         text = "Tool desconhecida: {0}".format(tool_name)
 

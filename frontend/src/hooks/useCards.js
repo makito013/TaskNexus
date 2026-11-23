@@ -302,25 +302,41 @@ export function useCards(selectedProjectIds, doneSlug = null) {
   const updateCard = useCallback(async (cardId, payload) => {
     try {
       const updated = await api.updateCard(cardId, payload);
-      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
-        ...card,
-        titulo: updated.titulo,
-        descricao: updated.descricao,
-        status: updated.status,
-        tipo: updated.tipo,
-        prazo: updated.prazo,
-        ultima_atualizacao_por: updated.ultima_atualizacao_por,
-        atualizado_em: updated.atualizado_em,
-        // imagens/subcards/subcards_resumo propositalmente NÃO vêm de
-        // `updated` — ver nota no topo do arquivo sobre a resposta do PATCH
-        // sempre vir com esses campos vazios/null.
-      }), doneSlug));
+      setCards((prev) => {
+        const next = updateCardInTree(prev, cardId, (card) => ({
+          ...card,
+          projeto_id: updated.projeto_id,
+          // Subcards follow the parent's project (the backend moves them in
+          // the same write), so mirror that locally.
+          subcards: card.projeto_id !== updated.projeto_id && card.subcards
+            ? card.subcards.map((sub) => ({ ...sub, projeto_id: updated.projeto_id }))
+            : card.subcards,
+          titulo: updated.titulo,
+          descricao: updated.descricao,
+          status: updated.status,
+          tipo: updated.tipo,
+          prazo: updated.prazo,
+          prioridade: updated.prioridade,
+          ultima_atualizacao_por: updated.ultima_atualizacao_por,
+          atualizado_em: updated.atualizado_em,
+          // imagens/subcards/subcards_resumo propositalmente NÃO vêm de
+          // `updated` — ver nota no topo do arquivo sobre a resposta do PATCH
+          // sempre vir com esses campos vazios/null.
+        }), doneSlug);
+        // Moved to a project outside the active filter: it no longer belongs
+        // on this board (the next poll would drop it anyway, 5s later).
+        if (activeProjectIdsSet && updated.parent_id == null
+          && !activeProjectIdsSet.has(updated.projeto_id)) {
+          return next.filter((c) => c.id !== cardId);
+        }
+        return next;
+      });
       return updated;
     } catch (e) {
       alert('Falha ao atualizar card. Tente novamente.');
       throw e;
     }
-  }, [doneSlug]);
+  }, [doneSlug, activeProjectIdsSet]);
 
   // Drag-to-reposition (task #43, phase 3). DISTINCT from updateCard, and the
   // difference is not cosmetic:
@@ -454,6 +470,31 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     }
   }, [doneSlug]);
 
+  // Agent questions on a card. No alert() on answer failure: the questions
+  // section shows the error inline next to the answer that did not save
+  // (it autosaves on blur, so a modal alert mid-typing would be hostile).
+  const answerCardQuestion = useCallback(async (cardId, questionId, answer) => {
+    const saved = await api.answerCardQuestion(cardId, questionId, answer);
+    setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+      ...card,
+      questions: (card.questions || []).map((q) => (q.id === questionId ? saved : q)),
+    }), doneSlug));
+    return saved;
+  }, [doneSlug]);
+
+  const deleteCardQuestion = useCallback(async (cardId, questionId) => {
+    try {
+      await api.deleteCardQuestion(cardId, questionId);
+      setCards((prev) => updateCardInTree(prev, cardId, (card) => ({
+        ...card,
+        questions: (card.questions || []).filter((q) => q.id !== questionId),
+      }), doneSlug));
+    } catch (e) {
+      alert('Falha ao remover pergunta. Tente novamente.');
+      throw e;
+    }
+  }, [doneSlug]);
+
   // Leitura sob demanda (não é poll de fundo) — ver nota no topo do arquivo
   // sobre por que não tem alert() aqui: o erro propaga pro chamador
   // (ClearFinishedModal, Tarefa 25) decidir sua própria UI de erro.
@@ -494,6 +535,8 @@ export function useCards(selectedProjectIds, doneSlug = null) {
     deleteCardImage,
     uploadCardAttachment,
     deleteCardAttachment,
+    answerCardQuestion,
+    deleteCardQuestion,
     previewClearFinished,
     clearFinished,
   };

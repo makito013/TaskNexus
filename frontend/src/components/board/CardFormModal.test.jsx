@@ -284,6 +284,7 @@ describe('CardFormModal — create payload (contra-test for the dirty tracking)'
       descricao: '',
       tipo: null,
       prazo: null,
+      prioridade: null,
       cliente_id: 'escritorio-agentes',
     });
   });
@@ -341,16 +342,31 @@ describe('CardFormModal — mode="edit"', () => {
     expect(screen.getByLabelText('Título').value).toBe('Card existente');
   });
 
-  it('shows Projeto as read-only TEXT, never as a select; the client lives only in the header', () => {
-    renderEdit();
+  it('shows Cliente and Projeto as editable selects pre-filled from the card', () => {
+    renderEdit({
+      projetos: PROJETOS_COM_SUBPROJETOS,
+      card: makeCard({ projeto_id: 'cliente_projeto_1/subprojeto_1' }),
+    });
+    expect(screen.getByLabelText('Cliente').value).toBe('cliente_projeto_1');
+    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('cliente_projeto_1/subprojeto_1');
+  });
+
+  it('pre-fills a client-only card with no specific project', () => {
+    renderEdit({ projetos: PROJETOS_COM_SUBPROJETOS, card: makeCard({ projeto_id: 'cliente_projeto_1' }) });
+    expect(screen.getByLabelText('Cliente').value).toBe('cliente_projeto_1');
+    expect(screen.getByLabelText('Projeto (opcional)').value).toBe('');
+  });
+
+  it('keeps the current client selectable even when it is not in the projetos list', () => {
+    renderEdit({ card: makeCard({ projeto_id: 'cliente-sumido/proj-x' }) });
+    expect(screen.getByLabelText('Cliente').value).toBe('cliente-sumido');
+  });
+
+  it('keeps a subcard project read-only (subcards follow the parent)', () => {
+    renderEdit({ card: makeCard({ parent_id: 3 }) });
+    expect(screen.queryByLabelText('Cliente')).toBeNull();
     const projeto = screen.getByText('Projeto');
     expect(projeto.tagName).not.toBe('LABEL');
-    expect(screen.queryByLabelText('Cliente')).toBeNull();
-    expect(screen.queryByLabelText('Projeto (opcional)')).toBeNull();
-    // The client name appears once: beside the id in the header (where the
-    // plan pins it, so it survives the 720px stack). The rail's Cliente row
-    // was removed — the header is the single source.
-    expect(screen.getAllByText('Escritório de Agentes').length).toBe(1);
   });
 
   it('shows the Imagens section and the formatted "Criado em"', () => {
@@ -431,6 +447,80 @@ describe('CardFormModal — dirty tracking (edit only)', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0][0]).toEqual({ id: 10, status: 'feito' });
+  });
+});
+
+describe('CardFormModal — prioridade', () => {
+  it('lists the levels highest first, plus "Sem prioridade"', () => {
+    renderCreate();
+    const select = screen.getByLabelText('Prioridade');
+    expect([...select.options].map((o) => o.textContent))
+      .toEqual(['Sem prioridade', 'Muito alta', 'Alta', 'Média', 'Baixa', 'Muito baixa']);
+  });
+
+  it('sends the chosen prioridade on create and shows its icon', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderCreate({ onSubmit });
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Novo' } });
+    fireEvent.change(screen.getByLabelText('Prioridade'), { target: { value: 'alta' } });
+    expect(screen.getByRole('img', { name: 'Prioridade: Alta' })).not.toBeNull();
+    fireEvent.click(screen.getByText('Criar Card'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].prioridade).toBe('alta');
+  });
+
+  it('edit: pre-fills it, and changing ONLY it sends only prioridade', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit, card: makeCard({ prioridade: 'baixa' }) });
+    expect(screen.getByLabelText('Prioridade').value).toBe('baixa');
+
+    fireEvent.change(screen.getByLabelText('Prioridade'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toEqual({ id: 10, prioridade: '' });
+  });
+});
+
+describe('CardFormModal — moving a card to another client/project (edit)', () => {
+  it('changing the client sends ONLY projeto_id = the new client id', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit, projetos: PROJETOS_COM_SUBPROJETOS, card: makeCard({ projeto_id: 'cliente_projeto_1' }) });
+
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'podesubir' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toEqual({ id: 10, projeto_id: 'podesubir' });
+  });
+
+  it('choosing a subproject sends its id as projeto_id', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderEdit({ onSubmit, projetos: PROJETOS_COM_SUBPROJETOS, card: makeCard({ projeto_id: 'podesubir' }) });
+
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('Projeto (opcional)'), {
+      target: { value: 'cliente_projeto_1/subprojeto_1' },
+    });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toEqual({ id: 10, projeto_id: 'cliente_projeto_1/subprojeto_1' });
+  });
+
+  it('going back to the original client/project sends no projeto_id', () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    renderEdit({ onSubmit, onClose, projetos: PROJETOS_COM_SUBPROJETOS, card: makeCard({ projeto_id: 'podesubir' }) });
+
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'cliente_projeto_1' } });
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'podesubir' } });
+    fireEvent.click(screen.getByText('Salvar'));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });
 

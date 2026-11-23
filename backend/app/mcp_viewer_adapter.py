@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import ssl
 import sys
 import urllib.error
@@ -56,9 +57,32 @@ _SSL_CTX = ssl.create_default_context()
 _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
 
-# O backend resolve projeto, caminho, banco e WebSocket antes de responder;
-# 5 s cobre uma varredura de projetos lenta sem deixar o agente pendurado.
-_TIMEOUT_SECONDS = 5
+# Seconds each hook request may take: ESCRITORIO_HOOK_TIMEOUT, default 30.0
+# s, same knob and rules as mcp_card_adapter.py (card #213). Invalid or <= 0
+# falls back to the default.
+DEFAULT_HOOK_TIMEOUT_SECONDS = 30.0
+
+
+def _read_hook_timeout() -> float:
+    try:
+        value = float(os.environ.get("ESCRITORIO_HOOK_TIMEOUT", ""))
+    except ValueError:
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    if value != value or value <= 0:  # NaN or non-positive
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    return value
+
+
+HOOK_TIMEOUT_SECONDS = _read_hook_timeout()
+
+# `_post_json` result when the request went out but no answer came back in
+# time: the backend may have applied it, so it must not read as "failed".
+TIMED_OUT = object()
+
+_TIMEOUT_TEXT = (
+    "O backend do Escritório não respondeu a tempo. A ação PODE ter sido "
+    "aplicada; confira antes de repetir."
+)
 
 _CONNECTIVITY_ERROR_TEXT = "Não foi possível falar com o TaskNexus agora."
 
@@ -190,13 +214,19 @@ def _post_json(url: str, body: dict):
     )
     ctx = _SSL_CTX if url.startswith("https://") else None
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=HOOK_TIMEOUT_SECONDS, context=ctx) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         try:
             raw = exc.read()
         except Exception:
             return None
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+            return TIMED_OUT
+        return None
+    except (socket.timeout, TimeoutError):
+        return TIMED_OUT
     except Exception:
         return None
     try:
@@ -212,6 +242,8 @@ def _format_result(result) -> str:
     O caminho mostrado é o do item gravado (relativo e normalizado), não o que
     o agente mandou: se ele passou um caminho absoluto, a resposta confirma o
     arquivo que de fato abriu."""
+    if result is TIMED_OUT:
+        return _TIMEOUT_TEXT
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is not True:
@@ -247,6 +279,8 @@ def _format_publish_result(result) -> str:
 
     O lugar na galeria é escrito como a tela mostra (`Artefatos › cliente /
     projeto`), para o agente poder dizer ao usuário onde achar o arquivo."""
+    if result is TIMED_OUT:
+        return _TIMEOUT_TEXT
     if result is None:
         return _CONNECTIVITY_ERROR_TEXT
     if result.get("success") is not True:

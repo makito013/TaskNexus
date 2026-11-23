@@ -89,6 +89,9 @@ const styles = {
   }),
 };
 
+// Dragging stays enabled in a SORTED view too (BoardViewControls): there,
+// BoardV2's drop handler only changes the card's column, since the on-screen
+// order is the sort and not the stored manual order.
 export function SortableBoardCard({ cardId, titulo, children }) {
   const {
     // `attributes` is deliberately NOT destructured — same wholesale drop as
