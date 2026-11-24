@@ -258,12 +258,14 @@ class ChatService:
         stored_id = await self.store.get(key)
         # A reset gave the conversation a new id no transcript knows yet: only what came after
         # the last reset says whether the CLI has this id (a connect with no message leaves none).
-        # A terminal turn read back after the reset proves it too: the terminal created the id.
+        # A terminal turn read back after the reset proves it too: the terminal created the id. So
+        # does a failed read (R7): it does not prove the terminal has no conversation, and a wrong
+        # `--resume` ends in `resume_failed` (recoverable), a wrong `--session-id` in a loop.
         was_reset = await self.chat_store.has_event_kind(key, ("session.reset",))
         started_before = (
             (row["origin"] == "imported_from_pty" and not was_reset)
             or await self.chat_store.started_since_last_reset(key, ("session.started", "session.resumed"))
-            or await self.chat_store.imported_since_last_reset(key)
+            or await self.chat_store.transcript_seen_since_last_reset(key)
         )
         resume = session_id = None
         if started_before and stored_id:
@@ -532,6 +534,17 @@ class ChatService:
         await self.hub(key).publish("session.reset", {})
         await self.chat_store.update_chat_session(key, status="new", last_error=None)
         return True
+
+    async def note_terminal_reset(self, key: str) -> None:
+        """A reset done in the terminal of a key that has chat data: the chat log gets its
+        `session.reset` too, so what came before no longer counts as this conversation. The status
+        stays `switched_to_pty` and the manager is not touched. It never raises."""
+        try:
+            if await self.chat_store.get_chat_session(key) is not None:
+                await self.hub(key).publish("session.reset", {})
+        except Exception:
+            # The terminal reset must go on (it zeroes the stored id); the chat log just misses the mark.
+            logger.warning("note_terminal_reset failed for %s", key, exc_info=True)
 
     async def switch_engine(self, key: str, target: str, confirm: bool = False) -> dict:
         return await self._engine_switcher.switch(key, target, confirm)

@@ -102,3 +102,5 @@ backend/board_attachments/
 # Chat rollback archives (backend/scripts/revert_chat_sessions.py): raw event and
 # permission payloads, never commit them
 backend/sessions.db.chat-archive-*
+# Any other name a person gives the archive (`--archive chat-archive.json`)
+chat-archive*.json

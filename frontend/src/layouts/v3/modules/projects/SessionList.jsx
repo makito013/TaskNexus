@@ -1,9 +1,13 @@
 import Chip from '../../components/Chip/Chip.jsx'
+import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
+import { chatPath } from '../../sessions/ProjectsSessionsProvider.jsx'
 import { StateChip, agentInitials } from './AgentCard.jsx'
 
 // One block of the Sessões tab ("Ativas" / "Salvas (retomáveis)"): an ARIA table
-// with a row per session. Read-only - opening or resuming arrives with the chat.
+// with a row per session. The title of a session is a link that opens it on the chat route (the conversation
+// for a Claude chat, the terminal view for any other session).
 export default function SessionList({ id, title, rows }) {
+  const { openChat } = useProjectsSessions()
   return (
     <section className="v3-sessions" aria-labelledby={id}>
       <h2 id={id} className="v3-sessions__title v3-type-body">
@@ -20,7 +24,7 @@ export default function SessionList({ id, title, rows }) {
         </div>
         {rows.map((row) => (
           <div role="row" key={row.key} className="v3-sessions__row">
-            <div role="cell" className="v3-sessions__cell-title v3-type-body-sm"><b>{row.label}</b>{row.archived && <> <Chip>arquivado</Chip></>}</div>
+            <div role="cell" className="v3-sessions__cell-title v3-type-body-sm"><SessionTitle row={row} openChat={openChat} />{row.archived && <> <Chip>arquivado</Chip></>}</div>
             <div role="cell" className="v3-type-label">{row.location}</div>
             <div role="cell" className="v3-sessions__agent v3-type-body-sm">
               <span className="v3-agent-card__avatar v3-agent-card__avatar--small" aria-hidden="true">
@@ -36,4 +40,15 @@ export default function SessionList({ id, title, rows }) {
       </div>
     </section>
   )
+}
+
+// Same target as a click on the link with the mouse, without reloading the page; the href keeps
+// "open in a new tab" and copy-link working.
+function SessionTitle({ row, openChat }) {
+  const onClick = (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    openChat(row.key)
+  }
+  return <a href={chatPath(row.key)} className="v3-sessions__link" onClick={onClick}><b>{row.label}</b></a>
 }

@@ -1,4 +1,5 @@
 import { PET_NAMES } from './components/Pet/petShapes.js'
+import { isSafeSessionKey } from '../../services/sessionKey.js'
 
 export { PET_NAMES }
 
@@ -72,6 +73,38 @@ export function moduleById(id) {
 export function moduleForPath(pathname) {
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
   return MODULES.find((module) => module.path === normalized) || null
+}
+
+const CHAT_PREFIX = '/projects/chat/'
+
+// Route of a pathname: { moduleId, view: 'screen' | 'chat', sessionKey } or null.
+//   /projects/chat/<encodeURIComponent(session_key)>  -> the chat of that session (module `projects`);
+//                                                        the key is decoded once; an empty or
+//                                                        malformed key is no route
+//   anything else                                     -> moduleForPath (a module's own screen)
+export function routeForPath(pathname) {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  if (normalized.startsWith(CHAT_PREFIX) || normalized === CHAT_PREFIX.slice(0, -1)) {
+    const encoded = normalized.slice(CHAT_PREFIX.length)
+    let sessionKey
+    try {
+      sessionKey = decodeURIComponent(encoded)
+    } catch {
+      return null
+    }
+    // A key the app could never have made (a `..` segment, `?`, `#`...) is no route: nothing is requested for it.
+    return isSafeSessionKey(sessionKey) ? { moduleId: 'projects', view: 'chat', sessionKey } : null
+  }
+  const module = moduleForPath(pathname)
+  return module ? { moduleId: module.id, view: 'screen', sessionKey: null } : null
+}
+
+// The session key a push notification asks for: the service worker opens `/?session=<key>` (shared with
+// the V2, it does not change). Only the root path carries it; anything else (or an empty value) is null.
+export function pushSessionKey(pathname, search) {
+  if (pathname !== '/') return null
+  const key = new URLSearchParams(search || '').get('session')
+  return isSafeSessionKey(key) ? key : null
 }
 
 // Every module but the active one, in rail order.

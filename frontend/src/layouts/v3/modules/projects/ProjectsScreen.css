@@ -293,11 +293,6 @@
   align-items: center;
   gap: 10px;
 }
-.v3-agent-card__note {
-  flex: 1;
-  min-width: 120px;
-  color: var(--v3-ink-muted);
-}
 
 /* session state chips that the shared Chip accents do not cover */
 .v3-projects .v3-chip--state.v3-projects-state--stopped {

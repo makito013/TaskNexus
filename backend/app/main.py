@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import json
 import mimetypes
 import socket
@@ -12,7 +13,7 @@ import uvicorn
 from typing import Literal, TypedDict
 from contextlib import asynccontextmanager, contextmanager
 from fastapi import (
-    FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
+    Depends, FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException,
     Query, UploadFile, File,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,7 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 from app.conversation_store import ConversationStore
 from app.chat.availability import CliResolver, sdk_status, warn_if_session_env_inherited
-from app.chat.api import allowed_origins_from_env, create_chat_router
+from app.chat.api import allowed_hosts_from_env, allowed_origins_from_env, create_chat_router, create_request_guard
 from app.chat.engine import SpawnFailed
 from app.chat.manager import ChatManager
 from app.chat.sdk_engine import AgentSdkEngine
@@ -874,6 +875,73 @@ _RESUME_FAILURE_SIGNATURES: dict[str, dict] = {
     # `if resume and signature:` below skips the probe entirely and goes
     # straight to full-duplex streaming.
 }
+
+
+# A narrow PTY (ConPTY at cols 43/60) re-renders text with cursor movement
+# instead of literal spaces (`No\x1b[1Cconversation\x1b[1Cfound...`) and may
+# wrap in the middle of the marker, so a plain substring search misses it.
+# Escape sequences are matched in full only; an incomplete one at the end of
+# the buffer is left raw and resolves once the next chunk completes it.
+_PTY_ESCAPE_RE = re.compile(
+    rb"\x1b\[(?P<params>[0-?]*)[ -/]*(?P<final>[@-~])"  # CSI
+    rb"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC (BEL or ST terminated)
+    rb"|\x1b[@-Z\\^_]"  # other two-byte escapes
+)
+_PTY_MAX_CURSOR_FORWARD = 512
+# Digits beyond this are treated as "huge" without calling int() (Python caps
+# int() conversion at 4300 digits and raises ValueError past it).
+_PTY_MAX_PARAM_DIGITS = 4
+# The resume probe only rescans the newest chunk plus this many bytes of the
+# bytes before it. Largest raw marker is ~40 chars; even with a 20-byte escape
+# or wrap after every character that is under 1 KiB, so 4 KiB leaves 4x
+# headroom and also covers an escape sequence split at the chunk boundary.
+_RESUME_PROBE_OVERLAP = 4096
+_ASCII_WHITESPACE_RE = re.compile(rb"\s+")
+
+
+def _pty_escape_replacement(match: "re.Match[bytes]") -> bytes:
+    if match.group("final") == b"C":
+        params = match.group("params")
+        if len(params) > _PTY_MAX_PARAM_DIGITS and params.isdigit():
+            count = _PTY_MAX_CURSOR_FORWARD
+        else:
+            count = int(params) if params.isdigit() else 1
+        return b" " * min(max(count, 1), _PTY_MAX_CURSOR_FORWARD)
+    return b""
+
+
+def _normalize_pty_output(data: bytes) -> bytes:
+    """Turn raw PTY bytes into plain text for marker matching.
+
+    Cursor-forward (`ESC[<n>C`) becomes spaces, every other CSI/OSC/escape
+    sequence is dropped, and CR/LF (inserted by terminal wrapping) are removed.
+    """
+    text = _PTY_ESCAPE_RE.sub(_pty_escape_replacement, data)
+    return text.replace(b"\r", b"").replace(b"\n", b"")
+
+
+def _resume_probe_window(accumulated: bytes, chunk: bytes) -> bytes:
+    """Tail of `accumulated` the resume probe must rescan after `chunk`.
+
+    Bounded by len(chunk) + _RESUME_PROBE_OVERLAP so the per-chunk cost does
+    not grow with the total output; the overlap keeps a marker or escape
+    sequence split across two chunks detectable.
+    """
+    return accumulated[-(len(chunk) + _RESUME_PROBE_OVERLAP):]
+
+
+def _output_contains_marker(data: bytes, markers: tuple[bytes, ...]) -> bool:
+    """True if any marker appears in `data` once PTY rendering noise is gone.
+
+    Whitespace is ignored on both sides: a wrap can land exactly where a space
+    belongs, and the markers are distinctive enough that this stays safe.
+    """
+    if not markers:
+        return False
+    squashed = _ASCII_WHITESPACE_RE.sub(b"", _normalize_pty_output(data))
+    return any(
+        _ASCII_WHITESPACE_RE.sub(b"", marker) in squashed for marker in markers
+    )
 
 
 class _McpServerSpec(TypedDict):
@@ -1906,7 +1974,14 @@ async def _is_chat_key(session_key: str) -> bool:
     return await store.get_engine(session_key) == "chat" or chat_manager.get(session_key) is not None
 
 
-@app.post("/api/sessions/{session_key:path}/terminate")
+# Stage 10 (R1): the two V2 routes that reach into the chat get the chat's host + origin guard. The V2
+# client is same-origin and a non-browser client sends no Origin, so neither is affected.
+_chat_allowed_origins = allowed_origins_from_env()
+_chat_allowed_hosts = allowed_hosts_from_env()
+_chat_request_guard = create_request_guard(_chat_allowed_origins, _chat_allowed_hosts)
+
+
+@app.post("/api/sessions/{session_key:path}/terminate", dependencies=[Depends(_chat_request_guard)])
 async def terminate_session(session_key: str):
     """Terminates a PTY session (if one is running) and clears its stored
     session row. Returns 404 only when the session_key is unknown to BOTH the
@@ -1955,7 +2030,7 @@ async def terminate_session(session_key: str):
     return {"status": "terminated", "session_key": session_key}
 
 
-@app.post("/api/sessions/{session_key:path}/reset")
+@app.post("/api/sessions/{session_key:path}/reset", dependencies=[Depends(_chat_request_guard)])
 async def reset_session(session_key: str):
     """Bug 2 fix: confirmação explícita do usuário (botão "Iniciar nova
     conversa" no overlay de resume_failed) para descartar o claude_session_id
@@ -1974,6 +2049,9 @@ async def reset_session(session_key: str):
         raise HTTPException(status_code=404, detail=f"No active session: {session_key}")
     if await _is_chat_key(session_key):
         await chat_service.reset(session_key)
+    elif await store.was_chat(session_key):
+        # A chat key on the terminal: the chat log learns of the reset (no `chat_sessions` row, no write).
+        await chat_service.note_terminal_reset(session_key)
     # Idempotente e seguro mesmo se o processo já morreu sozinho (caso comum:
     # o resume_failed detectado acima já deixou o proc morto, sem removê-lo
     # de pty_manager — terminate() aqui só limpa a entrada).
@@ -3385,7 +3463,7 @@ chat_service = ChatService(
     sdk_status=sdk_status,
     config=chat_config,
 )
-app.include_router(create_chat_router(chat_service, allowed_origins_from_env()))
+app.include_router(create_chat_router(chat_service, _chat_allowed_origins, _chat_allowed_hosts))
 
 
 @app.websocket("/ws/pty/{session_key:path}")
@@ -3531,7 +3609,9 @@ async def pty_endpoint(websocket: WebSocket, session_key: str):
                         break
                     accumulated += chunk
                     await websocket.send_bytes(chunk)
-                    if any(marker in accumulated for marker in markers):
+                    if _output_contains_marker(
+                        _resume_probe_window(accumulated, chunk), markers
+                    ):
                         resume_failed = True
                         break
 

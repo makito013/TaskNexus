@@ -133,6 +133,32 @@ se ele herdar `CLAUDECODE` ou `CLAUDE_CODE_CHILD_SESSION` (iniciado de dentro de
 uma sessão do Claude Code), o boot avisa que os transcripts podem ficar
 desligados.
 
+### Quem pode falar com o chat (`Host` e `Origin`)
+
+O backend não tem login, e o chat aprova a execução de ferramentas. Por isso toda
+rota do chat (leituras incluídas), o WebSocket `/ws/chat/...` e as rotas
+`POST /api/sessions/{key}/terminate` e `/reset` conferem, **antes de qualquer
+outra coisa**, o cabeçalho `Host` da requisição (e depois o `Origin`). Isso fecha
+o DNS rebinding: a página hostil controla `Host` e `Origin` ao mesmo tempo, então
+só uma lista de hosts aceitos a barra. Respondem `403` (`host_not_allowed` ou
+`origin_not_allowed`) ou fecham o socket com `4403`.
+
+Passam sem configurar nada: IP literal (`127.0.0.1`, `[::1]`, o IP da tailnet),
+nome sem ponto (`localhost`, nome NetBIOS do PC) e qualquer `*.ts.net` (o nome
+MagicDNS do certificado do Tailscale). Isso cobre a `443`, o canal de loopback
+`http://127.0.0.1:8765` e os modos `-NoTls`/`-Port` por IP.
+
+Para servir o app sob **outro domínio** (um nome com ponto fora de `ts.net`),
+liste-o na variável de ambiente do backend:
+
+- `CHAT_ALLOWED_HOSTS`: hosts aceitos além dos acima, separados por vírgula
+  (`tn.exemplo.com,outro.exemplo.com`). Porta e ponto final são ignorados.
+- `CHAT_ALLOWED_ORIGINS`: origens completas aceitas (por exemplo o servidor de
+  desenvolvimento do Vite, `http://localhost:5173`); o host de cada uma também
+  passa a ser aceito.
+
+As duas são lidas na subida do backend: reinicie depois de mudar.
+
 ## Reverter o chat da V3
 
 Use quando for voltar o código para uma versão sem o chat **depois** de o chat ter

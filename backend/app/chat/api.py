@@ -5,13 +5,22 @@ Origin check (ADR-49): the backend has no auth and CORS `*`, and the chat approv
 execution, so a page of another site open in the user's browser must not be able to send or
 decide. A request with no `Origin` (a non-browser client) or with the same host:port as the
 request, or listed in `CHAT_ALLOWED_ORIGINS`, passes; anything else is 403 / close 4403.
+
+Host check (stage 10, R1): comparing `Origin` with the request's own `Host` proves nothing under DNS
+rebinding (the attacker controls both), and a same-origin `GET` carries no `Origin` at all. So the
+`Host` is checked FIRST, always, on every route of the chat (reads included) and on the socket: only an
+IP literal, a dotless name (`localhost`, a NetBIOS name), a `*.ts.net` name or a host of
+`CHAT_ALLOWED_HOSTS` / `CHAT_ALLOWED_ORIGINS` passes. A rebinding page needs a public DNS name, which
+always has a dot and is never under `ts.net`. Then the `Origin` check above runs.
 """
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -44,6 +53,74 @@ def origin_allowed(origin: str | None, host: str | None, extra: list[str]) -> bo
         return True
     parsed = urlparse(origin)
     return bool(host) and parsed.netloc.lower() == host.lower()
+
+
+_PORT = re.compile(r"\d{1,5}")
+_DOTLESS_NAME = re.compile(r"[a-z0-9_-]+")
+_TAILNET_NAME = re.compile(r"[a-z0-9_.-]+\.ts\.net")
+
+
+def host_name(host: str | None) -> str:
+    """The name of a `Host` header (or of a configured host) without port, brackets and trailing dot,
+    lower-cased; `""` when empty or malformed (a malformed host is never allowed)."""
+    value = (host or "").strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        rest = value[end + 1:] if end > 0 else "x"
+        if end < 1 or (rest and not (rest.startswith(":") and _PORT.fullmatch(rest[1:]))):
+            return ""
+        value = value[1:end]
+    elif value.count(":") == 1:
+        value, port = value.split(":")
+        if port and not _PORT.fullmatch(port):
+            return ""
+    return value.rstrip(".")
+
+
+def allowed_hosts_from_env(env=os.environ) -> list[str]:
+    return [name for item in (env.get("CHAT_ALLOWED_HOSTS") or "").split(",") if (name := host_name(item))]
+
+
+def host_allowed(host: str | None, extra_hosts: list[str] | tuple[str, ...] = ()) -> bool:
+    name = host_name(host)
+    if not name:
+        return False
+    if name in extra_hosts:
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return bool(_DOTLESS_NAME.fullmatch(name) or _TAILNET_NAME.fullmatch(name))
+
+
+def request_refusal(origin: str | None, host: str | None, extra_origins: list[str], extra_hosts: list[str]) -> str | None:
+    """The error code that refuses a request (host first, then origin), or None when it may proceed."""
+    if not host_allowed(host, extra_hosts):
+        return "host_not_allowed"
+    if not origin_allowed(origin, host, extra_origins):
+        return "origin_not_allowed"
+    return None
+
+
+def create_request_guard(allowed_origins: list[str] | None = None, allowed_hosts: list[str] | None = None):
+    """FastAPI dependency that refuses an untrusted request with 403. Shared by the chat router and by
+    the two V2 routes that now reach the chat (`/terminate`, `/reset`)."""
+    origins = allowed_origins if allowed_origins is not None else allowed_origins_from_env()
+    hosts = _hosts_with_origins(allowed_hosts, origins)
+
+    async def require_trusted_request(request: Request) -> None:
+        code = request_refusal(request.headers.get("origin"), request.headers.get("host"), origins, hosts)
+        if code:
+            raise HTTPException(403, {"code": code, "message": code.replace("_", " ")})
+
+    return require_trusted_request
+
+
+def _hosts_with_origins(allowed_hosts: list[str] | None, origins: list[str]) -> list[str]:
+    hosts = allowed_hosts if allowed_hosts is not None else allowed_hosts_from_env()
+    return [*hosts, *(name for origin in origins if (name := host_name(urlparse(origin).netloc)))]
 
 
 # The HTTP status of every code of the contract (any other code is a plain 400). `spawn_failed` and
@@ -94,13 +171,14 @@ class AllowlistBody(BaseModel):
     allowlist: list[str]
 
 
-def create_chat_router(service: ChatService, allowed_origins: list[str] | None = None) -> APIRouter:
-    router = APIRouter()
+def create_chat_router(
+    service: ChatService, allowed_origins: list[str] | None = None, allowed_hosts: list[str] | None = None
+) -> APIRouter:
     extra_origins = allowed_origins if allowed_origins is not None else allowed_origins_from_env()
-
-    async def require_origin(request: Request) -> None:
-        if not origin_allowed(request.headers.get("origin"), request.headers.get("host"), extra_origins):
-            raise HTTPException(403, {"code": "origin_not_allowed", "message": "origin not allowed"})
+    extra_hosts = _hosts_with_origins(allowed_hosts, extra_origins)
+    # Every HTTP route of the chat, reads included, goes through the guard (stage 10, R1).
+    router = APIRouter(dependencies=[Depends(create_request_guard(extra_origins, allowed_hosts))])
+    ws_router = APIRouter()  # a socket cannot answer 403 before accept: it checks inline and closes 4403
 
     async def guarded(call):
         try:
@@ -140,53 +218,53 @@ def create_chat_router(service: ChatService, allowed_origins: list[str] | None =
 
     # -- writes (Origin checked) ----------------------------------------------------------------------
 
-    @router.post("/api/chat/sessions", status_code=201, dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/sessions", status_code=201)
     async def create_chat(body: CreateChatBody):
         return await guarded(service.create(
             body.project_ref, body.agent_id, body.model, body.permission_mode, body.first_message
         ))
 
-    @router.post("/api/chat/sessions/{session_key:path}/open", dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/sessions/{session_key:path}/open")
     async def open_chat(session_key: str):
         return await guarded(service.open(session_key))
 
-    @router.post("/api/chat/sessions/{session_key:path}/close", dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/sessions/{session_key:path}/close")
     async def close_chat(session_key: str):
         return await guarded(service.close(session_key))
 
-    @router.post("/api/chat/sessions/{session_key:path}/switch-engine", dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/sessions/{session_key:path}/switch-engine")
     async def switch_engine(session_key: str, body: SwitchEngineBody):
         return await guarded(service.switch_engine(session_key, body.engine, body.confirm))
 
-    @router.post("/api/chat/permissions/{permission_id}/decide", dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/permissions/{permission_id}/decide")
     async def decide_permission(permission_id: str, body: DecideBody):
         return await guarded(service.decide(
             permission_id, behavior=body.behavior, scope=body.scope, message=body.message,
             interrupt=body.interrupt, answers=body.answers, by="rest",
         ))
 
-    @router.put("/api/chat/commands", dependencies=[Depends(require_origin)])
+    @router.put("/api/chat/commands")
     async def put_chat_commands(body: dict = Body(...)):
         return await guarded(service.put_commands(body.get("commands")))
 
-    @router.put("/api/chat/models", dependencies=[Depends(require_origin)])
+    @router.put("/api/chat/models")
     async def put_chat_models(body: dict = Body(...)):
         return await guarded(service.put_models(body.get("models")))
 
-    @router.put("/api/chat/agents/{agent_id}/connectors", dependencies=[Depends(require_origin)])
+    @router.put("/api/chat/agents/{agent_id}/connectors")
     async def put_connectors(agent_id: str, body: AllowlistBody):
         return await guarded(service.put_connectors(agent_id, body.allowlist))
 
-    @router.post("/api/chat/agents/{agent_id}/connectors/refresh", dependencies=[Depends(require_origin)])
+    @router.post("/api/chat/agents/{agent_id}/connectors/refresh")
     async def refresh_connectors(agent_id: str):
         return await guarded(service.refresh_connectors(agent_id))
 
     # -- the WebSocket ----------------------------------------------------------------------------------
 
-    @router.websocket("/ws/chat/{session_key:path}")
+    @ws_router.websocket("/ws/chat/{session_key:path}")
     async def chat_socket(websocket: WebSocket, session_key: str):
         await websocket.accept()  # accepted first so the close codes below reach the browser
-        if not origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host"), extra_origins):
+        if request_refusal(websocket.headers.get("origin"), websocket.headers.get("host"), extra_origins, extra_hosts):
             await websocket.close(code=WS_CLOSE_ORIGIN)
             return
         try:
@@ -320,4 +398,7 @@ def create_chat_router(service: ChatService, allowed_origins: list[str] | None =
             except Exception:  # noqa: BLE001 - already closed by the peer
                 pass
 
-    return router
+    root = APIRouter()
+    root.include_router(router)
+    root.include_router(ws_router)
+    return root

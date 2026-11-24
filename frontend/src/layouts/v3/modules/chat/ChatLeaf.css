@@ -1,0 +1,70 @@
+/*
+ * Leaf parts of the chat that rotate or slide: the chevron of a tool chip, the spinners and the thumb of a connector switch. They are the
+ * ONLY place of the chat that declares a rotation, so this file is NOT in the guarded chain of the
+ * screen (a rotation on an ancestor of fixed content would shift it). Only leaf components import
+ * it (ToolChip, StatusBanner, ConnectorsDialog); no container ever does. With reduced motion the chevron swaps
+ * without a transition and the spinners become static.
+ */
+.v3-chat-chip__chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--v3-ink-muted);
+  border-bottom: 2px solid var(--v3-ink-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-chat-chip[open] > .v3-chat-chip__summary .v3-chat-chip__chevron {
+  transform: rotate(45deg);
+}
+
+.v3-chat-chip__spinner,
+.v3-chat-banner__spinner {
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--v3-radius-pill);
+  animation: v3-chat-spin 900ms linear infinite;
+}
+.v3-chat-chip__spinner {
+  width: 10px;
+  height: 10px;
+  margin-right: var(--v3-space-1);
+}
+.v3-chat-banner__spinner {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+}
+@keyframes v3-chat-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The thumb of a connector switch (ConnectorsDialog): a 18px dot that slides over the 48x24 track. */
+.v3-chat-switch-btn__thumb {
+  position: absolute;
+  top: 13px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface);
+  transition: transform var(--v3-dur-fast) var(--v3-ease-out);
+}
+.v3-chat-switch-btn[aria-checked="true"] .v3-chat-switch-btn__thumb {
+  transform: translateX(24px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-chat-switch-btn__thumb {
+    transition: none;
+  }
+  .v3-chat-chip__chevron {
+    transition: none;
+  }
+  .v3-chat-chip__spinner,
+  .v3-chat-banner__spinner {
+    animation: none;
+  }
+}

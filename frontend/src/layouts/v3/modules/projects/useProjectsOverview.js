@@ -17,6 +17,8 @@ const EMPTY_STATIC = {
   errors: { workspaces: null, agents: null, cards: null, columns: null },
   loaded: false,
 }
+// Chat sessions the Projects screen adds to the V2 ones (see ProjectsSessionsProvider.projectsLive).
+const NO_EXTRA_LIVE = { active: {}, persisted: {} }
 const EMPTY_LIVE = { active: null, persisted: null, activeError: null, persistedError: null, loaded: false }
 
 // Composes the read APIs of the screen. READ-ONLY by construction: nothing here
@@ -28,7 +30,19 @@ const EMPTY_LIVE = { active: null, persisted: null, activeError: null, persisted
 //                       tab is hidden, immediate tick when it becomes visible
 // Each live source keeps its last known value when a tick fails; `active ===
 // null` (never loaded) is "live state unavailable", never "nothing is running".
-export function useProjectsOverview({ workspaceKey = '' } = {}) {
+//   extraLive (optional): { active, persisted } of chat sessions in the V2 shape, merged in the two
+//   view models only. Empty (the default) hands the original objects through untouched; no request.
+function mergeLive(base, extra) {
+  if (!extra || Object.keys(extra).length === 0) return base
+  if (base == null) return base // never loaded: "live state unavailable" stays so
+  return { ...base, ...extra }
+}
+function mergePersisted(base, extra) {
+  if (!extra || Object.keys(extra).length === 0) return base
+  return { ...(base ?? {}), ...extra }
+}
+
+export function useProjectsOverview({ workspaceKey = '', extraLive = NO_EXTRA_LIVE } = {}) {
   const [stat, setStat] = useState(EMPTY_STATIC)
   const [live, setLive] = useState(EMPTY_LIVE)
   const mountedRef = useRef(true)
@@ -110,15 +124,25 @@ export function useProjectsOverview({ workspaceKey = '' } = {}) {
   )
   const board = useMemo(
     () => (registry
-      ? buildAgentBoard({ registry, agents: stat.agents, active: live.active, persisted: live.persisted })
+      ? buildAgentBoard({
+        registry,
+        agents: stat.agents,
+        active: mergeLive(live.active, extraLive.active),
+        persisted: mergePersisted(live.persisted, extraLive.persisted),
+      })
       : null),
-    [registry, stat.agents, live.active, live.persisted],
+    [registry, stat.agents, live.active, live.persisted, extraLive],
   )
   const sessions = useMemo(
     () => (registry
-      ? listSessions({ registry, agents: stat.agents, active: live.active, persisted: live.persisted })
+      ? listSessions({
+        registry,
+        agents: stat.agents,
+        active: mergeLive(live.active, extraLive.active),
+        persisted: mergePersisted(live.persisted, extraLive.persisted),
+      })
       : []),
-    [registry, stat.agents, live.active, live.persisted],
+    [registry, stat.agents, live.active, live.persisted, extraLive],
   )
   const boardSummary = useMemo(
     () => (registry && !stat.errors.cards

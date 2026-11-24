@@ -1,6 +1,7 @@
 import Button from '../../components/Button/Button.jsx'
 import Chip from '../../components/Chip/Chip.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
+import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
 import { cardMeta, cardStateLabel } from './agentBoard.js'
 
 // Two letters of the agent name, as in the canvas ("Cl", "Co", "Te").
@@ -25,12 +26,25 @@ export function StateChip({ item }) {
   )
 }
 
-// "Abrir sessão" waits for the chat to reach the v3: aria-disabled, no handler,
-// described by the (screen-level) note.
-export function OpenSessionButton() {
-  return (
-    <Button size="sm" aria-disabled="true" aria-describedby="projects-open-note">Abrir sessão</Button>
-  )
+// The session a card opens. A card that needs the user opens the session that needs the user (a live
+// one first): the card's state is the best of its rows, so the first live row may be a quiet one.
+// Otherwise the one its title comes from (a live one first, else the first).
+export function cardSessionKey(card) {
+  const rows = card.sessions ?? []
+  const waiting = rows.filter((row) => row.state === 'needs_you')
+  const pool = waiting.length > 0 ? waiting : rows
+  return (pool.find((row) => row.live) ?? pool[0])?.key ?? null
+}
+
+// "Abrir sessão": every agent opens its session on the chat route (openChat of the sessions context); the
+// route decides the view: the conversation for a Claude chat, the terminal view for everything else (C6).
+// Only a card with no session to open stays aria-disabled (nothing to point at; "Novo chat" starts one).
+export function OpenSessionButton({ sessionKey = null }) {
+  const { openChat } = useProjectsSessions()
+  if (sessionKey) {
+    return <Button size="sm" onClick={() => openChat(sessionKey)}>Abrir sessão</Button>
+  }
+  return <Button size="sm" aria-disabled="true">Abrir sessão</Button>
 }
 
 export default function AgentCard({ card }) {
@@ -55,8 +69,7 @@ export default function AgentCard({ card }) {
       </p>
       <div className="v3-type-mono-sm v3-agent-card__meta">{cardMeta(card)}</div>
       <div className="v3-agent-card__foot">
-        <OpenSessionButton />
-        <span className="v3-type-caption v3-agent-card__note">Disponível quando o chat chegar à V3</span>
+        <OpenSessionButton sessionKey={cardSessionKey(card)} />
       </div>
     </Panel>
   )

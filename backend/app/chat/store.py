@@ -428,32 +428,50 @@ class ChatStore:
         ) as cursor:
             return await cursor.fetchone() is not None
 
-    async def imported_since_last_reset(self, session_key: str) -> bool:
-        """Did a history import that brought messages happen after the last `session.reset`?
-        It proves the CLI knows the stored id (a transcript was read for it)."""
+    async def transcript_seen_since_last_reset(self, session_key: str) -> bool:
+        """After the last `session.reset`, did the terminal's transcript possibly get read for the
+        stored id? True for a history import that brought messages (it proves the CLI knows the id,
+        and it counts for good: a later `count` 0 is only dedupe) and for a read that failed and
+        was not followed by a successful import: a failed read does not prove there is no
+        conversation, while an empty read (`count` 0, the SDK returns `[]` for an id with no
+        transcript) does. A `no_session` failure never counts: nothing was read, the id is not
+        even known to the terminal."""
+        failed_read = False
         async with self._conn.execute(
-            "SELECT payload FROM chat_events WHERE session_key = ? AND kind = 'history.imported' AND seq > "
-            "COALESCE((SELECT MAX(seq) FROM chat_events WHERE session_key = ? AND kind = 'session.reset'), 0)",
+            "SELECT kind, payload FROM chat_events WHERE session_key = ? AND "
+            "kind IN ('history.imported', 'history.import_failed') AND seq > "
+            "COALESCE((SELECT MAX(seq) FROM chat_events WHERE session_key = ? AND kind = 'session.reset'), 0) "
+            "ORDER BY seq",
             (session_key, session_key),
         ) as cursor:
             async for row in cursor:
-                if (json.loads(row["payload"]).get("count") or 0) > 0:
+                payload = json.loads(row["payload"])
+                if row["kind"] == "history.import_failed":
+                    if payload.get("reason") != "no_session":
+                        failed_read = True
+                elif (payload.get("count") or 0) > 0:
                     return True
-        return False
+                else:
+                    failed_read = False
+        return failed_read
 
     async def logged_conversation(self, session_key: str) -> dict:
-        """What the log already holds of the conversation, to deduplicate a history import:
+        """What the log already holds of the current conversation, to deduplicate a history import:
         `assistant_ids` (message ids), `tool_use_ids` (of logged tool results) and
-        `trailing_user_texts` (the user messages after the last assistant message)."""
+        `trailing_user_texts` (the user messages after the last assistant message). Only the
+        current segment counts (after the last `session.reset`): a reset starts another conversation."""
         assistant_ids: set[str] = set()
         tool_use_ids: set[str] = set()
         trailing: list[str] = []
         async with self._conn.execute(
             "SELECT kind, payload FROM chat_events WHERE session_key = ? AND kind IN "
-            "('message.user', 'message.assistant', 'tool.result') ORDER BY seq",
+            "('message.user', 'message.assistant', 'tool.result', 'session.reset') ORDER BY seq",
             (session_key,),
         ) as cursor:
             async for row in cursor:
+                if row["kind"] == "session.reset":
+                    assistant_ids, tool_use_ids, trailing = set(), set(), []
+                    continue
                 payload = json.loads(row["payload"])
                 if row["kind"] == "message.assistant":
                     if payload.get("message_id"):
