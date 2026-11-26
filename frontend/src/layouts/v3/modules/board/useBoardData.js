@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { api } from '../../../../services/api.js'
 import { useCards } from '../../../../hooks/useCards.js'
 import { useColumns } from '../../../../hooks/useColumns.js'
 import { columnDeleteRefusal } from './columnErrors.js'
@@ -45,7 +46,11 @@ export { columnDeleteRefusal }
 //   setCardDragActive(bool)  suspends the card poll while a card is held
 //   moveNotice / dismissMoveNotice()  the banner above the board; it goes when dismissed or when
 //                  the next move works
-//   mutationError  the failure of a card save (the modal of a later phase shows it)
+//   createCard(payload)  updateCard(id, patch)  deleteCard(id)  uploadImage(cardId, file)  deleteImage(cardId, imageId)
+//   answerQuestion(cardId, questionId, text)  deleteQuestion(cardId, questionId)  previewClear(key)  executeClear(key)
+//                  the dialogs' writes: they rethrow (the dialog tells the failure) and leave no generic notice;
+//                  a failed update or delete whose card is no longer on the server rethrows { cardGone: true }
+//   mutationError  the generic failure notice of the shared hook (the card dialogs clear it and show their own)
 export function useBoardData({ scope }) {
   const [mutationError, setMutationError] = useState(null)
   const [moveNotice, setMoveNotice] = useState(null)
@@ -72,7 +77,15 @@ export function useBoardData({ scope }) {
     readError: cardsReadError,
     refetch: refetchCards,
     moveCard: moveCardHook,
-    updateCard,
+    updateCard: updateCardHook,
+    createCard: createCardHook,
+    deleteCard: deleteCardHook,
+    previewClearFinished,
+    clearFinished,
+    uploadCardImage,
+    deleteCardImage,
+    answerCardQuestion,
+    deleteCardQuestion,
     setCardDragActive,
   } = useCards(
     scope.fetchIds,
@@ -153,7 +166,7 @@ export function useBoardData({ scope }) {
 
   const changeColumn = useCallback(async (cardId, slug) => {
     try {
-      await updateCard(cardId, { status: slug })
+      await updateCardHook(cardId, { status: slug })
       setMoveNotice(null)
       return true
     } catch (error) {
@@ -163,7 +176,64 @@ export function useBoardData({ scope }) {
       setMoveNotice({ kind: 'card' })
       return false
     }
-  }, [updateCard])
+  }, [updateCardHook])
+
+  // -- card writes of the dialogs. The shared hook raises its generic notice and rethrows; the dialog that
+  // asked tells the failure in its own place, so the generic one is cleared and nothing is said twice.
+  const quiet = useCallback(async (run) => {
+    try {
+      return await run()
+    } catch (error) {
+      setMutationError(null)
+      throw error
+    }
+  }, [])
+
+  // The shared client raises errors WITHOUT a status, so "the card does not exist any more" is told by a
+  // read: after a failed save or delete, an unfiltered read that no longer has the id (nor inside a
+  // parent's subcards) turns the failure into { cardGone: true }. A read that fails, or a connection that
+  // is down, leaves the common error.
+  const quietCheckingExistence = useCallback(async (cardId, run) => {
+    try {
+      return await run()
+    } catch (error) {
+      setMutationError(null)
+      if (error instanceof TypeError) throw error
+      let list = null
+      try {
+        list = await api.fetchCards()
+      } catch {
+        list = null
+      }
+      const present = !Array.isArray(list)
+        || list.some((entry) => entry.id === cardId || (entry.subcards || []).some((sub) => sub.id === cardId))
+      if (present) throw error
+      refetchCards()
+      throw Object.assign(new Error('Card not found'), { cardGone: true })
+    }
+  }, [refetchCards])
+
+  const createCard = useCallback((payload) => quiet(() => createCardHook(payload)), [quiet, createCardHook])
+  const updateCard = useCallback(
+    (cardId, patch) => quietCheckingExistence(cardId, () => updateCardHook(cardId, patch)),
+    [quietCheckingExistence, updateCardHook],
+  )
+  const deleteCard = useCallback(
+    (cardId) => quietCheckingExistence(cardId, () => deleteCardHook(cardId)),
+    [quietCheckingExistence, deleteCardHook],
+  )
+  const previewClear = useCallback(async (projectKey) => {
+    const { cards: count, imagens } = await previewClearFinished(projectKey)
+    return { cards: count, imagens }
+  }, [previewClearFinished])
+  const executeClear = useCallback(async (projectKey) => {
+    const { cards: count } = await quiet(() => clearFinished(projectKey))
+    return { cards: count }
+  }, [quiet, clearFinished])
+  const uploadImage = useCallback((cardId, file) => quiet(() => uploadCardImage(cardId, file)), [quiet, uploadCardImage])
+  const deleteImage = useCallback((cardId, imageId) => quiet(() => deleteCardImage(cardId, imageId)), [quiet, deleteCardImage])
+  const answerQuestion = useCallback((cardId, questionId, text) => answerCardQuestion(cardId, questionId, text), [answerCardQuestion])
+  const deleteQuestion = useCallback((cardId, questionId) => quiet(() => deleteCardQuestion(cardId, questionId)), [quiet, deleteCardQuestion])
 
   return {
     columns,
@@ -186,6 +256,15 @@ export function useBoardData({ scope }) {
     reorderColumns,
     moveCard,
     changeColumn,
+    createCard,
+    updateCard,
+    deleteCard,
+    previewClear,
+    executeClear,
+    uploadImage,
+    deleteImage,
+    answerQuestion,
+    deleteQuestion,
     setCardDragActive,
     moveNotice,
     dismissMoveNotice,

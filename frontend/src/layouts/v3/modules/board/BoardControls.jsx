@@ -16,6 +16,8 @@ export default function BoardControls({
   clearable,
   onClear,
   stale,
+  clearTarget = null,
+  onClearFinished = null,
 }) {
   return (
     <div role="group" aria-label="Filtros do board" className="v3-board-controls">
@@ -28,6 +30,24 @@ export default function BoardControls({
         projectDisabled={projectDisabled}
       />
       {clearable && <Button variant="text" onClick={onClear}>Limpar filtros</Button>}
+      {onClearFinished && (
+        <>
+          <Button
+            variant="secondary"
+            data-clear-finished
+            aria-disabled={clearTarget ? undefined : 'true'}
+            aria-describedby={clearTarget ? undefined : 'v3-board-clear-hint'}
+            onClick={() => { if (clearTarget) onClearFinished() }}
+          >
+            Limpar concluídos
+          </Button>
+          {!clearTarget && (
+            <span id="v3-board-clear-hint" className="v3-board-controls__hint v3-type-caption">
+              Escolha um projeto ou "Do workspace".
+            </span>
+          )}
+        </>
+      )}
       {sorted && (
         <span className="v3-board-controls__hint v3-type-caption">
           Com ordenação, arrastar muda só a coluna do card.

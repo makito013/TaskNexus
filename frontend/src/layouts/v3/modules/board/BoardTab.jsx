@@ -22,23 +22,39 @@ import {
 } from '../../../../utils/boardView.js'
 import Button from '../../components/Button/Button.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
+import { useToast } from '../../components/Toast/toastContext.js'
 import { useProjectsView } from '../../ProjectsViewContext.jsx'
 import BoardColumn from './BoardColumn.jsx'
 import BoardControls from './BoardControls.jsx'
 import BoardOverlay from './BoardOverlay.jsx'
+import CardDialog from './CardDialog.jsx'
+import ClearFinishedDialog from './ClearFinishedDialog.jsx'
 import DeleteColumnDialog from './DeleteColumnDialog.jsx'
 import MoveBanner from './MoveBanner.jsx'
 import NewColumn from './NewColumn.jsx'
 import RenameColumnDialog from './RenameColumnDialog.jsx'
 import SortableColumn from './SortableColumn.jsx'
-import { ALL_PROJECTS, buildScope, isUnassignedKey } from './boardScope.js'
+import { ALL_PROJECTS, DO_WORKSPACE, buildScope, isUnassignedKey, placeOf } from './boardScope.js'
+import { resolveCreateDefaults } from './cardForm.js'
 import { useBoardData } from './useBoardData.js'
+import { NO_WORKSPACE_VALUE } from '../projects/registryIndex.js'
 import './Board.css'
 
 const SKELETON_COLUMNS = 3
 // The border flash of a column that was just moved (the stylesheet fades it back).
 const FLASH_MS = 700
 const NO_CARDS = []
+// A press this soon after a card drop belongs to the drag, not to the card.
+const DROP_CLICK_GUARD_MS = 300
+
+function findCardById(cards, id) {
+  for (const entry of cards) {
+    if (entry.id === id) return entry
+    const sub = (entry.subcards || []).find((candidate) => candidate.id === id)
+    if (sub) return sub
+  }
+  return null
+}
 // Space left under the scroller by the screen (its bottom padding, --v3-space-7).
 const SCREEN_BOTTOM_GAP = 32
 const MIN_SCROLLER_HEIGHT = 320
@@ -172,8 +188,16 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [focusSlug, setFocusSlug] = useState(null)
   // When the last card drop happened: a click right after it belongs to the drag, not to the
-  // card (the face does not open anything yet; the modal of a later phase reads this).
+  // card (the face ignores a press for 300 ms after it).
   const lastDropRef = useRef(0)
+  const isRecentDrop = () => Date.now() - lastDropRef.current < DROP_CLICK_GUARD_MS
+  const toast = useToast()
+  // The dialog that is open: { mode: 'create', slug } | { mode: 'edit', id }, plus the "Limpar concluídos" one.
+  const [cardDialog, setCardDialog] = useState(null)
+  // { key, label } of the place "Limpar concluídos" was opened for; fixed for the life of the dialog
+  const [clearDialog, setClearDialog] = useState(null)
+  // The last picture of the open card: a card that left the filtered list (or the hook) keeps its dialog.
+  const openCardRef = useRef(null)
 
   const draggingCard = dragCardId != null ? viewCards.find((card) => card.id === dragCardId) ?? null : null
   const draggingColumn = dragSlug ? data.columns.find((column) => column.slug === dragSlug) ?? null : null
@@ -322,6 +346,46 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
     return header?.querySelector('.v3-board-menu__button') ?? scrollerRef.current
   }
 
+  // -- the card dialog and "Limpar concluídos"
+  const createPlace = useMemo(
+    () => resolveCreateDefaults({ registry, workspaceKey, projectKey, columns: data.columns }),
+    [registry, workspaceKey, projectKey, data.columns],
+  )
+  const editingId = cardDialog?.mode === 'edit' ? cardDialog.id : null
+  const liveCard = editingId != null ? findCardById(data.fetchedCards, editingId) : null
+  if (liveCard) openCardRef.current = liveCard
+  const editingCard = editingId != null ? (liveCard ?? openCardRef.current) : null
+  // Would a card in this place leave the list that is on screen?
+  const leavesView = (key) => !scope.matches(key) || (scope.fetchIds.length > 0 && !scope.fetchIds.includes(key))
+
+  // The exact place "Limpar concluídos" works on: the project refined, else the root of the chosen workspace.
+  const realWorkspace = workspaceKey && workspaceKey !== NO_WORKSPACE_VALUE ? registry.workspaceByKey.get(workspaceKey) : null
+  let clearTarget = null
+  if (projectKey && projectKey !== DO_WORKSPACE) {
+    const place = placeOf(projectKey, registry)
+    clearTarget = { key: projectKey, label: place.project ?? place.workspace }
+  } else if (realWorkspace) {
+    clearTarget = { key: realWorkspace.key, label: `Do workspace ${realWorkspace.name}` }
+  }
+
+  const focusBoardFallback = () => headingRef.current
+  const returnToCard = (id) => () => (
+    [...(scrollerRef.current?.querySelectorAll('[data-card-open]') ?? [])].find((node) => node.dataset.cardOpen === String(id))
+    ?? focusBoardFallback()
+  )
+  const returnToAdd = (slug) => () => (
+    [...(scrollerRef.current?.querySelectorAll('[data-add-card]') ?? [])].find((node) => node.dataset.addCard === slug)
+    ?? focusBoardFallback()
+  )
+  const returnToClear = () => document.querySelector('[data-clear-finished]') ?? focusBoardFallback()
+
+  const openCard = (entry) => {
+    openCardRef.current = entry
+    setCardDialog({ mode: 'edit', id: entry.id })
+  }
+  const closeCardDialog = () => setCardDialog(null)
+  const clearDone = (count) => toast.push({ text: count === 1 ? '1 card excluído.' : `${count} cards excluídos.` })
+
   const retry = async (read) => {
     setRetrying(true)
     try {
@@ -415,6 +479,10 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
                       onRename={() => setRenameTarget(column)}
                       onMarkDone={data.setDoneColumn}
                       onDelete={() => setDeleteTarget(column)}
+                      onOpenCard={openCard}
+                      isRecentDrop={isRecentDrop}
+                      onAddCard={(slug) => setCardDialog({ mode: 'create', slug })}
+                      canAddCard={createPlace != null}
                       handleProps={handleProps}
                       dropzoneRef={dropzoneRef}
                       cardOver={cardOver}
@@ -436,6 +504,38 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
             onRename={data.renameColumn}
             onClose={() => setRenameTarget(null)}
             returnFocusTo={returnToColumnMenu(renameTarget.slug)}
+          />
+        )}
+        {cardDialog && (cardDialog.mode === 'create' || editingCard) && (
+          <CardDialog
+            key={cardDialog.mode === 'edit' ? `edit-${cardDialog.id}` : `create-${cardDialog.slug}`}
+            mode={cardDialog.mode}
+            card={cardDialog.mode === 'edit' ? editingCard : null}
+            createDefaults={cardDialog.mode === 'create'
+              ? resolveCreateDefaults({ registry, workspaceKey, projectKey, columnSlug: cardDialog.slug, columns: data.columns })
+              : null}
+            columns={data.columns}
+            doneSlug={data.doneSlug}
+            registry={registry}
+            leavesView={leavesView}
+            onSave={cardDialog.mode === 'edit' ? (patch) => data.updateCard(cardDialog.id, patch) : data.createCard}
+            onDelete={(entry) => data.deleteCard(entry.id)}
+            onUploadImage={(file) => data.uploadImage(cardDialog.id, file)}
+            onDeleteImage={(imageId) => data.deleteImage(cardDialog.id, imageId)}
+            onAnswerQuestion={(questionId, text) => data.answerQuestion(cardDialog.id, questionId, text)}
+            onDeleteQuestion={(questionId) => data.deleteQuestion(cardDialog.id, questionId)}
+            onClose={closeCardDialog}
+            returnFocusTo={cardDialog.mode === 'edit' ? returnToCard(cardDialog.id) : returnToAdd(cardDialog.slug)}
+          />
+        )}
+        {clearDialog && (
+          <ClearFinishedDialog
+            targetLabel={clearDialog.label}
+            onPreview={() => data.previewClear(clearDialog.key)}
+            onExecute={() => data.executeClear(clearDialog.key)}
+            onDone={clearDone}
+            onClose={() => setClearDialog(null)}
+            returnFocusTo={returnToClear}
           />
         )}
         {deleteTarget && (
@@ -465,6 +565,8 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
           clearable={filtered || sorted}
           onClear={clearFilters}
           stale={data.cardsStale}
+          clearTarget={clearTarget}
+          onClearFinished={data.columns.length > 0 ? () => setClearDialog(clearTarget) : null}
         />
       )}
       {body}

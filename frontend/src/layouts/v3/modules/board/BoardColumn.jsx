@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { cardDndId } from '../../../../utils/boardDndIds.js'
+import Button from '../../components/Button/Button.jsx'
 import Chip from '../../components/Chip/Chip.jsx'
 import BoardCardFace from './BoardCardFace.jsx'
 import ColumnMenu from './ColumnMenu.jsx'
@@ -24,6 +25,8 @@ const SKELETON_CARDS = 2
 //                    (null beforeId = after the last card); null when the drop would change nothing
 //   target           the column under the held card (also the whole signal when a sort is on)
 //   flash            this column was just moved
+//   onOpenCard(card, element)  isRecentDrop()  open a card; a press right after a drop is the drag's
+//   onAddCard(slug, element)   canAddCard   "+ Adicionar card" (unavailable, with the reason, when there is no place to create in)
 export default function BoardColumn({
   column,
   cards,
@@ -42,6 +45,10 @@ export default function BoardColumn({
   dropHint = null,
   target = false,
   flash = false,
+  onOpenCard = null,
+  isRecentDrop = undefined,
+  onAddCard = null,
+  canAddCard = true,
 }) {
   const classes = [
     'v3-board-column',
@@ -101,6 +108,8 @@ export default function BoardColumn({
                       registry={registry}
                       doneSlug={doneSlug}
                       hideProject={hideProject}
+                      onOpen={onOpenCard}
+                      isRecentDrop={isRecentDrop}
                       moveSelect={<MoveSelect card={card} columns={columns} onChange={onChangeColumn} />}
                     />
                   </SortableCard>
@@ -111,6 +120,20 @@ export default function BoardColumn({
           </SortableContext>
         )}
       </div>
+
+      {onAddCard && (
+        <Button
+          variant="text"
+          className="v3-board-column__add"
+          data-add-card={column.slug}
+          aria-label={`Adicionar card na coluna ${column.label}`}
+          aria-disabled={canAddCard ? undefined : 'true'}
+          title={canAddCard ? undefined : 'Crie um workspace para adicionar cards.'}
+          onClick={(event) => { if (canAddCard) onAddCard(column.slug, event.currentTarget) }}
+        >
+          + Adicionar card
+        </Button>
+      )}
     </section>
   )
 }

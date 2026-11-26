@@ -38,10 +38,16 @@ function pendingLabel(count) {
   return count === 1 ? '1 pergunta' : `${count} perguntas`
 }
 
-// The face of a card in a column. The title is text (opening the card comes with the editing).
+// A press on the face opens the card, except on the controls that have their own meaning (a select, a link,
+// the copy button and whatever carries [data-card-control]).
+const OWN_CONTROLS = 'select, a, input, textarea, label, [data-card-control]'
+
+// The face of a card in a column. With `onOpen` the title is the button that opens the card, and so is a
+// press anywhere else on the face (a keyboard reaches it through the title); without it the title is text.
 // The controls are the one that copies the number and, when the column hands it over, the
 // "Mover" select in the foot (`moveSelect`, an element: the face does not know how to move).
-export default function BoardCardFace({ card, registry, doneSlug, hideProject = false, moveSelect = null, today = new Date() }) {
+//   onOpen(card, element)   isRecentDrop()  a press up to 300 ms after a drop belongs to the drag
+export default function BoardCardFace({ card, registry, doneSlug, hideProject = false, moveSelect = null, onOpen = null, isRecentDrop = () => false, today = new Date() }) {
   const toast = useToast()
   const place = placeOf(card.projeto_id, registry)
   const pending = countPendingQuestions(card.questions)
@@ -60,11 +66,23 @@ export default function BoardCardFace({ card, registry, doneSlug, hideProject = 
   ].filter(Boolean).join(', ')
   const summaryId = `board-card-${card.id}-summary`
 
+  const handleOpen = (event) => {
+    if (!onOpen || event.target.closest(OWN_CONTROLS) || isRecentDrop()) return
+    onOpen(card, event.currentTarget.querySelector('[data-card-open]'))
+  }
+
   return (
-    <article className="v3-board-card" aria-labelledby={`board-card-${card.id}-title`} aria-describedby={summary ? summaryId : undefined}>
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-ups, jsx-a11y/no-noninteractive-element-interactions
+    <article
+      className={`v3-board-card${onOpen ? ' v3-board-card--openable' : ''}`}
+      aria-labelledby={`board-card-${card.id}-title`}
+      aria-describedby={summary ? summaryId : undefined}
+      onClick={handleOpen}
+    >
       <div className="v3-board-card__meta">
         <button
           type="button"
+          data-card-control
           className="v3-board-card__id v3-type-mono-sm"
           aria-label={`Copiar número do card ${card.id}`}
           title={`Copiar número do card ${card.id}`}
@@ -81,7 +99,11 @@ export default function BoardCardFace({ card, registry, doneSlug, hideProject = 
         )}
       </div>
 
-      <h4 id={`board-card-${card.id}-title`} className="v3-board-card__title v3-type-body">{card.titulo}</h4>
+      <h4 id={`board-card-${card.id}-title`} className="v3-board-card__title v3-type-body">
+        {onOpen ? (
+          <button type="button" className="v3-board-card__open" data-card-open={card.id}>{card.titulo}</button>
+        ) : card.titulo}
+      </h4>
       {description && <p className="v3-board-card__description v3-type-body-sm">{description}</p>}
       {summary && <span id={summaryId} className="v3-board-card__summary">{summary}</span>}
 
