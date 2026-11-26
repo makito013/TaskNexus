@@ -27,26 +27,37 @@
 //   as "don't recompute anything that depends on done-ness yet" rather than
 //   gating on `loading` a second time — see isPrazoAtrasado's contract.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api.js';
 
 export function useColumns() {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
+  // The last read failed (null when it worked). The V2 ignores it; the V3 board
+  // shows "could not load" with a retry instead of an empty board.
+  const [readError, setReadError] = useState(null);
+  const mountedRef = useRef(true);
+
+  const refetch = useCallback(() => api.fetchBoardColumns()
+    .then((list) => {
+      if (!mountedRef.current) return;
+      setColumns(list);
+      setReadError(null);
+    })
+    .catch((e) => {
+      // Tolerant read, same as useCards.fetchCards: keep whatever is on
+      // screen instead of alert()ing. An empty column list renders as an
+      // empty board, which is honest about the failure.
+      console.warn('fetchBoardColumns error (keeping last known state)', e);
+      if (mountedRef.current) setReadError(e);
+    })
+    .finally(() => { if (mountedRef.current) setLoading(false); }), []);
 
   useEffect(() => {
-    let cancelled = false;
-    api.fetchBoardColumns()
-      .then((list) => { if (!cancelled) setColumns(list); })
-      .catch((e) => {
-        // Tolerant read, same as useCards.fetchCards: keep whatever is on
-        // screen instead of alert()ing. An empty column list renders as an
-        // empty board, which is honest about the failure.
-        console.warn('fetchBoardColumns error (keeping last known state)', e);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+    mountedRef.current = true;
+    refetch();
+    return () => { mountedRef.current = false; };
+  }, [refetch]);
 
   const createColumn = useCallback(async (label) => {
     const created = await api.createBoardColumn(label);
@@ -113,6 +124,8 @@ export function useColumns() {
   return {
     columns,
     loading,
+    readError,
+    refetch,
     doneSlug: doneColumn ? doneColumn.slug : null,
     firstSlug: columns.length ? columns[0].slug : null,
     createColumn,

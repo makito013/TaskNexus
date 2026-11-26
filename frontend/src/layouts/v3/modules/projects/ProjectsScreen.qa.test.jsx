@@ -81,7 +81,7 @@ describe('Projetos e agentes: tabs', () => {
     await renderLoaded()
     const tablist = screen.getByRole('tablist', { name: 'Seções' })
     const tabs = within(tablist).getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Agentes', 'Sessões', 'Boardem breve', 'Artefatosem breve'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Agentes', 'Sessões', 'Board', 'Artefatos'])
     expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false'])
     const panel = screen.getByRole('tabpanel')
     expect(panel.getAttribute('aria-labelledby')).toBe(tabs[0].id)
@@ -101,11 +101,12 @@ describe('Projetos e agentes: tabs', () => {
     act(() => { tabs[0].focus() })
     fireEvent.keyDown(tabs[0], { key: 'End' })
     expect(document.activeElement).toBe(artifacts)
-    // "em breve" took the focus but not the selection, so it is the tab stop for now.
+    // End selected Artefatos, so it is the tab stop, focused or not.
+    expect(artifacts.getAttribute('aria-selected')).toBe('true')
     expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, 0])
 
     act(() => { artifacts.blur() })
-    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1])
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, 0])
   })
 
   it('marks the waiting items of an archived project or workspace with the "arquivado" chip, and only those', async () => {
@@ -139,7 +140,7 @@ describe('Projetos e agentes: tabs', () => {
     expect(within(rowOf('Aprovar migração')).queryByText('arquivado')).toBeNull()
   })
 
-  it('arrows walk all four tabs; "em breve" tabs take focus but selection stays on the enabled ones', async () => {
+  it('arrows walk all four tabs and the selection follows the focus on every one of them', async () => {
     await renderLoaded()
     const [agents, sessions, board, artifacts] = screen.getAllByRole('tab')
     agents.focus()
@@ -151,35 +152,50 @@ describe('Projetos e agentes: tabs', () => {
 
     fireEvent.keyDown(sessions, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(board)
-    expect(board.getAttribute('aria-selected')).toBe('false')
-    expect(sessions.getAttribute('aria-selected')).toBe('true')
+    expect(board.getAttribute('aria-selected')).toBe('true')
+    expect(sessions.getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(board.id)
 
     fireEvent.keyDown(board, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(artifacts)
+    expect(artifacts.getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(artifacts, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(agents)
     expect(agents.getAttribute('aria-selected')).toBe('true')
 
     fireEvent.keyDown(agents, { key: 'ArrowLeft' })
     expect(document.activeElement).toBe(artifacts)
+    expect(artifacts.getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(artifacts, { key: 'Home' })
     expect(document.activeElement).toBe(agents)
+    expect(agents.getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(agents, { key: 'End' })
     expect(document.activeElement).toBe(artifacts)
+    expect(artifacts.getAttribute('aria-selected')).toBe('true')
+    // The lazy Board and Artefatos chunks settle before the test ends.
+    await screen.findByRole('heading', { name: 'Artefatos' })
   })
 
-  it('"em breve" tabs are aria-disabled, described by the note, and Enter/Space/click change nothing', async () => {
+  it('Board and Artefatos are enabled: no aria-disabled, no note, and click, Enter and Space select them', async () => {
     await renderLoaded()
-    const [, , board, artifacts] = screen.getAllByRole('tab')
+    const [agents, , board, artifacts] = screen.getAllByRole('tab')
     for (const tab of [board, artifacts]) {
-      expect(tab.getAttribute('aria-disabled')).toBe('true')
-      expect(document.getElementById(tab.getAttribute('aria-describedby')).textContent).toBe('Disponível em uma próxima versão.')
-      fireEvent.click(tab)
-      fireEvent.keyDown(tab, { key: 'Enter' })
-      fireEvent.keyDown(tab, { key: ' ' })
-      expect(tab.getAttribute('aria-selected')).toBe('false')
+      expect(tab.getAttribute('aria-disabled')).toBeNull()
+      expect(tab.getAttribute('aria-describedby')).toBeNull()
+      expect(within(tab).queryByText('em breve')).toBeNull()
+      for (const select of [
+        () => fireEvent.click(tab),
+        () => fireEvent.keyDown(tab, { key: 'Enter' }),
+        () => fireEvent.keyDown(tab, { key: ' ' }),
+      ]) {
+        fireEvent.click(agents)
+        expect(tab.getAttribute('aria-selected')).toBe('false')
+        select()
+        expect(tab.getAttribute('aria-selected')).toBe('true')
+      }
     }
-    expect(screen.getAllByRole('tab')[0].getAttribute('aria-selected')).toBe('true')
+    expect(document.getElementById('projects-soon-note')).toBeNull()
+    await screen.findByRole('heading', { name: 'Artefatos' })
   })
 
   it('the Sessões tab shows the info banner and the two tables', async () => {
@@ -240,18 +256,23 @@ describe('Projetos e agentes: Agentes tab', () => {
     expect(screen.queryByText('Ainda não disponível para este agente')).toBeNull()
   })
 
-  it('the board summary is read-only: "Abrir board" is aria-disabled and described by its note', async () => {
+  it('the board summary stays read-only, and "Abrir board" is enabled and opens the Board tab on the same workspace', async () => {
     await renderLoaded({ cards: [{ id: 1, projeto_id: 'Pessoal/tn-sandbox', status: 'a_fazer', parent_id: null }] })
     const aside = screen.getByRole('complementary', { name: 'Resumo' })
     expect(within(aside).getByRole('heading', { name: 'Board · resumo' })).toBeTruthy()
     expect(within(aside).getByText('todos os workspaces')).toBeTruthy()
     const button = within(aside).getByRole('button', { name: 'Abrir board' })
-    expect(button.getAttribute('aria-disabled')).toBe('true')
-    expect(document.getElementById(button.getAttribute('aria-describedby')).textContent)
-      .toBe('Disponível quando o board chegar à V3. Só leitura por enquanto.')
+    expect(button.getAttribute('aria-disabled')).toBeNull()
+    expect(button.getAttribute('aria-describedby')).toBeNull()
+    expect(screen.queryByText(/Só leitura por enquanto/)).toBeNull()
     expect(within(aside).getByText('A fazer')).toBeTruthy()
     fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'podesubir' } })
     expect(within(aside).getByText('podesubir')).toBeTruthy()
+
+    fireEvent.click(button)
+    expect(screen.getByRole('tab', { name: 'Board' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('combobox', { name: 'Workspace' }).value).toBe('podesubir')
+    await screen.findByRole('region', { name: 'Board' })
   })
 
   it('never renders a kan module button (contrast 4.23:1)', async () => {

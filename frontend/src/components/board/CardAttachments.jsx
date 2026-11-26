@@ -17,17 +17,10 @@ import { useCallback, useRef, useState } from 'react';
 import { cardAttachmentItem, fileUrl } from '../../features/viewer/viewerApi.js';
 import { formatBytes } from '../../features/viewer/viewerPaths.js';
 
-export const MAX_ATTACHMENTS = 10;
+import { MAX_ATTACHMENTS, isPreviewable } from '../../utils/cardAttachments.js';
+
+export { MAX_ATTACHMENTS, isPreviewable };
 const ERROR_DISPLAY_MS = 3000;
-
-// Types the viewer renders (the backend decides the final `kind`; anything
-// else still opens, but only as a "no preview, download" card — so for those
-// the row offers just "Baixar").
-const PREVIEWABLE_RE = /\.(md|markdown|pdf|html?|txt|log|csv|json|xml|ya?ml|png|jpe?g|gif|webp|svg|avif|bmp)$/i;
-
-export function isPreviewable(filename) {
-  return PREVIEWABLE_RE.test(String(filename || ''));
-}
 
 function extensionLabel(filename) {
   const match = /\.([a-z0-9]{1,5})$/i.exec(String(filename || ''));

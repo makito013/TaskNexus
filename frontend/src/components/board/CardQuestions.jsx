@@ -12,10 +12,9 @@
 // `onDelete(questionId)` come already bound to the card by the parent.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '../../utils/cardMeta.js';
+import { countPendingQuestions } from '../../utils/cardQuestions.js';
 
-export function countPendingQuestions(questions) {
-  return (questions || []).filter((q) => !q.answer).length;
-}
+export { countPendingQuestions };
 
 function agentLabel(askedBy) {
   return String(askedBy || '').replace(/^agente:/, '') || 'agente';

@@ -1,0 +1,272 @@
+/*
+ * Aba Board de Projetos. Only --v3-* tokens (the few structural measures come
+ * from tokens by calc). No transform/filter/will-change/contain: the columns and
+ * the cards are leaves with respect to position: fixed, and nothing here is fixed
+ * (fixedPositioningInvariantWorkspace.test.js scans this file).
+ * Skeletons are still: a --v3-line border keeps them visible in the light theme,
+ * where surface-2 equals the ground.
+ */
+.v3-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  min-width: 0;
+}
+
+/* ---- toolbar ---- */
+.v3-board-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+
+.v3-board-select {
+  min-width: 180px;
+  height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+}
+.v3-board-select--active {
+  border-color: var(--v3-kan);
+  font-weight: 500;
+}
+.v3-board-select:disabled {
+  color: var(--v3-ink-muted);
+  cursor: not-allowed;
+}
+
+.v3-board-controls__hint {
+  color: var(--v3-ink-muted);
+}
+
+/* ---- scroller and columns ---- */
+.v3-board__scroller {
+  display: flex;
+  align-items: stretch;
+  gap: var(--v3-space-4);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--v3-space-2);
+  /* first paint only: BoardTab measures the real space and sets the height inline */
+  height: max(320px, calc(100dvh - 350px));
+}
+
+.v3-board-column {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--v3-sidebar) + var(--v3-space-3));
+  min-height: 0;
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-xl);
+  background-color: var(--v3-surface);
+}
+.v3-board-column--done {
+  /* 1.5px border, 0.5px taken from the padding so the content does not move */
+  padding: calc(var(--v3-space-3) - 0.5px);
+  border: 1.5px solid var(--v3-navi);
+}
+
+.v3-board-column__head {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+}
+.v3-board-column__name {
+  margin: 0;
+  font-family: var(--v3-font-display);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.v3-board-column__count {
+  color: var(--v3-ink-muted);
+}
+
+.v3-board-column__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+}
+
+.v3-board-column__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v3-board-column__item {
+  margin: 0;
+}
+.v3-board-column__empty {
+  margin: 0;
+  padding: var(--v3-space-4) var(--v3-space-2);
+  border: 1px dashed var(--v3-line-strong);
+  border-radius: var(--v3-radius-md);
+  color: var(--v3-ink-muted);
+  text-align: center;
+}
+
+/* ---- card face ---- */
+.v3-board-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+}
+.v3-board-card:hover {
+  border-color: var(--v3-line-strong);
+}
+
+.v3-board-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-1) var(--v3-space-2);
+}
+
+/* the number is a 44px target by an extended hit area; its look stays small */
+.v3-board-card__id {
+  position: relative;
+  padding: 2px 8px;
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+  cursor: pointer;
+}
+.v3-board-card__id::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--v3-control));
+  height: var(--v3-control);
+  margin-top: calc(var(--v3-control) / -2);
+  margin-left: calc(max(100%, var(--v3-control)) / -2);
+}
+
+.v3-board-card__title {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.v3-board-card__description {
+  margin: 0;
+  color: var(--v3-ink-muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.v3-board-card__summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.v3-board-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+.v3-board-card__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+}
+.v3-board-card__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--v3-radius-pill);
+  color: var(--v3-ink-muted);
+}
+.v3-board-card__due--overdue {
+  background-color: var(--v3-danger-tint);
+  color: var(--v3-danger-ink);
+}
+
+/* ---- priority glyph ---- */
+.v3-board-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--v3-ink-muted);
+}
+.v3-board-priority__bar {
+  fill: currentColor;
+}
+.v3-board-priority__bar--empty {
+  fill: var(--v3-ink-faint);
+}
+.v3-board-priority--low { color: var(--v3-prio-low); }
+.v3-board-priority--mid { color: var(--v3-prio-mid); }
+.v3-board-priority--high { color: var(--v3-prio-high); }
+.v3-board-priority--urgent {
+  padding: 0 6px 0 2px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-prio-high-tint);
+}
+.v3-board-priority__mark {
+  font-weight: 700;
+}
+
+/* ---- placeholders ---- */
+.v3-board-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin-bottom: var(--v3-space-3);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+}
+.v3-board-skeleton__bar {
+  display: block;
+  width: 60%;
+  height: 12px;
+  margin-bottom: var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-surface-2);
+}
+.v3-board-skeleton .v3-board-skeleton__bar { margin-bottom: 0; }
+.v3-board-skeleton__bar--wide { width: 90%; }
+.v3-board-skeleton__bar--short { width: 40%; }

@@ -1,5 +1,7 @@
 // Toolbar filters: workspace select plus the two checkboxes. Controlled; the
 // state lives in ProjectsScreen and is applied on the view model (no request).
+// showOnlyWaiting is false on the Board and Artefatos tabs: "who waits for you" is
+// about agents.
 export default function WorkspaceFilter({
   options,
   workspaceKey,
@@ -8,6 +10,7 @@ export default function WorkspaceFilter({
   onOnlyWaitingChange,
   showArchived,
   onShowArchivedChange,
+  showOnlyWaiting = true,
 }) {
   return (
     <div role="group" aria-label="Filtros" className="v3-projects__filters">
@@ -22,10 +25,12 @@ export default function WorkspaceFilter({
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
-      <label className="v3-projects__check v3-type-body-sm">
-        <input type="checkbox" checked={onlyWaiting} onChange={(event) => onOnlyWaitingChange(event.target.checked)} />
-        Só quem espera você
-      </label>
+      {showOnlyWaiting && (
+        <label className="v3-projects__check v3-type-body-sm">
+          <input type="checkbox" checked={onlyWaiting} onChange={(event) => onOnlyWaitingChange(event.target.checked)} />
+          Só quem espera você
+        </label>
+      )}
       <label className="v3-projects__check v3-type-body-sm">
         <input type="checkbox" checked={showArchived} onChange={(event) => onShowArchivedChange(event.target.checked)} />
         Mostrar arquivados
