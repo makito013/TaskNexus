@@ -1,4 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { DndContext } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
+import { computeCardDrop } from '../../../../utils/boardCardOrder.js'
+import { reorderColumns as reorderSlugs } from '../../../../utils/boardColumnOrder.js'
+import {
+  BOARD_SCREEN_READER_INSTRUCTIONS,
+  buildAnnouncements,
+  buildBoardCollisionDetection,
+  resolveCardDropTarget,
+  useBoardSensors,
+} from '../../../../utils/boardDnd.js'
+import { cardIdFromDndId, isCardDndId, isColumnDropzoneId, slugFromColumnDropzoneId } from '../../../../utils/boardDndIds.js'
+import { vibrateDragPickup } from '../../../../utils/haptics.js'
 import {
   DEFAULT_BOARD_VIEW,
   applyBoardView,
@@ -12,11 +25,20 @@ import Panel from '../../components/Panel/Panel.jsx'
 import { useProjectsView } from '../../ProjectsViewContext.jsx'
 import BoardColumn from './BoardColumn.jsx'
 import BoardControls from './BoardControls.jsx'
+import BoardOverlay from './BoardOverlay.jsx'
+import DeleteColumnDialog from './DeleteColumnDialog.jsx'
+import MoveBanner from './MoveBanner.jsx'
+import NewColumn from './NewColumn.jsx'
+import RenameColumnDialog from './RenameColumnDialog.jsx'
+import SortableColumn from './SortableColumn.jsx'
 import { ALL_PROJECTS, buildScope, isUnassignedKey } from './boardScope.js'
 import { useBoardData } from './useBoardData.js'
 import './Board.css'
 
 const SKELETON_COLUMNS = 3
+// The border flash of a column that was just moved (the stylesheet fades it back).
+const FLASH_MS = 700
+const NO_CARDS = []
 // Space left under the scroller by the screen (its bottom padding, --v3-space-7).
 const SCREEN_BOTTOM_GAP = 32
 const MIN_SCROLLER_HEIGHT = 320
@@ -51,8 +73,10 @@ function useFillHeight(ref) {
   return height
 }
 
-// Aba "Board" of Projetos (read only in this phase): the global columns with the
-// cards of the workspace chosen in the header, narrowed by the filters of the bar.
+// Aba "Board" of Projetos: the global columns with the cards of the workspace chosen in the
+// header, narrowed by the filters of the bar. Columns are created, renamed, marked as done,
+// deleted and dragged here; cards are dragged between and inside columns (the V2 sensors,
+// collisions and rollback) or moved by the select of their foot.
 //   registry         the registry index of the screen
 //   workspaceKey     the header's workspace ('' = all, '__none' = outside any)
 //   showArchived     the header's "Mostrar arquivados"
@@ -70,6 +94,8 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
   const { boardProject: refinement, setBoardProject: setRefinement } = useProjectsView()
   const chosenProject = refinement.workspaceKey === workspaceKey ? refinement.projectKey : ALL_PROJECTS
   const [retrying, setRetrying] = useState(false)
+  // A press of "Tentar de novo" asks for the focus to follow the board once it is back.
+  const [refocus, setRefocus] = useState(false)
   const scrollerRef = useRef(null)
   const scrollerHeight = useFillHeight(scrollerRef)
 
@@ -80,6 +106,11 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
     [registry, workspaceKey, showArchived],
   )
   const projectKey = offered.some((option) => option.value === chosenProject) ? chosenProject : ALL_PROJECTS
+  // The refinement of a project that left the options is dropped from the view state too (select and
+  // state go back to "Todos os projetos"): it must not come back when "Mostrar arquivados" is turned on.
+  useEffect(() => {
+    if (chosenProject !== projectKey) setRefinement({ workspaceKey, projectKey: ALL_PROJECTS })
+  }, [chosenProject, projectKey, workspaceKey, setRefinement])
   const scope = useMemo(
     () => buildScope({ registry, workspaceKey, projectKey, showArchived }),
     [registry, workspaceKey, projectKey, showArchived],
@@ -117,12 +148,187 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
   const filtered = isBoardViewFiltered(view) || projectKey !== ALL_PROJECTS
   const sorted = isBoardViewSorted(view)
 
+  // The cards of each column as they are on screen (the neighbours of a drop are these).
+  const cardsByColumn = useMemo(() => {
+    const byColumn = new Map()
+    for (const card of viewCards) {
+      if (!byColumn.has(card.status)) byColumn.set(card.status, [])
+      byColumn.get(card.status).push(card)
+    }
+    return byColumn
+  }, [viewCards])
+  const cardsOf = (slug) => cardsByColumn.get(slug) ?? NO_CARDS
+
+  // -- drag and drop: the drag context is born here, the two kinds of drag are told apart by
+  // the namespace of their ids (a column is its slug, a card is `card:{id}`).
+  const sensors = useBoardSensors()
+  const [dragCardId, setDragCardId] = useState(null)
+  const [dragSlug, setDragSlug] = useState(null)
+  // { status, beforeId }: where the line of the drop is drawn (null beforeId = after the last card).
+  const [dropHint, setDropHint] = useState(null)
+  const [overStatus, setOverStatus] = useState(null)
+  const [flashedSlug, setFlashedSlug] = useState(null)
+  const [renameTarget, setRenameTarget] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [focusSlug, setFocusSlug] = useState(null)
+  // When the last card drop happened: a click right after it belongs to the drag, not to the
+  // card (the face does not open anything yet; the modal of a later phase reads this).
+  const lastDropRef = useRef(0)
+
+  const draggingCard = dragCardId != null ? viewCards.find((card) => card.id === dragCardId) ?? null : null
+  const draggingColumn = dragSlug ? data.columns.find((column) => column.slug === dragSlug) ?? null : null
+
+  const accessibility = useMemo(() => {
+    const labelBySlug = new Map(data.columns.map((column) => [column.slug, column.label]))
+    const titleById = new Map(viewCards.map((card) => [card.id, card.titulo]))
+    const positionOf = (id, activeId) => {
+      if (isCardDndId(id)) {
+        const card = viewCards.find((entry) => entry.id === cardIdFromDndId(id))
+        if (!card) return null
+        const siblings = cardsOf(card.status)
+        return { position: siblings.indexOf(card) + 1, total: siblings.length, slug: card.status }
+      }
+      if (isColumnDropzoneId(id)) {
+        const slug = slugFromColumnDropzoneId(id)
+        const siblings = cardsOf(slug)
+        const heldHere = isCardDndId(activeId) && siblings.some((entry) => entry.id === cardIdFromDndId(activeId))
+        const end = siblings.length + (heldHere ? 0 : 1)
+        return { position: end, total: end, slug }
+      }
+      const index = data.columns.findIndex((column) => column.slug === id)
+      return index === -1 ? null : { position: index + 1, total: data.columns.length, slug: id }
+    }
+    return {
+      screenReaderInstructions: BOARD_SCREEN_READER_INSTRUCTIONS,
+      announcements: buildAnnouncements({
+        cardTitle: (cardId) => titleById.get(cardId) ?? cardId,
+        columnLabel: (slug) => labelBySlug.get(slug) ?? slug,
+        positionOf,
+      }),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.columns, viewCards, cardsByColumn])
+
+  const resolveTarget = (overId) => resolveCardDropTarget(overId, { columns: data.columns, cards: viewCards })
+
+  const handleDragStart = (event) => {
+    // The tick under the fingertip is the one cue a finger does not cover (a no-op without the API).
+    vibrateDragPickup()
+    if (isCardDndId(event.active.id)) {
+      setDragCardId(cardIdFromDndId(event.active.id))
+      setDropHint(null)
+      setOverStatus(null)
+      // The 5 s poll waits for as long as the card is held: a tick replacing the cards under the finger
+      // makes them jump.
+      data.setCardDragActive(true)
+    } else {
+      setDragSlug(event.active.id)
+    }
+  }
+
+  const handleDragOver = (event) => {
+    if (!isCardDndId(event.active.id)) return
+    const activeId = cardIdFromDndId(event.active.id)
+    const target = resolveTarget(event.over?.id)
+    if (activeId == null || target == null) {
+      setDropHint(null)
+      setOverStatus(null)
+      return
+    }
+    setOverStatus(target.status)
+    // With a sort on the drop only changes the column, so there is no slot to promise.
+    if (sorted) {
+      setDropHint(null)
+      return
+    }
+    const drop = computeCardDrop(cardsOf(target.status).map((card) => card.id), activeId, target.overCardId)
+    // A drop that changes nothing promises nothing: no line.
+    setDropHint(drop ? { status: target.status, beforeId: drop.before_id } : null)
+  }
+
+  const finishCardDrag = () => {
+    setDragCardId(null)
+    setDropHint(null)
+    setOverStatus(null)
+    data.setCardDragActive(false)
+    lastDropRef.current = Date.now()
+  }
+
+  const handleCardDragEnd = async (event) => {
+    const activeId = cardIdFromDndId(event.active.id)
+    const target = resolveTarget(event.over?.id)
+    finishCardDrag()
+    // Released outside any valid column (or on one that vanished): cancelled, no request.
+    if (activeId == null || target == null) return
+
+    // With a sort on, the order on screen is the sort and not the stored one, so neighbours taken from
+    // it would mean nothing (or a conflict): another column behaves like the select, the same one is a no-op.
+    if (sorted) {
+      const held = viewCards.find((card) => card.id === activeId)
+      if (held && held.status !== target.status) await data.changeColumn(activeId, target.status)
+      return
+    }
+
+    const drop = computeCardDrop(cardsOf(target.status).map((card) => card.id), activeId, target.overCardId)
+    if (drop === null) return
+    await data.moveCard(activeId, { status: target.status, afterId: drop.after_id, beforeId: drop.before_id })
+  }
+
+  const handleColumnDragEnd = async (event) => {
+    setDragSlug(null)
+    const current = data.columns.map((column) => column.slug)
+    const next = reorderSlugs(current, event.active?.id, event.over?.id)
+    // Identity, not equality: the helper returns what it was given when nothing changes.
+    if (next === current) return
+    if (await data.reorderColumns(next)) setFlashedSlug(event.active.id)
+  }
+
+  const handleDragEnd = (event) => (isCardDndId(event.active.id) ? handleCardDragEnd(event) : handleColumnDragEnd(event))
+  const handleDragCancel = (event) => {
+    if (isCardDndId(event?.active?.id)) finishCardDrag()
+    else setDragSlug(null)
+  }
+
+  // The button that had the focus left with the error panel: the focus goes to the board. While the
+  // read still fails the panel stays and so does the focus.
+  useEffect(() => {
+    if (!refocus) return
+    scrollerRef.current?.focus()
+    setRefocus(false)
+  }, [refocus, data.columnsError, data.cardsError, data.loading])
+
+  useEffect(() => {
+    if (!flashedSlug) return undefined
+    const timer = setTimeout(() => setFlashedSlug(null), FLASH_MS)
+    return () => clearTimeout(timer)
+  }, [flashedSlug])
+
+  // A column that was just created is scrolled into view and takes the focus on its header.
+  useEffect(() => {
+    if (!focusSlug) return
+    const header = [...(scrollerRef.current?.querySelectorAll('[data-column-header]') ?? [])]
+      .find((node) => node.dataset.columnHeader === focusSlug)
+    if (!header) return
+    header.focus({ preventScroll: true })
+    header.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    setFocusSlug(null)
+  }, [focusSlug, data.columns])
+
+  // After a dialog of a column closes the focus goes back to the menu button of that column (or
+  // to the board, when the column is gone).
+  const returnToColumnMenu = (slug) => () => {
+    const header = [...(scrollerRef.current?.querySelectorAll('[data-column-header]') ?? [])]
+      .find((node) => node.dataset.columnHeader === slug)
+    return header?.querySelector('.v3-board-menu__button') ?? scrollerRef.current
+  }
+
   const retry = async (read) => {
     setRetrying(true)
     try {
       await read()
     } finally {
       setRetrying(false)
+      setRefocus(true)
     }
   }
 
@@ -149,7 +355,12 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
       </Panel>
     )
   } else if (data.columns.length === 0) {
-    body = <Panel notice="tiq">O board ainda não tem colunas.</Panel>
+    body = (
+      <>
+        <Panel notice="tiq">O board ainda não tem colunas.</Panel>
+        <NewColumn first onCreate={data.createColumn} onCreated={() => {}} />
+      </>
+    )
   } else if (data.cardsError) {
     // The cards of this filter never arrived: say so instead of an endless "loading". It leaves
     // only when a read works (the poll keeps trying, "Tentar de novo" reads right now).
@@ -162,7 +373,6 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
       </Panel>
     )
   } else {
-    const byColumn = (column) => viewCards.filter((card) => card.status === column.slug)
     body = (
       <>
         {filtered && data.cardsLoaded && viewCards.length === 0 && (
@@ -171,26 +381,71 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
             <Button variant="text" size="sm" onClick={clearFilters}>Limpar filtros</Button>
           </Panel>
         )}
-        <div
-          ref={scrollerRef}
-          className="v3-board__scroller"
-          role="region"
-          aria-label="Board"
-          tabIndex={0}
-          style={scrollerHeight ? { height: scrollerHeight } : undefined}
+        <MoveBanner notice={data.moveNotice} onDismiss={data.dismissMoveNotice} />
+        <DndContext
+          accessibility={accessibility}
+          sensors={sensors}
+          collisionDetection={buildBoardCollisionDetection}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
-          {data.columns.map((column) => (
-            <BoardColumn
-              key={column.slug}
-              column={column}
-              cards={byColumn(column)}
-              cardsLoaded={data.cardsLoaded}
-              registry={registry}
-              doneSlug={data.doneSlug}
-              hideProject={projectKey !== ALL_PROJECTS}
-            />
-          ))}
-        </div>
+          <SortableContext items={data.columns.map((column) => column.slug)} strategy={horizontalListSortingStrategy}>
+            <div
+              ref={scrollerRef}
+              className="v3-board__scroller"
+              role="region"
+              aria-label="Board"
+              tabIndex={0}
+              style={scrollerHeight ? { height: scrollerHeight } : undefined}
+            >
+              {data.columns.map((column) => (
+                <SortableColumn key={column.slug} slug={column.slug}>
+                  {({ handleProps, dropzoneRef, cardOver }) => (
+                    <BoardColumn
+                      column={column}
+                      cards={cardsOf(column.slug)}
+                      cardsLoaded={data.cardsLoaded}
+                      registry={registry}
+                      doneSlug={data.doneSlug}
+                      hideProject={projectKey !== ALL_PROJECTS}
+                      columns={data.columns}
+                      onChangeColumn={data.changeColumn}
+                      onRename={() => setRenameTarget(column)}
+                      onMarkDone={data.setDoneColumn}
+                      onDelete={() => setDeleteTarget(column)}
+                      handleProps={handleProps}
+                      dropzoneRef={dropzoneRef}
+                      cardOver={cardOver}
+                      dropHint={dropHint && dropHint.status === column.slug ? dropHint : null}
+                      target={overStatus === column.slug}
+                      flash={flashedSlug === column.slug}
+                    />
+                  )}
+                </SortableColumn>
+              ))}
+              <NewColumn onCreate={data.createColumn} onCreated={(created) => setFocusSlug(created.slug)} />
+            </div>
+          </SortableContext>
+          <BoardOverlay card={draggingCard} column={draggingColumn} count={draggingColumn ? cardsOf(draggingColumn.slug).length : 0} />
+        </DndContext>
+        {renameTarget && (
+          <RenameColumnDialog
+            column={renameTarget}
+            onRename={data.renameColumn}
+            onClose={() => setRenameTarget(null)}
+            returnFocusTo={returnToColumnMenu(renameTarget.slug)}
+          />
+        )}
+        {deleteTarget && (
+          <DeleteColumnDialog
+            column={deleteTarget}
+            onDelete={data.deleteColumn}
+            onClose={() => setDeleteTarget(null)}
+            returnFocusTo={returnToColumnMenu(deleteTarget.slug)}
+          />
+        )}
       </>
     )
   }

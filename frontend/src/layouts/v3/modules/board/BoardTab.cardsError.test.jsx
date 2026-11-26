@@ -82,7 +82,7 @@ describe('BoardTab: the cards of the filter could not be read', () => {
       fetchCards.mockRejectedValueOnce(new Error('500'))
       await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
       expect(screen.queryByRole('alert')).toBeNull()
-      expect(screen.getByRole('status').textContent).toBe('Sem atualizar agora')
+      expect(within(screen.getByRole('group', { name: 'Filtros do board' })).getByRole('status').textContent).toBe('Sem atualizar agora')
     } finally {
       vi.useRealTimers()
     }

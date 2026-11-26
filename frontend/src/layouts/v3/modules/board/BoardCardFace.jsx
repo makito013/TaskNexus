@@ -38,10 +38,10 @@ function pendingLabel(count) {
   return count === 1 ? '1 pergunta' : `${count} perguntas`
 }
 
-// The face of a card in a column. In this phase it is reading only: the title is
-// text (opening the card comes with the editing), and a card that is not draggable
-// has no hidden controls. The only control is the one that copies the number.
-export default function BoardCardFace({ card, registry, doneSlug, hideProject = false, today = new Date() }) {
+// The face of a card in a column. The title is text (opening the card comes with the editing).
+// The controls are the one that copies the number and, when the column hands it over, the
+// "Mover" select in the foot (`moveSelect`, an element: the face does not know how to move).
+export default function BoardCardFace({ card, registry, doneSlug, hideProject = false, moveSelect = null, today = new Date() }) {
   const toast = useToast()
   const place = placeOf(card.projeto_id, registry)
   const pending = countPendingQuestions(card.questions)
@@ -107,6 +107,7 @@ export default function BoardCardFace({ card, registry, doneSlug, hideProject = 
             {formatPrazo(card.prazo, today)}
           </span>
         )}
+        {moveSelect}
       </div>
     </article>
   )

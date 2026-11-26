@@ -70,10 +70,10 @@ describe('BoardTab: states', () => {
     await waitFor(() => expect(within(column('A fazer')).getByText('Nenhum card aqui.')).toBeTruthy())
   })
 
-  it('a board with no columns says so, without a button that does nothing', async () => {
+  it('a board with no columns says so, with only the button that creates the first one', async () => {
     setup({}, { columns: [] })
     expect(await screen.findByText('O board ainda não tem colunas.')).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Criar a primeira coluna'])
   })
 
   it('failing to read the columns shows the error and "Tentar de novo" reads again', async () => {
@@ -97,7 +97,7 @@ describe('BoardTab: states', () => {
       expect(screen.queryByText('Sem atualizar agora')).toBeNull()
       fetchCards.mockRejectedValueOnce(new Error('500'))
       await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
-      expect(screen.getByRole('status').textContent).toBe('Sem atualizar agora')
+      expect(within(screen.getByRole('group', { name: 'Filtros do board' })).getByRole('status').textContent).toBe('Sem atualizar agora')
       expect(titlesIn('A fazer')).toContain('Card 1')
       fetchCards.mockResolvedValueOnce(CARDS)
       await act(async () => { await vi.advanceTimersByTimeAsync(5000) })

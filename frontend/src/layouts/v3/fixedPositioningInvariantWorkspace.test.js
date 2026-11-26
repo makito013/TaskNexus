@@ -10,8 +10,10 @@
 //
 // Named exceptions, each one a leaf, each one with a positive control (the exception must stay true):
 //   FIXED_FILES      files that may declare `position: fixed` (the toast region, today)
-//   TRANSFORM_FILES  files that may declare a containing-block property (none yet; the drag-and-drop
-//                    leaves of the board will be named here when they exist)
+//   TRANSFORM_FILES  files that may declare a containing-block property: the two sortable leaves of the
+//                    board, whose inline style carries the translation of dnd-kit. Nothing may be
+//                    `position: fixed` inside what they render (the rule above covers the whole folder),
+//                    BoardLeaf.css (their stylesheet) declares none, and only the leaves import it.
 // A folder that does not exist yet (viewer, until its phase) is skipped, never silently: the test
 // that lists the scanned folders says which ones were found.
 import { describe, it, expect } from 'vitest'
@@ -35,7 +37,10 @@ const SCANNED_FILES = ['components/Dialog/modalStack.js', 'ProjectsViewContext.j
 const REQUIRED_FOLDERS = ['modules/board', 'modules/artifacts', 'components/Toast', 'components/LazyBoundary', 'components/NarrowNotice']
 
 export const FIXED_FILES = ['components/Toast/Toast.css']
-export const TRANSFORM_FILES = []
+export const TRANSFORM_FILES = ['modules/board/SortableCard.jsx', 'modules/board/SortableColumn.jsx']
+export const LEAF_STYLE = 'modules/board/BoardLeaf.css'
+// The only files that import the stylesheet of the drag leaves (the two sortables and the overlay).
+export const LEAF_STYLE_IMPORTERS = ['modules/board/BoardOverlay.jsx', 'modules/board/SortableCard.jsx', 'modules/board/SortableColumn.jsx']
 
 const SOURCE = /\.(js|jsx|css)$/
 const TEST_FILE = /\.test\.(js|jsx)$/
@@ -111,6 +116,18 @@ describe('fixed-positioning invariant on the workspace surfaces', () => {
     for (const file of TRANSFORM_FILES) {
       expect(offendersIn(read(file)).length, `${file} no longer needs its exception`).toBeGreaterThan(0)
     }
+  })
+
+  it('the sortable leaves are the only files that move by transform, and their stylesheet declares none', () => {
+    const declaring = SCANNED.filter((file) => offendersIn(read(file)).length > 0).sort()
+    expect(declaring).toEqual([...TRANSFORM_FILES].sort())
+    expect(SCANNED).toContain(LEAF_STYLE)
+    expect(offendersIn(read(LEAF_STYLE))).toEqual([])
+  })
+
+  it('only the leaves import the stylesheet of the drag leaves', () => {
+    const importers = SCANNED.filter((file) => /\.jsx?$/.test(file) && /BoardLeaf\.css/.test(stripComments(read(file)))).sort()
+    expect(importers).toEqual(LEAF_STYLE_IMPORTERS)
   })
 
   it('goes red for the fixtures it exists to catch', () => {

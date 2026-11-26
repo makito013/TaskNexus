@@ -15,6 +15,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const OWNER = 'useBoardData.js'
 
 const OWNER_ONLY_IMPORTS = ['hooks/useCards', 'hooks/useColumns', 'services/api']
+// The drag library stays in the files that make the board draggable.
+export const DND_FILES = ['BoardTab.jsx', 'BoardColumn.jsx', 'BoardOverlay.jsx', 'SortableCard.jsx', 'SortableColumn.jsx']
+
 const FORBIDDEN_IMPORTS = [
   'services/notifier',
   'services/pushSubscription',
@@ -49,6 +52,9 @@ export function scanBoardSource(file, source) {
     const banned = FORBIDDEN_IMPORTS.find((entry) => endsWithModule(specifier, entry))
     if (banned) problems.push(`imports ${banned}`)
   }
+
+  const usesDnd = importSpecifiers(code).some((specifier) => specifier.startsWith('@dnd-kit/'))
+  if (usesDnd && !DND_FILES.includes(path.basename(file))) problems.push('imports @dnd-kit outside the drag files')
 
   if (/\bfetch\s*\(/.test(code)) problems.push('calls fetch( directly')
   if (/\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b/.test(code)) problems.push('opens its own connection')
@@ -120,6 +126,18 @@ describe('scanBoardSource (fixtures prove the detector goes red)', () => {
     const problems = scan(source)
     expect(problems.length).toBeGreaterThan(0)
     expect(problems.join('\n')).toMatch(expected)
+  })
+
+  it('lets the drag files import the drag library and nobody else', () => {
+    const source = "import { DndContext } from '@dnd-kit/core'"
+    for (const file of DND_FILES) expect(scan(source, file)).toEqual([])
+    expect(scan(source, 'MoveSelect.jsx')).not.toEqual([])
+    expect(scan(source, OWNER)).not.toEqual([])
+  })
+
+  it('the drag files listed are real files of the folder (the list has something to guard)', () => {
+    const names = SOURCE_FILES.map((file) => path.basename(file))
+    for (const file of DND_FILES) expect(names).toContain(file)
   })
 
   it('lets the owner import what only the owner may', () => {
