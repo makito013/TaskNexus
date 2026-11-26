@@ -133,31 +133,49 @@ se ele herdar `CLAUDECODE` ou `CLAUDE_CODE_CHILD_SESSION` (iniciado de dentro de
 uma sessão do Claude Code), o boot avisa que os transcripts podem ficar
 desligados.
 
-### Quem pode falar com o chat (`Host` e `Origin`)
+### Quem pode falar com o app (`Host` e `Origin`)
 
-O backend não tem login, e o chat aprova a execução de ferramentas. Por isso toda
-rota do chat (leituras incluídas), o WebSocket `/ws/chat/...` e as rotas
-`POST /api/sessions/{key}/terminate` e `/reset` conferem, **antes de qualquer
-outra coisa**, o cabeçalho `Host` da requisição (e depois o `Origin`). Isso fecha
-o DNS rebinding: a página hostil controla `Host` e `Origin` ao mesmo tempo, então
-só uma lista de hosts aceitos a barra. Respondem `403` (`host_not_allowed` ou
-`origin_not_allowed`) ou fecham o socket com `4403`.
+O backend não tem login, e o app dá acesso a terminais reais e aprova a execução
+de ferramentas no chat. Por isso **toda** requisição HTTP e todo WebSocket
+(`/ws/pty`, `/ws/chat`), na porta pública, no `-NoTls`/`-Port` e no canal de
+loopback `http://127.0.0.1:8765`, passam por uma guarda única
+(`backend/app/request_guard.py`) que confere, **antes de qualquer rota ou
+efeito**, o cabeçalho `Host` (e depois o `Origin`). Isso fecha o DNS rebinding: a
+página hostil controla `Host` e `Origin` ao mesmo tempo, então só uma lista de
+hosts aceitos a barra. Respondem `403` (`host_not_allowed`, `origin_not_allowed`
+ou `duplicate_header`); um WebSocket recusado é aceito e fechado na hora, com
+`4403` no chat e `1008` no terminal.
 
 Passam sem configurar nada: IP literal (`127.0.0.1`, `[::1]`, o IP da tailnet),
-nome sem ponto (`localhost`, nome NetBIOS do PC) e qualquer `*.ts.net` (o nome
-MagicDNS do certificado do Tailscale). Isso cobre a `443`, o canal de loopback
-`http://127.0.0.1:8765` e os modos `-NoTls`/`-Port` por IP.
+`localhost`, o **nome desta máquina** (`socket.gethostname()`) e qualquer
+`*.ts.net` (o nome MagicDNS do certificado do Tailscale). Nenhum outro nome sem
+ponto passa. Cliente sem `Origin` (hooks do `claude`, adaptadores MCP, `curl`)
+passa se o `Host` for aceito; com `Origin`, ele precisa ter o mesmo `host:porta`
+do `Host`. Um `Host` ou `Origin` repetido é recusado. `Origin: null` só é aceito
+em `GET`/`HEAD` de `/api/viewer/{id}/f/...` e `/api/artifacts/{id}/f/...` (os
+arquivos que o iframe isolado do visualizador carrega, que respondem com
+`Access-Control-Allow-Origin: null`). O CORS aberto (`*`) foi removido.
 
-Para servir o app sob **outro domínio** (um nome com ponto fora de `ts.net`),
-liste-o na variável de ambiente do backend:
+Se o nome curto do MagicDNS for diferente do nome da máquina, ou se o app for
+servido sob **outro domínio** (um nome com ponto fora de `ts.net`), liste o host
+na variável de ambiente do backend:
 
 - `CHAT_ALLOWED_HOSTS`: hosts aceitos além dos acima, separados por vírgula
   (`tn.exemplo.com,outro.exemplo.com`). Porta e ponto final são ignorados.
-- `CHAT_ALLOWED_ORIGINS`: origens completas aceitas (por exemplo o servidor de
-  desenvolvimento do Vite, `http://localhost:5173`); o host de cada uma também
-  passa a ser aceito.
+- `CHAT_ALLOWED_ORIGINS`: origens completas aceitas, com CORS para elas (por
+  exemplo `http://localhost:5173`); o host de cada uma também passa a ser aceito.
+  `null` é ignorado.
+- `HOOK_CALLBACK_BASE_URL`: o host dessa URL (com ou sem esquema; a porta é
+  ignorada) entra sozinho na lista, para os hooks e os adaptadores MCP que chamam
+  o backend por um proxy. Se o proxy reescreve o `Host`, use `CHAT_ALLOWED_HOSTS`.
 
-As duas são lidas na subida do backend: reinicie depois de mudar.
+As variáveis são lidas na subida do backend: reinicie depois de mudar.
+
+Servidor de desenvolvimento do Vite (`npm run dev`): funciona sem configurar
+nada, porque o `vite.config.js` mantém o `Host` do navegador no proxy de `/api`.
+Um checkout antigo do frontend (sem essa linha) em dev contra este backend recebe
+`403` nas escritas; use `CHAT_ALLOWED_ORIGINS=http://localhost:5173` ou atualize o
+`vite.config.js`.
 
 ## Reverter o chat da V3
 

@@ -29,7 +29,7 @@ READS = [
 
 @pytest.mark.parametrize("host", [
     "127.0.0.1", "127.0.0.1:8765", "[::1]:8765", "::1", "100.101.102.103:443", "localhost", "localhost:5173",
-    "testserver", "my-pc", "MY-PC:8765", "bruno-pc.tail1234.ts.net", "bruno-pc.tail1234.ts.net:443",
+    "bruno-pc.tail1234.ts.net", "bruno-pc.tail1234.ts.net:443",
     "bruno-pc.tail1234.ts.net.", "[fe80::1]",
 ])
 def test_the_default_hosts_pass(host):
