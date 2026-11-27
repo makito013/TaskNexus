@@ -14,7 +14,12 @@ const UNSAFE_CHARACTERS = /[\u0000-\u001f\u007f-\u009f?#\\]/
 export function isSafeSessionKey(sessionKey) {
   if (typeof sessionKey !== 'string' || sessionKey === '') return false
   if (UNSAFE_CHARACTERS.test(sessionKey)) return false
-  return sessionKey.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+  return sessionKey.split('/').every((segment) => {
+    if (segment === '') return false
+    // `%2e` is a dot to the URL parser, in any case and mixed with literal dots (`%2e%2e`, `.%2E`).
+    const dotted = segment.replace(/%2e/gi, '.')
+    return dotted !== '.' && dotted !== '..'
+  })
 }
 
 function encodeSegments(sessionKey, encodeSegment) {

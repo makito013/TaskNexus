@@ -1,0 +1,238 @@
+/*
+ * The six renderers of the viewer. Only --v3-* tokens (the colours of the syntax tokens come from Shiki: the one
+ * exception, the background stays surface-2). No containing-block property, nothing fixed. The headings of a
+ * document inside the panel are styled here (theme/prose.css only styles h3 and below).
+ */
+.v3-viewer-callout {
+  margin: 0 0 var(--v3-space-3);
+}
+
+.v3-viewer-note {
+  margin: 0;
+  padding: var(--v3-space-1) var(--v3-space-3);
+  color: var(--v3-ink-muted);
+}
+
+/* ---- markdown ---- */
+.v3-viewer-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:root[data-layout="v3"] .v3-viewer-markdown h1,
+:root[data-layout="v3"] .v3-viewer-markdown h2 {
+  margin: var(--v3-space-5) 0 var(--v3-space-2);
+  font-family: var(--v3-font-display);
+  font-size: var(--v3-type-title-sm-size);
+  line-height: var(--v3-type-title-sm-line);
+  font-weight: 700;
+}
+.v3-viewer-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+.v3-viewer-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.v3-viewer-codeblock {
+  margin: 0 0 var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-md);
+  overflow: hidden;
+}
+.v3-viewer-codeblock__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+  padding: 0 var(--v3-space-2) 0 var(--v3-space-3);
+  border-bottom: 1px solid var(--v3-line);
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-mono);
+  font-size: var(--v3-type-mono-sm-size);
+}
+.v3-viewer-codeblock__copy {
+  min-height: var(--v3-control-sm);
+  padding: 0 var(--v3-space-2);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-label-size);
+  cursor: pointer;
+}
+.v3-viewer-codeblock > pre {
+  margin: 0;
+  overflow-x: auto;
+  background-color: var(--v3-surface-2);
+}
+
+/* ---- code ---- */
+.v3-viewer-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+  margin-bottom: var(--v3-space-2);
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-code {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface-2);
+  font-family: var(--v3-font-mono);
+  font-size: var(--v3-type-mono-size);
+  line-height: var(--v3-type-mono-line);
+}
+.v3-viewer-line {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--v3-space-3);
+  padding-right: var(--v3-space-3);
+}
+.v3-viewer-line__number {
+  min-width: 4ch;
+  padding-left: var(--v3-space-2);
+  color: var(--v3-ink-muted);
+  font-size: var(--v3-type-mono-sm-size);
+  text-align: right;
+  user-select: none;
+}
+.v3-viewer-line__text {
+  white-space: pre;
+}
+.v3-viewer-code--wrap .v3-viewer-line__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.v3-viewer-line--target {
+  border-left: 3px solid var(--v3-kan);
+}
+.v3-viewer-line--flash {
+  background-color: var(--v3-kan-tint);
+}
+
+/* ---- html ---- */
+.v3-viewer-subtabs {
+  display: flex;
+  flex: none;
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-viewer-subtab {
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background-color: transparent;
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-sans);
+  cursor: pointer;
+}
+.v3-viewer-subtab[aria-selected="true"] {
+  border-bottom-color: var(--v3-kan);
+  color: var(--v3-ink);
+}
+.v3-viewer-subtab:disabled {
+  cursor: not-allowed;
+}
+.v3-viewer-iframe {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background-color: var(--v3-surface);
+}
+.v3-viewer-code-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--v3-space-4);
+}
+
+/* ---- image ---- */
+.v3-viewer-image__bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--v3-space-2);
+}
+.v3-viewer-image__frame {
+  display: flex;
+  justify-content: center;
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface-2);
+  overflow: auto;
+}
+.v3-viewer-image__frame img {
+  max-width: 100%;
+  height: auto;
+}
+.v3-viewer-image__frame--actual img {
+  max-width: none;
+}
+
+/* ---- pdf ---- */
+.v3-viewer-pdfbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-2) var(--v3-space-3);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-viewer-pdfbar .v3-viewer-callout {
+  flex: 1 1 200px;
+  margin: 0;
+}
+.v3-viewer-pdfbar__actions {
+  display: flex;
+  gap: var(--v3-space-2);
+}
+
+/* ---- binary and large ---- */
+.v3-viewer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v3-space-2);
+  margin: auto;
+  max-width: 420px;
+  padding: var(--v3-space-5);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+}
+.v3-viewer-card__title {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.v3-viewer-card__details {
+  margin: 0;
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+.v3-viewer-card a.v3-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.v3-viewer-pdfbar a.v3-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

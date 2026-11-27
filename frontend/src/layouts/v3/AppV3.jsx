@@ -23,6 +23,7 @@ import ProjectsScreen from './modules/projects/ProjectsScreen.jsx'
 import ProjectsSessionsProvider, { chatPath } from './sessions/ProjectsSessionsProvider.jsx'
 import { useProjectsSessions } from './sessions/useProjectsSessions.js'
 import TasksScreen from './modules/tasks/TasksScreen.jsx'
+import ViewerShell from './modules/viewer/ViewerShell.jsx'
 import { ProjectsViewProvider } from './ProjectsViewContext.jsx'
 import { useV3Theme } from './theme/useV3Theme.js'
 import './AppV3.css'
@@ -119,28 +120,31 @@ export default function AppV3({ initialTheme }) {
             {pendingPushKey ? <PushLinkRedirect sessionKey={pendingPushKey} replace={replace} /> : null}
             {/* Above <main>: the open conversation's socket outlives the screen (CA38). Inert until a chat is opened. */}
             <ChatSessionHost activeKey={isChat ? route.sessionKey : null}>
-              {/* Anchors the shell root to the visual viewport (soft keyboard) only on the chat route, <= 1279. */}
-              {isChat && narrowShell ? <ChatViewportShell /> : null}
-              <ModuleRail
-                modules={MODULES}
-                activeId={activeId}
-                onSelect={openModule}
-                theme={theme}
-                onToggleTheme={toggleTheme}
-              />
-              <div className="v3-main-column v3-shell__column">
-                <Island
-                  pet={activeModule.pet}
-                  state={petState}
-                  message={message}
-                  actions={liveReport?.actions}
-                  colleagues={colleaguesOf(activeModule.id)}
-                  onColleagueSelect={openModule}
+              {/* The file viewer's state and toasts live here too: its tabs and open panel survive a trip to another screen. */}
+              <ViewerShell activeSessionKey={isChat ? route.sessionKey : null}>
+                {/* Anchors the shell root to the visual viewport (soft keyboard) only on the chat route, <= 1279. */}
+                {isChat && narrowShell ? <ChatViewportShell /> : null}
+                <ModuleRail
+                  modules={MODULES}
+                  activeId={activeId}
+                  onSelect={openModule}
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
                 />
-                <main className="v3-shell__screen">
-                  {Screen ? <Screen {...screenProps} /> : <ComingSoon key={activeModule.id} module={activeModule} />}
-                </main>
-              </div>
+                <div className="v3-main-column v3-shell__column">
+                  <Island
+                    pet={activeModule.pet}
+                    state={petState}
+                    message={message}
+                    actions={liveReport?.actions}
+                    colleagues={colleaguesOf(activeModule.id)}
+                    onColleagueSelect={openModule}
+                  />
+                  <main className="v3-shell__screen">
+                    {Screen ? <Screen {...screenProps} /> : <ComingSoon key={activeModule.id} module={activeModule} />}
+                  </main>
+                </div>
+              </ViewerShell>
             </ChatSessionHost>
           </ToastHost>
         </ProjectsViewProvider>

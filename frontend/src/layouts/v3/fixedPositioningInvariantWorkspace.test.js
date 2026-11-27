@@ -34,9 +34,9 @@ const SCANNED_FOLDERS = [
 ]
 const SCANNED_FILES = ['components/Dialog/modalStack.js', 'ProjectsViewContext.jsx']
 // Folders that must exist already in this phase (the others arrive with their phase).
-const REQUIRED_FOLDERS = ['modules/board', 'modules/artifacts', 'components/Toast', 'components/LazyBoundary', 'components/NarrowNotice']
+const REQUIRED_FOLDERS = ['modules/board', 'modules/artifacts', 'modules/viewer', 'components/Toast', 'components/LazyBoundary', 'components/NarrowNotice']
 
-export const FIXED_FILES = ['components/Toast/Toast.css']
+export const FIXED_FILES = ['components/Toast/Toast.css', 'modules/viewer/ViewerDrawer.jsx']
 export const TRANSFORM_FILES = ['modules/board/SortableCard.jsx', 'modules/board/SortableColumn.jsx']
 export const LEAF_STYLE = 'modules/board/BoardLeaf.css'
 // The only files that import the stylesheet of the drag leaves (the two sortables and the overlay).
@@ -83,6 +83,10 @@ describe('fixed-positioning invariant on the workspace surfaces', () => {
       'modules/board/Board.css',
       'modules/board/BoardTab.jsx',
       'modules/artifacts/ArtifactsTab.jsx',
+      'modules/viewer/ViewerDrawer.jsx',
+      'modules/viewer/ViewerSurface.jsx',
+      'modules/viewer/Viewer.css',
+      'modules/viewer/renderers/renderers.css',
       'components/Toast/Toast.css',
       'components/Toast/ToastHost.jsx',
       'components/LazyBoundary/LazyBoundary.jsx',

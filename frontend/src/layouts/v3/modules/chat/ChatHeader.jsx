@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
 import Chip from '../../components/Chip/Chip.jsx'
 import { agentInitials } from '../projects/AgentCard.jsx'
+import ViewerButton from '../viewer/ViewerButton.jsx'
 import ActionMenu from './ActionMenu.jsx'
 import { modeLabel } from './chatLabels.js'
 import RenameField from './RenameField.jsx'
@@ -41,6 +42,8 @@ function StopIcon() {
 //                  sent to the terminal): no mode chip, no rename or connectors, no state chip
 //   onOpenTerminal when given (a chat of a Claude agent): the "Abrir no terminal" button and its menu item
 //   onOpenChat     when given (a Claude conversation that lives in the terminal): the "Abrir no chat" menu item
+//   sessionKey     when given, the "Visualizador" button of the file viewer (it renders nothing without the viewer shell)
+//   onOpenConversations  when given (the list of chats is folded away beside the open viewer): "Conversas" opens it
 //   onBack         phone only (the screen passes it below 768): "Voltar" to the list of chats, 44x44. The
 //                  stylesheet keeps only the agent and the state chips on a phone and shrinks "Interromper"
 //                  to its icon below 1280 (the button keeps its aria-label either way).
@@ -65,6 +68,8 @@ export default function ChatHeader({
   terminal = false,
   onOpenTerminal,
   onOpenChat,
+  sessionKey = null,
+  onOpenConversations,
 }) {
   const [renaming, setRenaming] = useState(false)
 
@@ -125,6 +130,10 @@ export default function ChatHeader({
               <span className="v3-chat-terminal-button__label">Abrir no terminal</span>
             </Button>
           ) : null}
+          {onOpenConversations ? (
+            <Button size="sm" className="v3-chat-conversations-button" onClick={onOpenConversations}>Conversas</Button>
+          ) : null}
+          {sessionKey ? <ViewerButton sessionKey={sessionKey} /> : null}
           <ActionMenu label="Mais ações do chat" items={items} />
         </div>
       </div>
