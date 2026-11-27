@@ -54,6 +54,9 @@ export default function ProjectsScreen() {
     unassignedKnown,
     setUnassignedKnown,
   } = useProjectsView()
+  // What the Artefatos tab last said about artifacts outside every workspace (null = not known yet); the
+  // Board tab's answer lives in the view context above.
+  const [artifactsUnassigned, setArtifactsUnassigned] = useState(null)
   const [onlyWaiting, setOnlyWaiting] = useState(false)
   const [waitingFocusRequest, setWaitingFocusRequest] = useState(0)
   // "Abrir board": the Board heading takes the focus once its chunk is there.
@@ -86,12 +89,14 @@ export default function ProjectsScreen() {
   const totalFailure = !loading && !registry && Boolean(errors.workspaces)
   const ready = !loading && Boolean(registry && board)
 
-  // "Sem workspace" exists when a session OR a card lives outside every workspace.
-  // The cards are only known once the Board tab has read them (unassignedKnown is
-  // null until then): while it is not known, a saved "Sem workspace" stays
-  // selectable instead of being thrown away before the board can answer.
+  // "Sem workspace" exists when a session, a card OR an artifact lives outside every workspace.
+  // The cards and the artifacts are only known once their tab has read them (null until then): while the
+  // tab on screen has not answered, a saved "Sem workspace" stays selectable instead of being thrown
+  // away before it can.
+  const pendingAnswer = tab === 'artifacts' ? artifactsUnassigned === null : unassignedKnown === null
   const keepUnassigned = unassignedKnown === true
-    || (unassignedKnown === null && workspaceKey === NO_WORKSPACE_VALUE)
+    || artifactsUnassigned === true
+    || (pendingAnswer && workspaceKey === NO_WORKSPACE_VALUE)
   const options = useMemo(
     () => (ready
       ? workspaceOptions(registry, { hasUnassigned: hasUnassignedPlaces(board) || keepUnassigned, showArchived })
@@ -298,7 +303,14 @@ export default function ProjectsScreen() {
                         onFocusServed={markBoardFocusServed}
                       />
                     )
-                    : <ArtifactsTab />}
+                    : (
+                      <ArtifactsTab
+                        registry={registry}
+                        workspaceKey={workspaceKey}
+                        showArchived={showArchived}
+                        onHasUnassigned={setArtifactsUnassigned}
+                      />
+                    )}
                 </LazyBoundary>
               )}
             </>

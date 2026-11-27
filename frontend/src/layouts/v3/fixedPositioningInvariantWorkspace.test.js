@@ -36,7 +36,7 @@ const SCANNED_FILES = ['components/Dialog/modalStack.js', 'ProjectsViewContext.j
 // Folders that must exist already in this phase (the others arrive with their phase).
 const REQUIRED_FOLDERS = ['modules/board', 'modules/artifacts', 'modules/viewer', 'components/Toast', 'components/LazyBoundary', 'components/NarrowNotice']
 
-export const FIXED_FILES = ['components/Toast/Toast.css', 'modules/viewer/ViewerDrawer.jsx']
+export const FIXED_FILES = ['components/Toast/Toast.css', 'modules/viewer/ViewerDrawer.jsx', 'modules/artifacts/ArtifactMenu.css']
 export const TRANSFORM_FILES = ['modules/board/SortableCard.jsx', 'modules/board/SortableColumn.jsx']
 export const LEAF_STYLE = 'modules/board/BoardLeaf.css'
 // The only files that import the stylesheet of the drag leaves (the two sortables and the overlay).
