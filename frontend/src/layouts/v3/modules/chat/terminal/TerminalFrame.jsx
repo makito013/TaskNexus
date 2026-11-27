@@ -2,7 +2,9 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { encodePtySessionKey } from '../../../../../services/sessionKey.js'
 import { useTerminalSurface } from '../../../../../terminal/useTerminalSurface.js'
 import { FONTS_READY_TIMEOUT_MS } from '../../../../../terminal/xtermDefaults.js'
+import { createFilePathLinkProvider, openWebLink } from '../../../../../utils/filePathLinks.js'
 import { parseSessionKey } from '../../projects/agentBoard.js'
+import { useViewerShell } from '../../viewer/ViewerShell.jsx'
 import { TERMINAL_FONT_SIZE, readTerminalOptions, useTerminalTheme } from './terminalTheme.js'
 
 // The terminal of the chat route (Designer 11.1): a dark frame (`--v3-island` in both themes) with a 40 px bar
@@ -28,6 +30,11 @@ import { TERMINAL_FONT_SIZE, readTerminalOptions, useTerminalTheme } from './ter
 //   onLeave()                F6 / Shift+F6 typed in the terminal (the keyboard way out: Tab, Shift+Tab and Esc belong
 //                            to the program in the PTY)
 //   failed                   the view has a failure strip for this attempt: the bar must not say "Conectado"
+//
+// Links in the terminal: a file path (`docs/plano.md`, `src/app.py:42`) is underlined and opens in the viewer of this
+// conversation (only while the viewer shell exists), and a web link opens in a new tab WITHOUT `opener`
+// (openWebLink, always). Both are mount-time options of the hook: the providers live in a `useState` (one identity,
+// the terminal is never rebuilt for them) and read the shell and the key through refs.
 
 const STATUS_TEXT = {
   connecting: 'Conectando ao terminal…',
@@ -86,6 +93,20 @@ const TerminalSurface = forwardRef(function TerminalSurface({ sessionKey, onStat
   const spentKeyRef = useRef(null)
   const theme = useTerminalTheme()
   const [terminalOptions] = useState(() => readTerminalOptions())
+  const viewerShell = useViewerShell()
+  const viewerShellRef = useRef(viewerShell)
+  viewerShellRef.current = viewerShell
+  const sessionKeyRef = useRef(sessionKey)
+  sessionKeyRef.current = sessionKey
+  const [linkProviders] = useState(() => [
+    (term) => createFilePathLinkProvider(
+      term,
+      (path, line) => {
+        viewerShellRef.current?.openFile(sessionKeyRef.current, path, { line })
+      },
+      () => Boolean(viewerShellRef.current),
+    ),
+  ])
   const { projectKey, agentId } = parseSessionKey(sessionKey)
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const { status, sendControlByte, focus, termRef } = useTerminalSurface({
@@ -96,6 +117,8 @@ const TerminalSurface = forwardRef(function TerminalSurface({ sessionKey, onStat
     visible: true,
     theme,
     terminalOptions,
+    linkProviders,
+    onOpenLink: openWebLink,
     onControlFrame,
     onStatusChange: onStatus,
   })

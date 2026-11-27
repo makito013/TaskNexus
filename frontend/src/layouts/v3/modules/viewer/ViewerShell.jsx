@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { useViewer, useViewerActions, useViewerHost, ViewerProvider } from '../../../../hooks/viewerState.jsx'
+import { useViewerActions, useViewerHost, ViewerProvider } from '../../../../hooks/viewerState.jsx'
 import { sessionScope } from '../../../../services/viewerApi.js'
 import { isSafeSessionKey } from '../../../../services/sessionKey.js'
-import { useToast } from '../../components/Toast/toastContext.js'
 import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
+import ViewerFeedBridge from './ViewerFeedBridge.jsx'
+import ViewerToast from './ViewerToast.jsx'
 import { CHAT_DRAWER_MIN_VIEWPORT } from './viewerLayout.js'
 
 export const NO_CONVERSATION_MESSAGE = 'Abra uma conversa para ver arquivos do projeto.'
@@ -40,30 +41,13 @@ export function useViewportWidth() {
 //   setChatContentVisible(bool)    whether the conversation itself is on screen (a phone shows the list apart)
 //   requestPanelFocus()            the next opening of a drawer/fullscreen moves the focus into it (a user gesture)
 //   consumePanelFocus() -> bool
+//   chatViewRequest                a number that goes up each time something asks the chat to show the conversation
+//                                  itself ("Ver" of the toast): a phone that was showing the list goes back to it
+//   requestChatView()
 const ViewerShellContext = createContext(null)
 
 export function useViewerShell() {
   return useContext(ViewerShellContext)
-}
-
-// The viewer's own toast slot (viewerState.toast) becomes a shell toast. A toast id is handled once: React
-// runs effects twice in development, and a second push would show the same message twice.
-function ViewerToastBridge() {
-  const viewer = useViewer()
-  const { push } = useToast()
-  const handledRef = useRef(new Set())
-  const toast = viewer?.toast ?? null
-  const dismissToast = viewer?.dismissToast
-
-  useEffect(() => {
-    if (!toast || handledRef.current.has(toast.id)) return
-    handledRef.current.add(toast.id)
-    const error = toast.kind === 'error'
-    push({ text: localizeViewerMessage(toast.text), kind: error ? 'error' : 'info' })
-    dismissToast?.(toast.id)
-  }, [toast, push, dismissToast])
-
-  return null
 }
 
 function ShellInner({ activeSessionKey, children }) {
@@ -73,6 +57,8 @@ function ShellInner({ activeSessionKey, children }) {
   const [chatContentVisible, setChatContentVisible] = useState(true)
   const inflightRef = useRef(new Map())
   const focusRequestRef = useRef(false)
+  const [chatViewRequest, setChatViewRequest] = useState(0)
+  const requestChatView = useCallback(() => setChatViewRequest((count) => count + 1), [])
 
   // A key out of the address bar goes into a URL path: a refused key is "no conversation".
   const safeKey = isSafeSessionKey(activeSessionKey) ? activeSessionKey : null
@@ -122,13 +108,16 @@ function ShellInner({ activeSessionKey, children }) {
         focusRequestRef.current = false
         return wanted
       },
+      chatViewRequest,
+      requestChatView,
     }),
-    [openFile],
+    [openFile, chatViewRequest, requestChatView],
   )
 
   return (
     <ViewerShellContext.Provider value={value}>
-      <ViewerToastBridge />
+      <ViewerToast localize={localizeViewerMessage} requestChatView={requestChatView} />
+      <ViewerFeedBridge />
       {children}
     </ViewerShellContext.Provider>
   )

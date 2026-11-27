@@ -1,0 +1,47 @@
+/*
+ * A file path in the agent's text as a button (fileLinks.js): dotted underline, solid and in the "kan" ink on hover
+ * and focus. The hit area is a pseudo-element that never leaves its own line with a fine pointer (inset 0 = the inline
+ * box), so paths on consecutive lines do not steal each other's clicks. With a coarse pointer it grows only
+ * horizontally plus 2px vertically (still inside the line gap): a 44px tall area would cover the centre of the
+ * neighbouring line. No transform, filter or position: fixed (the invariant of the viewer folder).
+ */
+.v3-file-link {
+  position: relative;
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--v3-ink-muted);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.v3-file-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+@media (pointer: coarse) {
+  .v3-file-link::after {
+    inset: -2px -12px;
+  }
+  /* A later path must not grow leftwards over the end of the previous path on the same line. */
+  .v3-file-link + .v3-file-link::after {
+    left: 0;
+  }
+}
+.v3-file-link:hover,
+.v3-file-link:focus-visible {
+  color: var(--v3-kan-ink);
+  text-decoration-style: solid;
+  text-decoration-color: var(--v3-kan-ink);
+}
+.v3-file-link:focus-visible {
+  outline: 2px solid var(--v3-kan);
+  outline-offset: 2px;
+  border-radius: var(--v3-radius-sm);
+}

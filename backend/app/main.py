@@ -37,6 +37,7 @@ from app.card_store import CardStore, ColumnDeleteError, UnknownColumnError
 from app.settings_store import SettingsStore
 from app.viewer_store import ViewerStore
 from app.viewer_api import ViewerService, create_viewer_router
+from app.viewer_feed import ViewerFeed, create_viewer_feed_router
 from app.artifact_store import ArtifactStore
 from app.artifacts_api import ArtifactService, create_artifacts_router
 from app.workspace_store import WorkspaceStore
@@ -3314,6 +3315,37 @@ async def notify_viewer_open(
         return False
 
 
+# V3: one read-only socket (`/ws/viewer`) that tells every open V3 about the files an agent opens, for any
+# conversation (a chat has no PTY socket, and a conversation out of view has no screen to tell).
+viewer_feed = ViewerFeed()
+
+
+async def announce_viewer_open(
+    session_key: str, item: dict, reused: bool, evicted: list[str] | None, opened_by: str,
+) -> bool:
+    """Publishes a file opened by an AGENT to the V3 feed, after `notify_viewer_open` (which does not change).
+
+    The frame carries a COPY of the item with `opened_by: "agent"`: on a reused tab the store keeps the
+    first opener, and the V3 would label an agent's opening "Você". The stored row is not touched.
+
+    Returns True only for a chat conversation that had a reader: the PTY's `delivered` stays exactly what
+    `notify_viewer_open` said. A failed engine lookup is False, but the frame is already out."""
+    if opened_by != "agent":
+        return False
+    reached = viewer_feed.publish({
+        "type": "viewer_open",
+        "session_key": session_key,
+        "item": {**item, "opened_by": "agent"},
+        "reused": reused,
+        "evicted": list(evicted or []),
+    })
+    try:
+        engine = await store.get_engine(session_key)
+    except Exception:  # noqa: BLE001 - the tab is stored and the frame is out
+        return False
+    return engine == "chat" and reached > 0
+
+
 viewer_service = ViewerService(
     store=viewer_store,
     find_project_path=_find_project_path,
@@ -3322,6 +3354,7 @@ viewer_service = ViewerService(
     get_projects_root=lambda: PROJECTS_ROOT,
     session_key_for_claude_id=store.get_session_key_by_claude_id,
     notify=notify_viewer_open,
+    announce=announce_viewer_open,
     registry_root_for=_registry_root_for,
 )
 
@@ -3369,6 +3402,7 @@ artifact_service = ArtifactService(
 app.include_router(create_viewer_router(
     viewer_service, on_agent_open=artifact_service.publish_opened_item,
 ))
+app.include_router(create_viewer_feed_router(viewer_feed))
 app.include_router(create_artifacts_router(artifact_service))
 
 # Workspace registry (V3 track 1): kept out of /api/projects/... (the

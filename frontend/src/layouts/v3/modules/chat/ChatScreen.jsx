@@ -28,6 +28,7 @@ import { useProjectName } from './useProjectName.js'
 import { useStickToEnd } from './useStickToEnd.js'
 import TerminalView from './terminal/TerminalView.jsx'
 import ConversationsDialog from '../viewer/ConversationsDialog.jsx'
+import FileLinkScope from '../viewer/FileLinkScope.jsx'
 import FloatingFilesButton from '../viewer/FloatingFilesButton.jsx'
 import ViewerSurface, { useChatViewerLayout } from '../viewer/ViewerSurface.jsx'
 import { useViewerShell } from '../viewer/ViewerShell.jsx'
@@ -229,6 +230,16 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
     setChatContentVisible(!phone || view === 'chat')
     return () => setChatContentVisible(true)
   }, [setChatContentVisible, phone, view])
+
+  // "Ver" of a toast (the viewer shell raises the number): a phone that was showing the list goes back to the
+  // conversation. The value at mount is not a request, only a later change is.
+  const chatViewRequest = viewerShell?.chatViewRequest ?? 0
+  const handledChatViewRef = useRef(chatViewRequest)
+  useEffect(() => {
+    if (handledChatViewRef.current === chatViewRequest) return
+    handledChatViewRef.current = chatViewRequest
+    if (phone) setView('chat')
+  }, [chatViewRequest, phone])
 
   // The view that disappears takes the focus with it: land on the heading of the one that appears.
   useEffect(() => {
@@ -538,28 +549,30 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
             ) : emptyChat ? (
               <EmptyThread agentName={agentName} />
             ) : (
-              <MessageList
-                logRef={threadRef}
-                live={state.replayComplete}
-                messages={state.messages}
-                toolsById={state.toolsById}
-                cards={state.cards}
-                turn={state.turn}
-                lastTurn={state.lastTurn}
-                agentName={agentName}
-                onResend={canResend ? session.send : undefined}
-                renderCard={(card) => (
-                  <PermissionCard
-                    card={card}
-                    agentName={agentName}
-                    context={projectName}
-                    decision={session.decisions[card.id]}
-                    onDecide={session.decide}
-                    focusAfterDecision={focusComposer}
-                    phone={phone}
-                  />
-                )}
-              />
+              <FileLinkScope sessionKey={sessionKey}>
+                <MessageList
+                  logRef={threadRef}
+                  live={state.replayComplete}
+                  messages={state.messages}
+                  toolsById={state.toolsById}
+                  cards={state.cards}
+                  turn={state.turn}
+                  lastTurn={state.lastTurn}
+                  agentName={agentName}
+                  onResend={canResend ? session.send : undefined}
+                  renderCard={(card) => (
+                    <PermissionCard
+                      card={card}
+                      agentName={agentName}
+                      context={projectName}
+                      decision={session.decisions[card.id]}
+                      onDecide={session.decide}
+                      focusAfterDecision={focusComposer}
+                      phone={phone}
+                    />
+                  )}
+                />
+              </FileLinkScope>
             )}
             {modelOpen ? (
               <ModelCard

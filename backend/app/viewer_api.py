@@ -48,6 +48,9 @@ ITEM_NOT_FOUND = "Aba não encontrada"
 
 # (session_key, item, reused, evicted_ids) -> entregue ao vivo?
 NotifyFn = Callable[[str, dict, bool, list], Awaitable[bool]]
+# (session_key, item, reused, evicted_ids, opened_by) -> reached a reader of the V3 live feed? `opened_by` is the
+# one of the CALL (the stored item keeps the first opener when a tab is reused).
+AnnounceFn = Callable[[str, dict, bool, list, str], Awaitable[bool]]
 # (session_key, item) -> qualquer coisa; chamado depois que o AGENTE abriu um
 # arquivo pelo hook (Fase A: publicação automática em Artefatos).
 AgentOpenFn = Callable[[str, dict], Awaitable[Any]]
@@ -85,6 +88,10 @@ class ViewerService:
       `ConversationStore.get_session_key_by_claude_id`.
     - `notify(...)`: `notify_viewer_open` de main.py; None = ninguém avisa
       (sempre `delivered=false`).
+    - `announce(...)`: the V3 live feed (`main.announce_viewer_open`); None = no
+      feed. It runs AFTER `notify` and independently of it: a PTY that is
+      connected (even the V3 terminal, which drops the frame) must not keep the
+      feed from hearing about the file.
     """
 
     def __init__(
@@ -95,6 +102,7 @@ class ViewerService:
         get_projects_root: Callable[[], str],
         session_key_for_claude_id: Callable[[str], Awaitable[str | None]],
         notify: NotifyFn | None = None,
+        announce: AnnounceFn | None = None,
         max_items: int = MAX_ITEMS_PER_SESSION,
         reuse: bool = True,
         registry_root_for: Callable[[str], str | None] | None = None,
@@ -104,6 +112,7 @@ class ViewerService:
         self._get_projects_root = get_projects_root
         self._session_key_for_claude_id = session_key_for_claude_id
         self._notify = notify
+        self._announce = announce
         self._max_items = max_items
         # "O mesmo arquivo pedido de novo reaproveita a aba" (6.1). A
         # alternativa "uma aba nova toda vez" é só trocar para False.
@@ -128,6 +137,17 @@ class ViewerService:
         if is_synthetic_key(project_id):
             return self._registry_root_for(project_id) if self._registry_root_for else None
         return project_dir_from_id(self._get_projects_root(), project_id)
+
+    async def _safe_announce(
+        self, session_key: str, item: dict, reused: bool, evicted: list, opened_by: str,
+    ) -> bool:
+        """The tab is stored: whatever goes wrong while announcing it is `False`, never an error."""
+        if self._announce is None:
+            return False
+        try:
+            return bool(await self._announce(session_key, item, reused, evicted, opened_by))
+        except Exception:  # noqa: BLE001
+            return False
 
     async def open_path(
         self,
@@ -173,9 +193,11 @@ class ViewerService:
         # A aba JÁ está gravada: o aviso ao vivo é só conveniência (6.3), e
         # uma tela fechada (ou um envio que falhou) vira `delivered=false` —
         # a tela busca as abas pelo GET quando abrir a conversa.
-        delivered = False
-        if self._notify is not None:
-            delivered = bool(await self._notify(session_key, item, reused, evicted))
+        # Two awaits, one after the other and BOTH always run: an `or` between the calls would skip the
+        # feed whenever the PTY socket answered.
+        notified = bool(await self._notify(session_key, item, reused, evicted)) if self._notify is not None else False
+        announced = await self._safe_announce(session_key, item, reused, evicted, opened_by)
+        delivered = notified or announced
         return {
             "success": True,
             "item": item,
