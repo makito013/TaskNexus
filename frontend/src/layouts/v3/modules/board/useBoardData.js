@@ -47,6 +47,7 @@ export { columnDeleteRefusal }
 //   moveNotice / dismissMoveNotice()  the banner above the board; it goes when dismissed or when
 //                  the next move works
 //   createCard(payload)  updateCard(id, patch)  deleteCard(id)  uploadImage(cardId, file)  deleteImage(cardId, imageId)
+//   uploadAttachment(cardId, file)  deleteAttachment(cardId, attachmentId)
 //   answerQuestion(cardId, questionId, text)  deleteQuestion(cardId, questionId)  previewClear(key)  executeClear(key)
 //                  the dialogs' writes: they rethrow (the dialog tells the failure) and leave no generic notice;
 //                  a failed update or delete whose card is no longer on the server rethrows { cardGone: true }
@@ -84,6 +85,8 @@ export function useBoardData({ scope }) {
     clearFinished,
     uploadCardImage,
     deleteCardImage,
+    uploadCardAttachment,
+    deleteCardAttachment,
     answerCardQuestion,
     deleteCardQuestion,
     setCardDragActive,
@@ -232,6 +235,8 @@ export function useBoardData({ scope }) {
   }, [quiet, clearFinished])
   const uploadImage = useCallback((cardId, file) => quiet(() => uploadCardImage(cardId, file)), [quiet, uploadCardImage])
   const deleteImage = useCallback((cardId, imageId) => quiet(() => deleteCardImage(cardId, imageId)), [quiet, deleteCardImage])
+  const uploadAttachment = useCallback((cardId, file) => quiet(() => uploadCardAttachment(cardId, file)), [quiet, uploadCardAttachment])
+  const deleteAttachment = useCallback((cardId, attachmentId) => quiet(() => deleteCardAttachment(cardId, attachmentId)), [quiet, deleteCardAttachment])
   const answerQuestion = useCallback((cardId, questionId, text) => answerCardQuestion(cardId, questionId, text), [answerCardQuestion])
   const deleteQuestion = useCallback((cardId, questionId) => quiet(() => deleteCardQuestion(cardId, questionId)), [quiet, deleteCardQuestion])
 
@@ -263,6 +268,8 @@ export function useBoardData({ scope }) {
     executeClear,
     uploadImage,
     deleteImage,
+    uploadAttachment,
+    deleteAttachment,
     answerQuestion,
     deleteQuestion,
     setCardDragActive,

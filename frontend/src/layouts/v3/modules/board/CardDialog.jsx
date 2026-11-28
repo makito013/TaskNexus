@@ -4,6 +4,7 @@ import Chip from '../../components/Chip/Chip.jsx'
 import Dialog, { DialogIcon } from '../../components/Dialog/Dialog.jsx'
 import { useToast } from '../../components/Toast/toastContext.js'
 import { placeOf } from './boardScope.js'
+import CardAttachments from './CardAttachments.jsx'
 import CardImages from './CardImages.jsx'
 import CardQuestions from './CardQuestions.jsx'
 import { CardMainFields, CardRailFields } from './CardFields.jsx'
@@ -26,6 +27,9 @@ const isNowhere = () => !document.activeElement || document.activeElement === do
 //   leavesView(projectKey)  would a card in that place leave the list that is on screen?
 //   onSave(payloadOrPatch) => Promise     onDelete(card) => Promise
 //   onUploadImage(file) onDeleteImage(id) onAnswerQuestion(id, text) onDeleteQuestion(id)
+//   onUploadAttachment(file) onDeleteAttachment(id)
+//   onViewAttachment(attachment, triggerElement)  opens the file in the full-screen viewer over this dialog; null
+//                  when there is no viewer (the section then only offers "Baixar")
 //   onClose()  returnFocusTo
 //
 // Only the fields the person touched are sent when editing (an untouched one follows the card, so a change
@@ -44,6 +48,9 @@ export default function CardDialog({
   onDelete,
   onUploadImage,
   onDeleteImage,
+  onUploadAttachment,
+  onDeleteAttachment,
+  onViewAttachment = null,
   onAnswerQuestion,
   onDeleteQuestion,
   onClose,
@@ -259,6 +266,12 @@ export default function CardDialog({
               onUpload={onUploadImage}
               onDelete={onDeleteImage}
               onEnlarge={(image, number, trigger) => setLightbox({ image, number, trigger })}
+            />
+            <CardAttachments
+              attachments={card.attachments ?? []}
+              onUpload={onUploadAttachment}
+              onDelete={onDeleteAttachment}
+              onView={onViewAttachment}
             />
             <CardQuestions questions={card.questions ?? []} onAnswer={onAnswerQuestion} onDelete={onDeleteQuestion} />
           </>

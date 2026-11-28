@@ -166,7 +166,7 @@
 .v3-artifacts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-  gap: 14px;
+  gap: calc(var(--v3-space-3) + 2px);
   margin: 0;
   padding: 0;
   list-style: none;

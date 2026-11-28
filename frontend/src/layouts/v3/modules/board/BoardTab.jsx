@@ -24,6 +24,11 @@ import Button from '../../components/Button/Button.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
 import { useToast } from '../../components/Toast/toastContext.js'
 import { useProjectsView } from '../../ProjectsViewContext.jsx'
+import { useViewer, useViewerActions } from '../../../../hooks/viewerState.jsx'
+import { cardAttachmentItem } from '../../../../services/viewerApi.js'
+import ViewerFullscreen from '../viewer/ViewerFullscreen.jsx'
+import { restoreFocusTo } from '../viewer/ViewerSurface.jsx'
+import { SURFACE_CARD_ATTACHMENTS } from '../viewer/viewerLayout.js'
 import BoardColumn from './BoardColumn.jsx'
 import BoardControls from './BoardControls.jsx'
 import BoardOverlay from './BoardOverlay.jsx'
@@ -87,6 +92,49 @@ function useFillHeight(ref) {
     }
   })
   return height
+}
+
+const ATTACHMENT_LINK_TEXT = 'Links para outros arquivos não funcionam em anexos.'
+
+// The files attached to the card that is open, seen in the full-screen viewer ABOVE the card dialog. The
+// viewer is a sibling of the dialog (never inside it), so its Esc and clicks never reach the dialog below.
+// Without the viewer shell (an isolated test) `view` is null and the card only offers "Baixar".
+//   view(attachment, trigger)  opens the file in a tab of the card-attachments scope; `trigger` is the "Ver"
+//                              button that gets the focus back when the viewer closes
+//   removed(attachmentId)      closes the tab of a file that was removed
+//   open / close()             whether the full screen is drawn, and the way out of it
+// The scope belongs to the open card: it is emptied when the dialog goes away (or another card opens).
+function useCardAttachmentViewer(editingId) {
+  const viewer = useViewer()
+  const actions = useViewerActions()
+  const toast = useToast()
+  const triggerRef = useRef(null)
+  const wasOpenRef = useRef(false)
+  const open = Boolean(viewer?.getSurface(SURFACE_CARD_ATTACHMENTS).open)
+
+  useEffect(() => {
+    if (editingId == null || !actions) return undefined
+    return () => actions.closeAll(SURFACE_CARD_ATTACHMENTS)
+  }, [editingId, actions])
+
+  // The full screen unmounted: the focus goes back to the "Ver" button, unless the person is already elsewhere.
+  useEffect(() => {
+    if (wasOpenRef.current && !open) restoreFocusTo(triggerRef.current)
+    wasOpenRef.current = open
+  }, [open])
+
+  if (!viewer) return { view: null, removed: () => {}, open: false, close: () => {}, openLink: () => {} }
+  return {
+    view: (attachment, trigger) => {
+      triggerRef.current = trigger
+      viewer.openItem(SURFACE_CARD_ATTACHMENTS, cardAttachmentItem(attachment))
+    },
+    removed: (attachmentId) => viewer.closeItem(SURFACE_CARD_ATTACHMENTS, cardAttachmentItem({ id: attachmentId }).id),
+    open,
+    close: () => viewer.setOpen(SURFACE_CARD_ATTACHMENTS, false),
+    // A relative link inside an attached Markdown has nowhere to go: the attachment is one file, not a folder.
+    openLink: () => toast.push({ text: ATTACHMENT_LINK_TEXT }),
+  }
 }
 
 // Aba "Board" of Projetos: the global columns with the cards of the workspace chosen in the
@@ -355,6 +403,7 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
   const liveCard = editingId != null ? findCardById(data.fetchedCards, editingId) : null
   if (liveCard) openCardRef.current = liveCard
   const editingCard = editingId != null ? (liveCard ?? openCardRef.current) : null
+  const attachments = useCardAttachmentViewer(editingId)
   // Would a card in this place leave the list that is on screen?
   const leavesView = (key) => !scope.matches(key) || (scope.fetchIds.length > 0 && !scope.fetchIds.includes(key))
 
@@ -522,11 +571,20 @@ export default function BoardTab({ registry, workspaceKey, showArchived, onHasUn
             onDelete={(entry) => data.deleteCard(entry.id)}
             onUploadImage={(file) => data.uploadImage(cardDialog.id, file)}
             onDeleteImage={(imageId) => data.deleteImage(cardDialog.id, imageId)}
+            onUploadAttachment={(file) => data.uploadAttachment(cardDialog.id, file)}
+            onDeleteAttachment={async (attachmentId) => {
+              await data.deleteAttachment(cardDialog.id, attachmentId)
+              attachments.removed(attachmentId)
+            }}
+            onViewAttachment={attachments.view}
             onAnswerQuestion={(questionId, text) => data.answerQuestion(cardDialog.id, questionId, text)}
             onDeleteQuestion={(questionId) => data.deleteQuestion(cardDialog.id, questionId)}
             onClose={closeCardDialog}
             returnFocusTo={cardDialog.mode === 'edit' ? returnToCard(cardDialog.id) : returnToAdd(cardDialog.slug)}
           />
+        )}
+        {attachments.open && (
+          <ViewerFullscreen scope={SURFACE_CARD_ATTACHMENTS} alwaysFocus onClose={attachments.close} onOpenLink={attachments.openLink} />
         )}
         {clearDialog && (
           <ClearFinishedDialog

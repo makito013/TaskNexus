@@ -4,6 +4,7 @@ import LazyBoundary from '../../components/LazyBoundary/LazyBoundary.jsx'
 import { pushModal } from '../../components/Dialog/modalStack.js'
 import { LazyViewerPanel, focusActiveTab } from './ViewerDock.jsx'
 import { useViewerShell } from './ViewerShell.jsx'
+import './Viewer.css'
 
 export const FULLSCREEN_ATTRIBUTE = 'data-viewer-fullscreen'
 

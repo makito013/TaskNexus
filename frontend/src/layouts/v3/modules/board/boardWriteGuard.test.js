@@ -57,6 +57,8 @@ export function scanBoardSource(file, source) {
   if (usesDnd && !DND_FILES.includes(path.basename(file))) problems.push('imports @dnd-kit outside the drag files')
 
   if (/\bfetch\s*\(/.test(code)) problems.push('calls fetch( directly')
+  // The file URLs (attachments, images) come from services/viewerApi.js or from the card data, never typed here.
+  if (/['"`]\/api\//.test(code)) problems.push('builds an /api/ URL by hand')
   if (/\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b/.test(code)) problems.push('opens its own connection')
   if (/(?<![\w$.])alert\s*\(|\bwindow\.alert\b/.test(code)) problems.push('uses alert(')
   if (/(?<![\w$.])confirm\s*\(|\bwindow\.confirm\b|(?<![\w$.])prompt\s*\(/.test(code)) problems.push('uses confirm( or prompt(')
@@ -91,6 +93,19 @@ describe('write guard of modules/board', () => {
     expect(names).toEqual(expect.arrayContaining([OWNER, 'BoardTab.jsx', 'BoardColumn.jsx', 'BoardCardFace.jsx', 'boardScope.js']))
   })
 
+  it('also scans the attachments section and the card dialog that hosts it (positive control)', () => {
+    const names = SOURCE_FILES.map((file) => path.basename(file))
+    expect(names).toEqual(expect.arrayContaining(['CardAttachments.jsx', 'CardDialog.jsx']))
+  })
+
+  it('the owner is the one that writes attachments: the section only calls what it is handed', () => {
+    const owner = readFileSync(path.join(HERE, OWNER), 'utf8')
+    expect(owner).toMatch(/uploadAttachment/)
+    expect(owner).toMatch(/deleteAttachment/)
+    const section = stripComments(readFileSync(path.join(HERE, 'CardAttachments.jsx'), 'utf8'))
+    expect(section).not.toMatch(/uploadCardAttachment|deleteCardAttachment/)
+  })
+
   it.each(SOURCE_FILES.map((file) => [path.relative(HERE, file), file]))('%s respects the owner rule', (_name, file) => {
     expect(scanBoardSource(file, readFileSync(file, 'utf8')), file).toEqual([])
   })
@@ -112,6 +127,8 @@ describe('scanBoardSource (fixtures prove the detector goes red)', () => {
     ['a dynamic import of the api client', "const mod = await import('../../../../services/api.js')", /services\/api/],
     ['a re-export of the cards hook', "export { useCards } from '../../../../hooks/useCards.js'", /useCards/],
     ['a direct fetch', "await fetch('/api/cards', { method: 'POST' })", /fetch\(/],
+    ['an upload through the api client outside the owner', "import { api } from '../../../../services/api.js'\napi.uploadCardAttachment(1, file)", /services\/api/],
+    ['an attachment URL typed by hand', "const href = `/api/card-attachments/${id}/f/${name}?download=1`", /\/api\/ URL/],
     ['a socket', "new WebSocket('ws://x')", /own connection/],
     ['alert', "alert('Falhou')", /alert\(/],
     ['window.alert', "window.alert('Falhou')", /alert\(/],

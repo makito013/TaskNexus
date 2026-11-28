@@ -202,3 +202,53 @@ textarea.v3-input {
   margin: 0 auto;
   object-fit: contain;
 }
+
+/* ---- file attachments ---- */
+.v3-card-attachments__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: 0 0 var(--v3-space-3);
+  padding: 0;
+  list-style: none;
+}
+.v3-card-attachments__row {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+}
+.v3-card-attachments__ext {
+  flex: none;
+  padding: 0 var(--v3-space-2);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__size {
+  flex: none;
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__row .v3-button {
+  flex: none;
+}
+.v3-card-attachments__row a.v3-button:not(:hover) {
+  text-decoration: none;
+}
+.v3-card-attachments__add {
+  align-self: flex-start;
+}
