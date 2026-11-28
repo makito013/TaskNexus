@@ -1,0 +1,254 @@
+/*
+ * The card dialog: two columns from 1024px (the content and a rail of the width of a board column),
+ * a single scroll region (the dialog body), controls of 44px. Only --v3-* tokens. Nothing here is
+ * fixed and no property creates a containing block (fixedPositioningInvariantWorkspace.test.js).
+ */
+.v3-card-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-5);
+  /* programmatic focus of the panel: the ring belongs to the controls inside, not to the whole panel */
+  outline: none;
+}
+.v3-card-dialog__main,
+.v3-card-dialog__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .v3-card-dialog {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .v3-card-dialog__main {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .v3-card-dialog__rail {
+    flex: none;
+    width: calc(var(--v3-sidebar) + var(--v3-space-3));
+  }
+}
+.v3-card-dialog__error {
+  flex: none;
+  width: 100%;
+}
+.v3-card-dialog .v3-input {
+  min-height: var(--v3-control);
+}
+select.v3-input {
+  padding-right: var(--v3-space-2);
+}
+textarea.v3-input {
+  height: auto;
+  padding: var(--v3-space-3);
+  line-height: 22px;
+  resize: vertical;
+}
+.v3-card-description {
+  min-height: calc(8 * 22px + 2 * var(--v3-space-3));
+}
+.v3-card-due {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+.v3-card-created {
+  color: var(--v3-ink-muted);
+}
+
+/* ---- description tabs ---- */
+.v3-card-tabs {
+  display: flex;
+  gap: var(--v3-space-2);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-card-tabs__tab {
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--v3-ink-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.v3-card-tabs__tab[aria-selected="true"] {
+  border-bottom-color: var(--v3-kan);
+  color: var(--v3-ink);
+  font-weight: 500;
+}
+.v3-card-preview {
+  min-height: calc(8 * 22px);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- sections: images and questions ---- */
+.v3-card-section__title {
+  margin: 0 0 var(--v3-space-2);
+}
+.v3-card-images__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-3);
+}
+.v3-card-images__item {
+  position: relative;
+  width: 88px;
+  height: 88px;
+}
+.v3-card-images__thumb {
+  display: block;
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface-2);
+  cursor: pointer;
+}
+.v3-card-images__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* the glyph is small; the target is 44px by an extended hit area that does not touch the neighbours */
+.v3-card-images__remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  cursor: pointer;
+}
+.v3-card-images__remove::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: var(--v3-control);
+  height: var(--v3-control);
+  border-radius: var(--v3-radius-pill);
+}
+.v3-card-images__add {
+  width: 88px;
+  height: 88px;
+  border: 1px dashed var(--v3-line-strong);
+  border-radius: var(--v3-radius-md);
+  background: none;
+  color: var(--v3-ink);
+  font-size: 24px;
+  cursor: pointer;
+}
+.v3-card-images__add[aria-disabled="true"] {
+  color: var(--v3-ink-muted);
+  cursor: default;
+}
+.v3-card-images__hint {
+  margin: var(--v3-space-2) 0 0;
+  color: var(--v3-ink-muted);
+}
+.v3-card-questions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v3-card-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+}
+.v3-card-question__text {
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.v3-card-question__meta {
+  color: var(--v3-ink-muted);
+}
+.v3-card-question__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.v3-card-lightbox__image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+/* ---- file attachments ---- */
+.v3-card-attachments__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: 0 0 var(--v3-space-3);
+  padding: 0;
+  list-style: none;
+}
+.v3-card-attachments__row {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+}
+.v3-card-attachments__ext {
+  flex: none;
+  padding: 0 var(--v3-space-2);
+  border-radius: var(--v3-radius-md);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__size {
+  flex: none;
+  color: var(--v3-ink-muted);
+  font-family: var(--v3-font-mono);
+}
+.v3-card-attachments__row .v3-button {
+  flex: none;
+}
+.v3-card-attachments__row a.v3-button:not(:hover) {
+  text-decoration: none;
+}
+.v3-card-attachments__add {
+  align-self: flex-start;
+}

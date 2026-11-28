@@ -139,3 +139,8 @@ export function formatDateTime(value) {
   const min = String(date.getMinutes()).padStart(2, '0');
   return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
+
+// "#128": how a card's numeric id is shown (the V2 badge and the V3 board face).
+export function formatCardId(id) {
+  return `#${id}`;
+}

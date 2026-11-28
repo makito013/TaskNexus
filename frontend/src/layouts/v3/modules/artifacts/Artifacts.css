@@ -1,0 +1,467 @@
+/*
+ * Aba Artefatos de Projetos. Only --v3-* tokens (the few structural measures come from tokens by calc, or
+ * are the 290px card minimum of the agents grid). No transform, filter, will-change or contain, and nothing
+ * here is `position: fixed`: the menu, the one leaf that is, has its own stylesheet
+ * (fixedPositioningInvariantWorkspace.test.js scans this file). Skeletons are still: a --v3-line border
+ * keeps them visible in the light theme, where surface-2 equals the ground.
+ */
+.v3-artifacts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--v3-space-4);
+  min-width: 0;
+}
+/* Only while the dock exists: the gallery gives the width up and the separator sits in the gap. No width
+   transition. */
+.v3-artifacts[data-viewer-dock] {
+  grid-template-columns: minmax(0, 1fr) var(--v3-viewer-dock-width);
+}
+.v3-artifacts[data-viewer-dock] .v3-viewer-dock {
+  position: sticky;
+  top: 0;
+  height: calc(100dvh - 2 * var(--v3-space-8));
+}
+
+.v3-artifacts__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  min-width: 0;
+}
+
+/* the heading is for screen-reader navigation by title, not for the eye */
+.v3-artifacts__heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- the bar ---- */
+.v3-artifacts-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.v3-artifacts-controls__spacer {
+  flex: 1 1 0;
+}
+.v3-artifacts-controls__tabs {
+  margin-left: var(--v3-space-2);
+}
+
+.v3-artifacts-select {
+  min-width: 180px;
+  height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+}
+.v3-artifacts-select--active {
+  border-color: var(--v3-kan);
+  font-weight: 500;
+}
+.v3-artifacts-select:disabled {
+  color: var(--v3-ink-muted);
+  cursor: not-allowed;
+}
+
+.v3-artifacts-controls__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+}
+.v3-artifacts-type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-width: var(--v3-control);
+  min-height: var(--v3-control);
+  justify-content: center;
+  padding: 0 var(--v3-space-4);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-sm-size);
+  cursor: pointer;
+}
+.v3-artifacts-type:hover {
+  background-color: var(--v3-surface-2);
+}
+.v3-artifacts-type--active {
+  border-color: var(--v3-kan);
+  background-color: var(--v3-kan-tint);
+  color: var(--v3-kan-ink);
+  font-weight: 500;
+}
+.v3-artifacts-type__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-kan);
+}
+.v3-artifacts-type:focus-visible {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
+}
+
+.v3-artifacts-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+  max-width: 360px;
+  color: var(--v3-ink-muted);
+}
+.v3-artifacts-search .v3-dialog__icon {
+  position: absolute;
+  left: var(--v3-space-3);
+  pointer-events: none;
+}
+.v3-artifacts-search__input {
+  width: 100%;
+  min-height: var(--v3-control);
+  padding-left: calc(var(--v3-space-3) + 16px + var(--v3-space-2));
+}
+
+/* ---- the gallery ---- */
+.v3-artifacts-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-5);
+  min-width: 0;
+}
+.v3-artifacts-gallery:focus-visible {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
+}
+
+.v3-artifacts-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+.v3-artifacts-group__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+  margin: 0;
+  color: var(--v3-ink-muted);
+  text-transform: uppercase;
+}
+
+.v3-artifacts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: calc(var(--v3-space-3) + 2px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v3-artifacts-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+.v3-artifacts-empty {
+  align-self: stretch;
+}
+
+.v3-artifacts-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.v3-artifacts-footer__hint {
+  color: var(--v3-ink-muted);
+}
+
+/* ---- the card ---- */
+.v3-artifact-card {
+  position: relative;
+  /* The "⋯" (z-index 1) stays inside the card: it must not compete with the viewer drawer, a later sibling
+     of the column that is a `position: fixed` leaf. `isolation` creates no containing block for fixed. */
+  isolation: isolate;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  min-width: 0;
+  padding: var(--v3-space-4);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-xl);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+}
+.v3-artifact-card--active {
+  border: 1.5px solid var(--v3-kan);
+  padding: calc(var(--v3-space-4) - 0.5px);
+}
+.v3-artifact-card--missing {
+  border-style: dashed;
+}
+.v3-artifact-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+  /* leaves room for the "⋯" */
+  padding-right: var(--v3-control);
+}
+.v3-artifact-card__title {
+  margin: 0;
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* The title button covers the whole card: a click anywhere opens it. The "⋯" sits above this area. */
+.v3-artifact-card__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.v3-artifact-card__open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.v3-artifact-card__open:focus-visible {
+  outline: none;
+}
+.v3-artifact-card__open:focus-visible::after {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
+}
+.v3-artifact-card__path,
+.v3-artifact-card__foot,
+.v3-artifact-card__excerpt {
+  margin: 0;
+  color: var(--v3-ink-muted);
+}
+.v3-artifact-card__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v3-artifact-card__excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.v3-artifact-card__foot {
+  margin-top: auto;
+}
+.v3-artifact-card__more {
+  position: absolute;
+  top: var(--v3-space-2);
+  right: var(--v3-space-2);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--v3-control);
+  height: var(--v3-control);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background: none;
+  color: var(--v3-ink-muted);
+  cursor: pointer;
+}
+.v3-artifact-card__more:hover {
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+}
+.v3-artifact-card__more:focus-visible {
+  outline: 2px solid var(--v3-ink);
+}
+
+.v3-artifact-card--skeleton {
+  min-height: 150px;
+  background-color: var(--v3-surface-2);
+}
+.v3-artifact-card--skeleton i {
+  display: block;
+  height: 12px;
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-line);
+}
+.v3-artifact-card--skeleton i:nth-child(1) { width: 40px; }
+.v3-artifact-card--skeleton i:nth-child(2) { width: 80%; }
+.v3-artifact-card--skeleton i:nth-child(3) { width: 60%; }
+.v3-artifact-card--skeleton i:nth-child(4) { width: 90%; }
+
+/* ---- "Citar em qual conversa?" ---- */
+.v3-cite-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: var(--v3-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.v3-cite-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+  width: 100%;
+  min-height: var(--v3-control);
+  padding: var(--v3-space-2) var(--v3-space-4);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.v3-cite-list__item:hover,
+.v3-cite-list__item:focus-visible {
+  background-color: var(--v3-surface-2);
+}
+.v3-cite-list__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- "Importar do projeto" ---- */
+.v3-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+}
+.v3-import__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+  padding-bottom: var(--v3-space-2);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-import__count {
+  color: var(--v3-ink-muted);
+}
+.v3-import__all,
+.v3-import__row {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-3);
+  min-height: var(--v3-control);
+  cursor: pointer;
+}
+.v3-import__row {
+  padding: var(--v3-space-1) 0;
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-import__all input,
+.v3-import__row input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--v3-kan);
+}
+.v3-import__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.v3-import__name {
+  color: var(--v3-ink);
+  overflow-wrap: anywhere;
+}
+.v3-import__path {
+  color: var(--v3-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v3-import__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-2);
+  color: var(--v3-ink-muted);
+}
+.v3-import__row--failed .v3-import__name {
+  color: var(--v3-danger-ink);
+}
+.v3-import__row--skeleton {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--v3-space-1);
+  min-height: var(--v3-control);
+  cursor: default;
+}
+.v3-import__row--skeleton i {
+  display: block;
+  height: 10px;
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-surface-2);
+  border: 1px solid var(--v3-line);
+}
+.v3-import__row--skeleton i:nth-child(2) { width: 60%; }
+.v3-import__more,
+.v3-import__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v3-space-2);
+}
+.v3-import__heading {
+  margin: var(--v3-space-3) 0 var(--v3-space-1);
+  color: var(--v3-ink-muted);
+  text-transform: uppercase;
+}
+.v3-import__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A long press opens the menu of the card: without this iOS shows the magnifier, the text selection and the
+   system "Copiar" menu on top of it. Only for a finger, so a mouse can still select text. */
+@media (pointer: coarse) {
+  .v3-artifact-card {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* The iPad (1024-1279 px) and touch: the compact buttons of the bar grow to the 44 px of a finger. */
+@media (pointer: coarse), (min-width: 1024px) and (max-width: 1279px) {
+  .v3-artifacts-controls .v3-button--sm {
+    min-height: var(--v3-control);
+  }
+}

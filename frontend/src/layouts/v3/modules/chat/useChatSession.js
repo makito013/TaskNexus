@@ -205,6 +205,18 @@ export function useChatSession(sessionKey, { enabled = true, terminal = false } 
     setDraftState(value)
   }, [sessionKey])
 
+  // "Citar no chat": puts text at the END of the draft of ANY conversation, separated by one space and
+  // followed by one (so a POSIX path never ends up as a "/" command). Memory only; it never sends.
+  const queueDraft = useCallback((targetKey, text) => {
+    const addition = String(text ?? '')
+    if (!targetKey || addition === '') return
+    const current = draftsRef.current.get(targetKey) ?? ''
+    const base = current === '' || /\s$/.test(current) ? current : `${current} `
+    const next = `${base}${addition} `
+    draftsRef.current.set(targetKey, next)
+    if (targetKey === sessionKey) setDraftState(next)
+  }, [sessionKey])
+
   return useMemo(
     () => ({
       sessionKey: sessionKey ?? null,
@@ -214,6 +226,7 @@ export function useChatSession(sessionKey, { enabled = true, terminal = false } 
       actionError,
       draft,
       setDraft,
+      queueDraft,
       send,
       interrupt,
       setModel,
@@ -222,6 +235,6 @@ export function useChatSession(sessionKey, { enabled = true, terminal = false } 
       reset,
       retryNow,
     }),
-    [sessionKey, state, connection, decisions, actionError, draft, setDraft, send, interrupt, setModel, decide, open, reset, retryNow],
+    [sessionKey, state, connection, decisions, actionError, draft, setDraft, queueDraft, send, interrupt, setModel, decide, open, reset, retryNow],
   )
 }

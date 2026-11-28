@@ -11,7 +11,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': `http://localhost:${apiPort}`,
+      // An object keeps the browser's Host; the string form makes vite set changeOrigin, and the backend's
+      // origin guard would then see Host localhost:8000 with Origin localhost:5173 and answer 403.
+      '/api': { target: `http://localhost:${apiPort}`, changeOrigin: false },
       '/ws': { target: `ws://localhost:${apiPort}`, ws: true },
     },
   },

@@ -1,33 +1,27 @@
 """REST `/api/chat/*` and WebSocket `/ws/chat/{session_key}` of the chat (contracts 3 and 4 of
 the architecture). Thin: everything with a decision in it lives in `ChatService`.
 
-Origin check (ADR-49): the backend has no auth and CORS `*`, and the chat approves tool
-execution, so a page of another site open in the user's browser must not be able to send or
-decide. A request with no `Origin` (a non-browser client) or with the same host:port as the
-request, or listed in `CHAT_ALLOWED_ORIGINS`, passes; anything else is 403 / close 4403.
-
-Host check (stage 10, R1): comparing `Origin` with the request's own `Host` proves nothing under DNS
-rebinding (the attacker controls both), and a same-origin `GET` carries no `Origin` at all. So the
-`Host` is checked FIRST, always, on every route of the chat (reads included) and on the socket: only an
-IP literal, a dotless name (`localhost`, a NetBIOS name), a `*.ts.net` name or a host of
-`CHAT_ALLOWED_HOSTS` / `CHAT_ALLOWED_ORIGINS` passes. A rebinding page needs a public DNS name, which
-always has a dot and is never under `ts.net`. Then the `Origin` check above runs.
+Origin and Host checks (ADR-49, stage 10 R1): the backend has no auth and the chat approves tool
+execution, so a page of another site open in the user's browser must not be able to send or decide.
+The check no longer lives here: `app.request_guard.RequestGuardMiddleware` wraps the whole app (HTTP and
+WebSocket, this router included) and refuses with 403 / close 4403 before any route runs. The decision
+functions are re-exported below for the callers that import them from this module.
 """
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import logging
-import os
-import re
 import time
 from typing import Any, Literal
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from ..request_guard import (  # noqa: F401 - re-exported: the V2 tests and callers import them from here
+    WS_CLOSE_ORIGIN, allowed_hosts_from_env, allowed_origins_from_env, host_allowed, host_name, origin_allowed,
+    request_refusal,
+)
 from .errors import ChatCommandError, ChatError, public_detail
 from .hub import OVERFLOW, TooManyReaders
 from .service import ChatService
@@ -36,91 +30,9 @@ logger = logging.getLogger(__name__)
 
 WS_REPLAY_PAGE = 500
 WS_CLOSE_NORMAL = 1000
-WS_CLOSE_ORIGIN = 4403
 WS_CLOSE_NOT_FOUND = 4404
 WS_CLOSE_SLOW_READER = 4408
 WS_CLOSE_TOO_MANY = 4429
-
-
-def allowed_origins_from_env(env=os.environ) -> list[str]:
-    return [item.strip().rstrip("/") for item in (env.get("CHAT_ALLOWED_ORIGINS") or "").split(",") if item.strip()]
-
-
-def origin_allowed(origin: str | None, host: str | None, extra: list[str]) -> bool:
-    if not origin:
-        return True
-    if origin.rstrip("/") in extra:
-        return True
-    parsed = urlparse(origin)
-    return bool(host) and parsed.netloc.lower() == host.lower()
-
-
-_PORT = re.compile(r"\d{1,5}")
-_DOTLESS_NAME = re.compile(r"[a-z0-9_-]+")
-_TAILNET_NAME = re.compile(r"[a-z0-9_.-]+\.ts\.net")
-
-
-def host_name(host: str | None) -> str:
-    """The name of a `Host` header (or of a configured host) without port, brackets and trailing dot,
-    lower-cased; `""` when empty or malformed (a malformed host is never allowed)."""
-    value = (host or "").strip().lower()
-    if value.startswith("["):
-        end = value.find("]")
-        rest = value[end + 1:] if end > 0 else "x"
-        if end < 1 or (rest and not (rest.startswith(":") and _PORT.fullmatch(rest[1:]))):
-            return ""
-        value = value[1:end]
-    elif value.count(":") == 1:
-        value, port = value.split(":")
-        if port and not _PORT.fullmatch(port):
-            return ""
-    return value.rstrip(".")
-
-
-def allowed_hosts_from_env(env=os.environ) -> list[str]:
-    return [name for item in (env.get("CHAT_ALLOWED_HOSTS") or "").split(",") if (name := host_name(item))]
-
-
-def host_allowed(host: str | None, extra_hosts: list[str] | tuple[str, ...] = ()) -> bool:
-    name = host_name(host)
-    if not name:
-        return False
-    if name in extra_hosts:
-        return True
-    try:
-        ipaddress.ip_address(name)
-        return True
-    except ValueError:
-        pass
-    return bool(_DOTLESS_NAME.fullmatch(name) or _TAILNET_NAME.fullmatch(name))
-
-
-def request_refusal(origin: str | None, host: str | None, extra_origins: list[str], extra_hosts: list[str]) -> str | None:
-    """The error code that refuses a request (host first, then origin), or None when it may proceed."""
-    if not host_allowed(host, extra_hosts):
-        return "host_not_allowed"
-    if not origin_allowed(origin, host, extra_origins):
-        return "origin_not_allowed"
-    return None
-
-
-def create_request_guard(allowed_origins: list[str] | None = None, allowed_hosts: list[str] | None = None):
-    """FastAPI dependency that refuses an untrusted request with 403. Shared by the chat router and by
-    the two V2 routes that now reach the chat (`/terminate`, `/reset`)."""
-    origins = allowed_origins if allowed_origins is not None else allowed_origins_from_env()
-    hosts = _hosts_with_origins(allowed_hosts, origins)
-
-    async def require_trusted_request(request: Request) -> None:
-        code = request_refusal(request.headers.get("origin"), request.headers.get("host"), origins, hosts)
-        if code:
-            raise HTTPException(403, {"code": code, "message": code.replace("_", " ")})
-
-    return require_trusted_request
-
-
-def _hosts_with_origins(allowed_hosts: list[str] | None, origins: list[str]) -> list[str]:
-    hosts = allowed_hosts if allowed_hosts is not None else allowed_hosts_from_env()
-    return [*hosts, *(name for origin in origins if (name := host_name(urlparse(origin).netloc)))]
 
 
 # The HTTP status of every code of the contract (any other code is a plain 400). `spawn_failed` and
@@ -171,14 +83,10 @@ class AllowlistBody(BaseModel):
     allowlist: list[str]
 
 
-def create_chat_router(
-    service: ChatService, allowed_origins: list[str] | None = None, allowed_hosts: list[str] | None = None
-) -> APIRouter:
-    extra_origins = allowed_origins if allowed_origins is not None else allowed_origins_from_env()
-    extra_hosts = _hosts_with_origins(allowed_hosts, extra_origins)
-    # Every HTTP route of the chat, reads included, goes through the guard (stage 10, R1).
-    router = APIRouter(dependencies=[Depends(create_request_guard(extra_origins, allowed_hosts))])
-    ws_router = APIRouter()  # a socket cannot answer 403 before accept: it checks inline and closes 4403
+def create_chat_router(service: ChatService) -> APIRouter:
+    # Host and Origin are checked for the whole app by `RequestGuardMiddleware`, before this router runs.
+    router = APIRouter()
+    ws_router = APIRouter()
 
     async def guarded(call):
         try:
@@ -264,9 +172,6 @@ def create_chat_router(
     @ws_router.websocket("/ws/chat/{session_key:path}")
     async def chat_socket(websocket: WebSocket, session_key: str):
         await websocket.accept()  # accepted first so the close codes below reach the browser
-        if request_refusal(websocket.headers.get("origin"), websocket.headers.get("host"), extra_origins, extra_hosts):
-            await websocket.close(code=WS_CLOSE_ORIGIN)
-            return
         try:
             since = max(0, int(websocket.query_params.get("since", "0")))
         except ValueError:

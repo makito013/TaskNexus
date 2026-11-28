@@ -3,8 +3,9 @@ import Panel from '../../components/Panel/Panel.jsx'
 
 // "Board · resumo": read-only count of top-level cards per column, in the scope
 // of the workspace filter. `summary` is null when the board has no columns; the
-// screen passes `unavailable` when the cards could not be read.
-export default function BoardSummary({ summary, scopeLabel, unavailable = false }) {
+// screen passes `unavailable` when the cards could not be read. "Abrir board"
+// asks the screen to go to the Board tab (onOpenBoard).
+export default function BoardSummary({ summary, scopeLabel, unavailable = false, onOpenBoard }) {
   const max = summary ? Math.max(1, ...summary.columns.map((column) => column.count), summary.other) : 1
   return (
     <Panel as="section" aria-label="Board, resumo" className="v3-board-summary">
@@ -25,10 +26,7 @@ export default function BoardSummary({ summary, scopeLabel, unavailable = false 
       )}
 
       <div className="v3-board-summary__foot">
-        <Button size="sm" aria-disabled="true" aria-describedby="projects-board-note">Abrir board</Button>
-        <span id="projects-board-note" className="v3-type-caption v3-board-summary__note">
-          Disponível quando o board chegar à V3. Só leitura por enquanto.
-        </span>
+        <Button size="sm" variant="secondary" onClick={onOpenBoard}>Abrir board</Button>
       </div>
     </Panel>
   )

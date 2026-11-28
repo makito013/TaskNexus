@@ -40,20 +40,21 @@ import { useSortable } from '@dnd-kit/sortable';
 // Separate id namespace from both the column's own sortable id (a bare slug)
 // and a card's (`card:` prefixed), so `onDragEnd` can tell all three apart by
 // inspecting the id instead of guessing from context.
-export const COLUMN_DROPZONE_ID_PREFIX = 'dropzone:';
+import {
+  COLUMN_DROPZONE_ID_PREFIX,
+  columnDropzoneId,
+  isColumnDropzoneId,
+  slugFromColumnDropzoneId,
+} from '../../utils/boardDndIds.js';
 
-export function columnDropzoneId(slug) {
-  return `${COLUMN_DROPZONE_ID_PREFIX}${slug}`;
-}
-
-export function isColumnDropzoneId(id) {
-  return String(id ?? '').startsWith(COLUMN_DROPZONE_ID_PREFIX);
-}
-
-export function slugFromColumnDropzoneId(id) {
-  if (!isColumnDropzoneId(id)) return null;
-  return String(id).slice(COLUMN_DROPZONE_ID_PREFIX.length);
-}
+// The id helpers live in utils/boardDndIds.js (shared with the V3 board) and
+// keep being exported from here.
+export {
+  COLUMN_DROPZONE_ID_PREFIX,
+  columnDropzoneId,
+  isColumnDropzoneId,
+  slugFromColumnDropzoneId,
+};
 
 // Written by hand instead of importing `CSS.Transform.toString` from
 // `@dnd-kit/utilities`: that package is a TRANSITIVE dependency of core and

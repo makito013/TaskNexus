@@ -1,0 +1,67 @@
+/*
+ * The shared toast region. One of the three named exceptions of the V3 that use
+ * position: fixed (with the viewer drawer and the artifact menu): it is a leaf
+ * rendered through a portal, so no ancestor of it creates a containing block.
+ * Only --v3-* tokens; nothing animates (reduced motion needs no special case).
+ */
+.v3-toast-region {
+  position: fixed;
+  right: var(--v3-space-5);
+  bottom: var(--v3-space-5);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--v3-space-2);
+  max-width: min(420px, calc(100vw - 2 * var(--v3-space-5)));
+  pointer-events: none;
+}
+
+.v3-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  padding: var(--v3-space-1) var(--v3-space-1) var(--v3-space-1) var(--v3-space-4);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  box-shadow: var(--v3-shadow-float);
+  pointer-events: auto;
+}
+
+.v3-toast--error {
+  border-color: var(--v3-danger-ink);
+  background-color: var(--v3-danger-tint);
+  color: var(--v3-danger-ink);
+}
+
+.v3-toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.v3-toast__action,
+.v3-toast__close {
+  flex: none;
+  min-width: var(--v3-control);
+  min-height: var(--v3-control);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: inherit;
+  font-family: var(--v3-font-sans);
+  font-weight: 500;
+  cursor: pointer;
+}
+.v3-toast__action {
+  padding: 0 var(--v3-space-3);
+  text-decoration: underline;
+}
+.v3-toast__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

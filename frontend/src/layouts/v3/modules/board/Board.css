@@ -1,0 +1,457 @@
+/*
+ * Aba Board de Projetos. Only --v3-* tokens (the few structural measures come
+ * from tokens by calc). No transform/filter/will-change/contain: the columns and
+ * the cards are leaves with respect to position: fixed, and nothing here is fixed
+ * (fixedPositioningInvariantWorkspace.test.js scans this file). The sort translation
+ * of the columns and cards is an inline style of SortableColumn and SortableCard.
+ * Skeletons are still: a --v3-line border keeps them visible in the light theme,
+ * where surface-2 equals the ground.
+ */
+.v3-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  min-width: 0;
+}
+
+/* ---- toolbar ---- */
+.v3-board-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+
+.v3-board-select {
+  min-width: 180px;
+  height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+}
+.v3-board-select--active {
+  border-color: var(--v3-kan);
+  font-weight: 500;
+}
+.v3-board-select:disabled {
+  color: var(--v3-ink-muted);
+  cursor: not-allowed;
+}
+
+.v3-board-controls__hint {
+  color: var(--v3-ink-muted);
+}
+
+/* ---- scroller and columns ---- */
+.v3-board__scroller {
+  display: flex;
+  align-items: stretch;
+  gap: var(--v3-space-4);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--v3-space-2);
+  /* first paint only: BoardTab measures the real space and sets the height inline */
+  height: max(320px, calc(100dvh - 350px));
+}
+
+.v3-board-column {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--v3-sidebar) + var(--v3-space-3));
+  height: 100%;
+  min-height: 0;
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-xl);
+  background-color: var(--v3-surface);
+  transition: border-color var(--v3-dur-slow), box-shadow var(--v3-dur-slow);
+}
+.v3-board-column--done {
+  /* 1.5px border, 0.5px taken from the padding so the content does not move */
+  padding: calc(var(--v3-space-3) - 0.5px);
+  border: 1.5px solid var(--v3-navi);
+}
+
+/* a column just moved: the border flashes in the module colour and the stylesheet fades it back */
+.v3-board-column--flash {
+  border-color: var(--v3-kan);
+  box-shadow: 0 0 0 1px var(--v3-kan);
+}
+
+.v3-board-column__head {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-height: var(--v3-control);
+  /* the whole header is the grip of the drag */
+  cursor: grab;
+}
+.v3-board-column__head:focus-visible {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: 2px;
+}
+.v3-board-column__name {
+  margin: 0;
+  font-family: var(--v3-font-display);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.v3-board-column__count {
+  color: var(--v3-ink-muted);
+}
+.v3-board-column__head .v3-board-menu {
+  margin-left: auto;
+}
+
+.v3-board-column__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface-2);
+}
+
+/* the column that would receive the held card */
+.v3-board-column--target .v3-board-column__body {
+  background-color: var(--v3-kan-tint);
+}
+
+.v3-board-column__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* where the held card will land: 3px, taking no room (the margins cancel the height and the gap) */
+.v3-board-dropline {
+  height: 3px;
+  margin: calc((var(--v3-space-3) + 3px) / -2) 0;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-kan);
+  list-style: none;
+}
+.v3-board-column__empty {
+  margin: 0;
+  padding: var(--v3-space-4) var(--v3-space-2);
+  border: 1px dashed var(--v3-line-strong);
+  border-radius: var(--v3-radius-md);
+  color: var(--v3-ink-muted);
+  text-align: center;
+}
+/* a card can be dropped here: the dashed border turns solid in the module colour */
+.v3-board-column__empty--over {
+  border-style: solid;
+  border-color: var(--v3-kan);
+}
+
+/* ---- card face ---- */
+.v3-board-card {
+  /* the containing block of the hidden hint and select label (position: absolute), so they stay inside the card */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+}
+.v3-board-card:hover {
+  border-color: var(--v3-line-strong);
+}
+
+.v3-board-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-1) var(--v3-space-2);
+}
+
+/* the number is a 44px target by an extended hit area; its look stays small */
+.v3-board-card__id {
+  position: relative;
+  padding: 2px var(--v3-space-2);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+  cursor: pointer;
+}
+.v3-board-card__id::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--v3-control));
+  height: var(--v3-control);
+  margin-top: calc(var(--v3-control) / -2);
+  margin-left: calc(max(100%, var(--v3-control)) / -2);
+}
+
+.v3-board-card__title {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.v3-board-card__description {
+  margin: 0;
+  color: var(--v3-ink-muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.v3-board-card__summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.v3-board-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+.v3-board-card__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+}
+.v3-board-card__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+  margin-left: auto;
+  padding: 2px var(--v3-space-2);
+  border-radius: var(--v3-radius-pill);
+  color: var(--v3-ink-muted);
+}
+.v3-board-card__due--overdue {
+  background-color: var(--v3-danger-tint);
+  color: var(--v3-danger-ink);
+}
+
+/* ---- priority glyph ---- */
+.v3-board-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--v3-ink-muted);
+}
+.v3-board-priority__bar {
+  fill: currentColor;
+}
+.v3-board-priority__bar--empty {
+  fill: var(--v3-ink-faint);
+}
+.v3-board-priority--low { color: var(--v3-prio-low); }
+.v3-board-priority--mid { color: var(--v3-prio-mid); }
+.v3-board-priority--high { color: var(--v3-prio-high); }
+.v3-board-priority--urgent {
+  padding: 0 calc(var(--v3-space-1) + 2px) 0 2px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-prio-high-tint);
+}
+.v3-board-priority__mark {
+  font-weight: 700;
+}
+
+/* ---- placeholders ---- */
+.v3-board-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin-bottom: var(--v3-space-3);
+  padding: var(--v3-space-3);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+}
+.v3-board-skeleton__bar {
+  display: block;
+  width: 60%;
+  height: 12px;
+  margin-bottom: var(--v3-space-2);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-surface-2);
+}
+.v3-board-skeleton .v3-board-skeleton__bar { margin-bottom: 0; }
+.v3-board-skeleton__bar--wide { width: 90%; }
+.v3-board-skeleton__bar--short { width: 40%; }
+
+/* ---- the "Mover" select of the foot of a card ---- */
+.v3-board-card__foot {
+  flex-wrap: wrap;
+}
+.v3-board-card__move {
+  display: inline-flex;
+  margin-left: auto;
+  min-width: 0;
+}
+.v3-board-select--compact {
+  min-width: 0;
+  max-width: 132px;
+  font-size: 13px;
+}
+
+/* ---- the "⋯" menu of a column ---- */
+.v3-board-menu {
+  position: relative;
+  flex: none;
+}
+.v3-board-menu__button {
+  display: grid;
+  place-items: center;
+  width: var(--v3-control);
+  height: var(--v3-control);
+  border: 0;
+  border-radius: var(--v3-radius-lg);
+  background: none;
+  color: var(--v3-ink-muted);
+  cursor: pointer;
+}
+.v3-board-menu__button:hover {
+  background-color: var(--v3-surface-2);
+}
+.v3-board-menu__popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 3;
+  min-width: 220px;
+  padding: var(--v3-space-1);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-xl);
+  background-color: var(--v3-surface);
+  box-shadow: var(--v3-shadow-float);
+  cursor: default;
+}
+.v3-board-menu__separator {
+  margin: var(--v3-space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--v3-line);
+}
+.v3-board-menu__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background: none;
+  color: var(--v3-ink);
+  font: inherit;
+  font-size: var(--v3-type-body-sm-size);
+  text-align: left;
+  cursor: pointer;
+}
+.v3-board-menu__item:hover {
+  background-color: var(--v3-surface-2);
+}
+.v3-board-menu__item[aria-checked="true"]::before {
+  content: '✓';
+  margin-right: var(--v3-space-2);
+}
+.v3-board-menu__item--danger {
+  color: var(--v3-danger-ink);
+}
+.v3-board-menu__item[aria-disabled="true"] {
+  color: var(--v3-ink-muted);
+  cursor: default;
+}
+.v3-board-menu__item[aria-disabled="true"]:hover {
+  background: none;
+}
+
+/* ---- the ghost column "+ Nova coluna" ---- */
+.v3-board-newcolumn {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  align-self: flex-start;
+  width: calc(var(--v3-sidebar) + var(--v3-space-3));
+  padding: var(--v3-space-3);
+  border: 1px dashed var(--v3-line-strong);
+  border-radius: var(--v3-radius-xl);
+}
+/* the button of a board with no column: no box, it is the only thing to do */
+.v3-board-newcolumn--first {
+  align-self: flex-start;
+  width: auto;
+  padding: 0;
+  border: 0;
+}
+.v3-board-newcolumn__button {
+  width: 100%;
+}
+
+/* ---- the notice of a move that was refused ---- */
+.v3-board-banner {
+  align-self: stretch;
+}
+
+/* ---- opening a card and adding one ---- */
+.v3-board-card--openable {
+  cursor: pointer;
+}
+.v3-board-card--openable:focus-within {
+  border-color: var(--v3-kan);
+}
+.v3-board-card__open {
+  display: block;
+  width: 100%;
+  min-height: var(--v3-control);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.v3-board-column__add {
+  flex: none;
+  justify-content: flex-start;
+  margin-top: var(--v3-space-2);
+}
+.v3-board-column__add[aria-disabled="true"] {
+  color: var(--v3-ink-muted);
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-board-column {
+    transition: none;
+  }
+}

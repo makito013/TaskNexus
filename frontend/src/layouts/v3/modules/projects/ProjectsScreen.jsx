@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../components/Button/Button.jsx'
+import LazyBoundary from '../../components/LazyBoundary/LazyBoundary.jsx'
+import NarrowNotice, { useNarrowWindow } from '../../components/NarrowNotice/NarrowNotice.jsx'
 import Panel from '../../components/Panel/Panel.jsx'
 import { useIslandReport } from '../../IslandContext.jsx'
+import { useProjectsView } from '../../ProjectsViewContext.jsx'
 import { useProjectsSessions } from '../../sessions/useProjectsSessions.js'
 import {
   filterBoard,
@@ -27,17 +30,41 @@ import './ProjectsScreen.css'
 
 const SKELETON_CARDS = 6
 
+// The Board and Artefatos tabs are separate chunks: the board pulls in the
+// drag-and-drop library, which the other tabs, the chat and the V2-free shell
+// never need.
+const BoardTab = lazy(() => import('../board/BoardTab.jsx'))
+const ArtifactsTab = lazy(() => import('../artifacts/ArtifactsTab.jsx'))
+
 // Projetos e agentes (Kan): the workspace registry with the agents that have a
 // session in each project, and the dialogs that register workspaces and projects
-// (the only writes, all through useRegistryMutations). The board and the chat
-// arrive later. The shell (AppV3) moves focus to the h1 when the module changes;
+// (the only writes, all through useRegistryMutations). The Board and Artefatos
+// tabs live in modules/board and modules/artifacts and are loaded on demand. The shell (AppV3) moves focus to the h1 when the module changes;
 // this is the only h1, and it renders in every state.
 export default function ProjectsScreen() {
-  const [tab, setTab] = useState('agents')
-  const [workspaceKey, setWorkspaceKey] = useState('')
+  // The tab, the workspace filter and "Mostrar arquivados" outlive the screen
+  // (a trip to the chat and back finds them as they were).
+  const {
+    tab,
+    setTab,
+    workspaceKey,
+    setWorkspaceKey,
+    showArchived,
+    setShowArchived,
+    unassignedKnown,
+    setUnassignedKnown,
+  } = useProjectsView()
+  // What the Artefatos tab last said about artifacts outside every workspace (null = not known yet); the
+  // Board tab's answer lives in the view context above.
+  const [artifactsUnassigned, setArtifactsUnassigned] = useState(null)
   const [onlyWaiting, setOnlyWaiting] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
   const [waitingFocusRequest, setWaitingFocusRequest] = useState(0)
+  // "Abrir board": the Board heading takes the focus once its chunk is there.
+  // The last request served lives here, above the lazy tab, so that mounting the
+  // tab again later does not steal the focus a second time.
+  const [boardFocusRequest, setBoardFocusRequest] = useState(0)
+  const servedBoardFocusRef = useRef(0)
+  const narrowWindow = useNarrowWindow()
   // The open registration dialog: { type: 'workspace', adoptKey?, name?, trigger } |
   // { type: 'project', mode: 'create' | 'edit' | 'register', ..., trigger }. It is
   // mounted only while open, so its form starts clean every time.
@@ -62,12 +89,22 @@ export default function ProjectsScreen() {
   const totalFailure = !loading && !registry && Boolean(errors.workspaces)
   const ready = !loading && Boolean(registry && board)
 
+  // "Sem workspace" exists when a session, a card OR an artifact lives outside every workspace.
+  // The cards and the artifacts are only known once their tab has read them (null until then): while the
+  // tab on screen has not answered, a saved "Sem workspace" stays selectable instead of being thrown
+  // away before it can.
+  const pendingAnswer = tab === 'artifacts' ? artifactsUnassigned === null : unassignedKnown === null
+  const keepUnassigned = unassignedKnown === true
+    || artifactsUnassigned === true
+    || (pendingAnswer && workspaceKey === NO_WORKSPACE_VALUE)
   const options = useMemo(
-    () => (ready ? workspaceOptions(registry, { hasUnassigned: hasUnassignedPlaces(board), showArchived }) : []),
-    [ready, registry, board, showArchived],
+    () => (ready
+      ? workspaceOptions(registry, { hasUnassigned: hasUnassignedPlaces(board) || keepUnassigned, showArchived })
+      : []),
+    [ready, registry, board, showArchived, keepUnassigned],
   )
   // A selected workspace that left the options (archived rows hidden again, the
-  // last session outside any workspace gone) falls back to "all".
+  // last place outside any workspace gone) falls back to "all".
   useEffect(() => {
     if (options.length > 0 && !options.some((option) => option.value === workspaceKey)) setWorkspaceKey('')
   }, [options, workspaceKey])
@@ -86,6 +123,15 @@ export default function ProjectsScreen() {
     setTab('agents')
     setWorkspaceKey('')
     setWaitingFocusRequest((count) => count + 1)
+  }, [setTab, setWorkspaceKey])
+  const openBoard = useCallback(() => {
+    setTab('board')
+    // In a narrow window the tab only says "Abra no computador": there is no
+    // heading to focus, and a pending request must not fire when it widens.
+    if (!narrowWindow) setBoardFocusRequest((count) => count + 1)
+  }, [setTab, narrowWindow])
+  const markBoardFocusServed = useCallback((request) => {
+    servedBoardFocusRef.current = request
   }, [])
   useEffect(() => {
     if (waitingFocusRequest > 0) document.getElementById('waiting')?.focus()
@@ -187,6 +233,7 @@ export default function ProjectsScreen() {
   }, [restoreFocus])
 
   const showFilters = ready
+  const workspaceTab = tab === 'board' || tab === 'artifacts'
   const showAside = ready && tab === 'agents' && Boolean(filteredBoard && (filteredBoard.hasContent || filteredBoard.waiting.length > 0))
 
   return (
@@ -216,6 +263,7 @@ export default function ProjectsScreen() {
           onOnlyWaitingChange={setOnlyWaiting}
           showArchived={showArchived}
           onShowArchivedChange={setShowArchived}
+          showOnlyWaiting={!workspaceTab}
         />
       )}
 
@@ -225,7 +273,7 @@ export default function ProjectsScreen() {
           {totalFailure && <TotalFailure error={errors.workspaces} onRetry={refetch} />}
           {ready && (
             <>
-              <PartialNotices errors={errors} liveAvailable={liveAvailable} />
+              {!workspaceTab && <PartialNotices errors={errors} liveAvailable={liveAvailable} />}
               {actionError && (
                 <Panel notice="fin" role="alert">
                   <b>Não foi possível {actionError.archived ? 'arquivar' : 'desarquivar'} {actionError.name}.</b> {actionError.message}
@@ -241,12 +289,41 @@ export default function ProjectsScreen() {
                 />
               )}
               {tab === 'sessions' && <SessionsBody filtered={filteredBoard} rows={visibleSessions} />}
+              {workspaceTab && narrowWindow && <NarrowNotice />}
+              {workspaceTab && !narrowWindow && (
+                <LazyBoundary key={tab} label={tab === 'board' ? 'Carregando o board…' : 'Carregando os artefatos…'}>
+                  {tab === 'board'
+                    ? (
+                      <BoardTab
+                        registry={registry}
+                        workspaceKey={workspaceKey}
+                        showArchived={showArchived}
+                        onHasUnassigned={setUnassignedKnown}
+                        focusRequest={boardFocusRequest > servedBoardFocusRef.current ? boardFocusRequest : 0}
+                        onFocusServed={markBoardFocusServed}
+                      />
+                    )
+                    : (
+                      <ArtifactsTab
+                        registry={registry}
+                        workspaceKey={workspaceKey}
+                        showArchived={showArchived}
+                        onHasUnassigned={setArtifactsUnassigned}
+                      />
+                    )}
+                </LazyBoundary>
+              )}
             </>
           )}
         </div>
         {showAside && (
           <aside aria-label="Resumo" className="v3-projects__aside">
-            <BoardSummary summary={boardSummary} scopeLabel={scopeLabel} unavailable={Boolean(errors.cards)} />
+            <BoardSummary
+              summary={boardSummary}
+              scopeLabel={scopeLabel}
+              unavailable={Boolean(errors.cards)}
+              onOpenBoard={openBoard}
+            />
           </aside>
         )}
       </div>

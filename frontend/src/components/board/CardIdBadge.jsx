@@ -13,6 +13,7 @@
 // (slightly larger, in the modal header, where the client name has room).
 import { useEffect, useRef, useState } from 'react';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
+import { formatCardId } from '../../utils/cardMeta.js';
 
 const FEEDBACK_MS = { card: 1200, modal: 1400 };
 
@@ -59,9 +60,7 @@ const styles = {
 
 const GLYPHS = { idle: '⧉', success: '✓', error: '!' };
 
-export function formatCardId(id) {
-  return `#${id}`;
-}
+export { formatCardId };
 
 export function CardIdBadge({ id, clienteNome, variant = 'card' }) {
   // 'idle' | 'success' | 'error'

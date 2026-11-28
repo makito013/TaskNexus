@@ -1,4 +1,6 @@
 import { summarizeTool } from '../../../../../utils/toolSummaries.js'
+import Button from '../../../components/Button/Button.jsx'
+import { useFileLinks } from '../../viewer/FileLinkScope.jsx'
 import '../ChatLeaf.css'
 
 // One tool of the conversation as a foldable chip (Designer 4.3): every tool the agent used appears,
@@ -40,6 +42,7 @@ function ToolIcon({ name }) {
 }
 
 export default function ToolChip({ tool }) {
+  const fileLinks = useFileLinks()
   const summary = summarizeTool(tool.name, tool.input)
   const stateText = STATE_TEXT[tool.status] ?? STATE_TEXT.running
   const tone = STATE_TONE[tool.status] ?? 'neutral'
@@ -58,6 +61,20 @@ export default function ToolChip({ tool }) {
         </span>
       </summary>
       <div className="v3-chat-chip__detail">
+        {/* Outside the <summary> (an interactive element inside it would nest buttons). Read / Edit / Write only: the
+            server answers for a path outside the project (its message comes up as a toast). */}
+        {fileLinks && summary.file ? (
+          <div className="v3-chat-chip__actions">
+            <Button
+              variant="text"
+              size="sm"
+              aria-label={`Abrir ${summary.file} no visualizador`}
+              onClick={() => fileLinks.openPath(summary.file)}
+            >
+              Abrir arquivo
+            </Button>
+          </div>
+        ) : null}
         <p className="v3-type-eyebrow v3-chat-chip__eyebrow">ENTRADA</p>
         <pre className="v3-chat-chip__block v3-type-mono-sm">{summary.detail || 'Sem entrada.'}</pre>
         {result ? (

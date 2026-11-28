@@ -1,0 +1,389 @@
+/*
+ * The file viewer: panel, tabs, bar, states, dock, drawer and full screen. Only --v3-* tokens. Nothing here
+ * creates a containing block (no transform, filter, will-change, contain) and nothing is `position: fixed`:
+ * the drawer declares its own fixed position in ViewerDrawer.jsx (a named exception), and the full screen is a
+ * <dialog> the browser puts in the top layer.
+ */
+.v3-viewer-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- dock: the third column of the chat ---- */
+.v3-viewer-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.v3-viewer-dock > .v3-viewer-panel {
+  flex: 1 1 auto;
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-xl);
+}
+
+/* The 44px hit area of the separator is centred on the gap between the conversation and the dock; the visible
+   line is 4px. Direct child of the column: useDockWidth reads handle.parentElement. */
+.v3-viewer-dock__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * (var(--v3-space-4) / 2) - var(--v3-control) / 2);
+  z-index: 1;
+  width: var(--v3-control);
+  cursor: col-resize;
+  touch-action: none;
+}
+.v3-viewer-dock__handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 2px);
+  width: 4px;
+  border-radius: var(--v3-radius-pill);
+  background-color: var(--v3-line-strong);
+}
+.v3-viewer-dock__handle:hover::after,
+.v3-viewer-dock__handle:focus-visible::after,
+.v3-viewer-dock--dragging .v3-viewer-dock__handle::after {
+  background-color: var(--v3-kan);
+}
+
+/* ---- drawer: animates opacity only ---- */
+@keyframes v3-viewer-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.v3-viewer-drawer {
+  animation: v3-viewer-fade var(--v3-dur-fast) ease-out;
+}
+.v3-viewer-drawer__panel {
+  border-left: 1px solid var(--v3-line);
+  background-color: var(--v3-surface);
+  box-shadow: var(--v3-shadow-dialog);
+}
+.v3-viewer-drawer__panel > .v3-viewer-panel {
+  flex: 1 1 auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v3-viewer-drawer {
+    animation: none;
+  }
+}
+
+/* ---- full screen: a <dialog>, shown only while open ---- */
+.v3-viewer-fullscreen {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  border: 0;
+  border-radius: 0;
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+  box-sizing: border-box;
+}
+.v3-viewer-fullscreen[open] {
+  display: flex;
+  flex-direction: column;
+}
+.v3-viewer-fullscreen > .v3-viewer-panel {
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+}
+
+/* ---- panel ---- */
+.v3-viewer-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--v3-surface);
+  color: var(--v3-ink);
+}
+.v3-viewer-panel:focus {
+  outline: none;
+}
+
+.v3-viewer-header {
+  display: flex;
+  align-items: stretch;
+  min-height: var(--v3-control);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-viewer-header__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--v3-space-1);
+  padding: 0 var(--v3-space-2);
+}
+
+.v3-viewer-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--v3-control);
+  min-height: var(--v3-control);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: var(--v3-ink-muted);
+  cursor: pointer;
+}
+.v3-viewer-icon-button:hover {
+  background-color: var(--v3-surface-2);
+  color: var(--v3-ink);
+}
+
+/* ---- tabs ---- */
+.v3-viewer-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.v3-viewer-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 220px;
+  border-bottom: 2px solid transparent;
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-tab--active {
+  border-bottom-color: var(--v3-kan);
+  color: var(--v3-ink);
+}
+.v3-viewer-tab__label {
+  min-width: 0;
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-1) 0 var(--v3-space-3);
+  overflow: hidden;
+  border: 0;
+  background-color: transparent;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.v3-viewer-tab__close {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--v3-space-6);
+  height: var(--v3-space-6);
+  margin-right: var(--v3-space-1);
+  border: 0;
+  border-radius: var(--v3-radius-sm);
+  background-color: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+/* The click area grows to 44x44 without changing the layout. */
+.v3-viewer-tab__close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--v3-control);
+  height: var(--v3-control);
+  margin: calc(var(--v3-control) / -2) 0 0 calc(var(--v3-control) / -2);
+}
+.v3-viewer-tab__close:hover {
+  background-color: var(--v3-surface-2);
+}
+
+/* ---- menu of the strip and of the file ---- */
+.v3-viewer-menu {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.v3-viewer-menu__popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: var(--v3-space-1);
+  border: 1px solid var(--v3-line-strong);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  box-shadow: var(--v3-shadow-float);
+}
+.v3-viewer-menu__item {
+  display: flex;
+  align-items: center;
+  min-height: var(--v3-control);
+  padding: 0 var(--v3-space-3);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-body-sm-size);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.v3-viewer-menu__item:hover {
+  background-color: var(--v3-surface-2);
+}
+.v3-viewer-menu__item--danger {
+  color: var(--v3-danger-ink);
+}
+
+/* ---- bar of the file ---- */
+.v3-viewer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v3-space-1) var(--v3-space-3);
+  padding: var(--v3-space-1) var(--v3-space-3);
+  border-bottom: 1px solid var(--v3-line);
+}
+.v3-viewer-toolbar__meta {
+  display: flex;
+  flex: 1 1 200px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--v3-space-3);
+  min-width: 0;
+}
+.v3-viewer-toolbar__path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v3-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v3-viewer-toolbar__size {
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-toolbar__opened {
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-toolbar__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--v3-space-1);
+}
+.v3-viewer-toolbar__feedback {
+  flex-basis: 100%;
+  color: var(--v3-ink-muted);
+}
+.v3-viewer-toolbar__feedback[role="alert"] {
+  color: var(--v3-danger-ink);
+}
+.v3-viewer-text-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--v3-control-sm);
+  padding: 0 var(--v3-space-2);
+  border: 0;
+  border-radius: var(--v3-radius-md);
+  background-color: transparent;
+  color: var(--v3-ink);
+  font-family: var(--v3-font-sans);
+  font-size: var(--v3-type-label-size);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+.v3-viewer-text-button:hover {
+  background-color: var(--v3-surface-2);
+}
+
+/* ---- body: the one scroll region ---- */
+.v3-viewer-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--v3-space-4);
+}
+.v3-viewer-body--flush {
+  padding: 0;
+  overflow: hidden;
+}
+.v3-viewer-body:focus-visible {
+  outline: 2px solid var(--v3-ink);
+  outline-offset: -2px;
+}
+
+.v3-viewer-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--v3-space-2);
+  margin: auto;
+  max-width: 360px;
+  text-align: center;
+}
+.v3-viewer-message__title {
+  margin: 0;
+  color: var(--v3-ink);
+}
+.v3-viewer-message__text {
+  margin: 0;
+  color: var(--v3-ink-muted);
+  overflow-wrap: anywhere;
+}
+.v3-viewer-message__actions {
+  display: flex;
+  gap: var(--v3-space-2);
+}
+.v3-viewer-notice {
+  margin: var(--v3-space-3);
+}
+
+.v3-viewer-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+.v3-viewer-skeleton > span:not(.v3-viewer-sr-only) {
+  display: block;
+  height: var(--v3-space-4);
+  border: 1px solid var(--v3-line);
+  border-radius: var(--v3-radius-sm);
+  background-color: var(--v3-surface-2);
+}
+
+.v3-viewer-loading {
+  padding: var(--v3-space-4);
+  color: var(--v3-ink-muted);
+}
+
+/* ---- phone: the floating "Arquivos" lives inside the chat panel (absolute, not fixed) ---- */
+.v3-viewer-floating {
+  position: absolute;
+  right: var(--v3-space-4);
+  bottom: calc(var(--v3-space-4) + env(safe-area-inset-bottom, 0px));
+  z-index: 2;
+  min-height: var(--v3-control);
+  border-radius: var(--v3-radius-pill);
+}

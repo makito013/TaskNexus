@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import Chip from '../../components/Chip/Chip.jsx'
 
 export const TABPANEL_ID = 'projects-tabpanel'
 export const tabId = (id) => `projects-tab-${id}`
@@ -7,14 +6,13 @@ export const tabId = (id) => `projects-tab-${id}`
 const TABS = [
   { id: 'agents', label: 'Agentes' },
   { id: 'sessions', label: 'Sessões' },
-  { id: 'board', label: 'Board', soon: true },
-  { id: 'artifacts', label: 'Artefatos', soon: true },
+  { id: 'board', label: 'Board' },
+  { id: 'artifacts', label: 'Artefatos' },
 ]
 
-// WAI-ARIA tabs. "Board" and "Artefatos" are announced as "em breve": they take
-// focus (roving tabindex) and are described by the note, but Enter, Space and a
-// click do nothing and they never become selected. Arrows, Home and End walk all
-// four; the selection follows the focus only on the enabled ones.
+// WAI-ARIA tabs, all four enabled. Arrows, Home and End walk them and the
+// selection follows the focus; Enter and Space select the focused one (a native
+// button already does on a real keyboard, the handler makes it explicit).
 export default function ProjectTabs({ tab, onSelect }) {
   const [focusedId, setFocusedId] = useState(null)
   const buttonRefs = useRef({})
@@ -31,7 +29,16 @@ export default function ProjectTabs({ tab, onSelect }) {
     event.preventDefault()
     const target = TABS[keyTarget]
     buttonRefs.current[target.id]?.focus()
-    if (!target.soon) onSelect(target.id)
+    onSelect(target.id)
+  }
+
+  const handleKeyDown = (event, index) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onSelect(TABS[index].id)
+      return
+    }
+    moveFocus(event, index)
   }
 
   const handleBlur = (event) => {
@@ -39,34 +46,28 @@ export default function ProjectTabs({ tab, onSelect }) {
   }
 
   return (
-    <>
-      <div role="tablist" aria-label="Seções" className="v3-projects-tabs" onBlur={handleBlur}>
-        {TABS.map((entry, index) => {
-          const selected = tab === entry.id
-          return (
-            <button
-              key={entry.id}
-              ref={(node) => { buttonRefs.current[entry.id] = node }}
-              type="button"
-              role="tab"
-              id={tabId(entry.id)}
-              className="v3-projects-tab v3-type-body-sm"
-              aria-selected={selected}
-              aria-controls={selected ? TABPANEL_ID : undefined}
-              aria-disabled={entry.soon ? 'true' : undefined}
-              aria-describedby={entry.soon ? 'projects-soon-note' : undefined}
-              tabIndex={rovingId === entry.id ? 0 : -1}
-              onFocus={() => setFocusedId(entry.id)}
-              onKeyDown={(event) => moveFocus(event, index)}
-              onClick={entry.soon ? undefined : () => onSelect(entry.id)}
-            >
-              {entry.label}
-              {entry.soon && <Chip tone="state" accent="soon">em breve</Chip>}
-            </button>
-          )
-        })}
-      </div>
-      <span id="projects-soon-note" className="v3-projects__sr-only">Disponível em uma próxima versão.</span>
-    </>
+    <div role="tablist" aria-label="Seções" className="v3-projects-tabs" onBlur={handleBlur}>
+      {TABS.map((entry, index) => {
+        const selected = tab === entry.id
+        return (
+          <button
+            key={entry.id}
+            ref={(node) => { buttonRefs.current[entry.id] = node }}
+            type="button"
+            role="tab"
+            id={tabId(entry.id)}
+            className="v3-projects-tab v3-type-body-sm"
+            aria-selected={selected}
+            aria-controls={selected ? TABPANEL_ID : undefined}
+            tabIndex={rovingId === entry.id ? 0 : -1}
+            onFocus={() => setFocusedId(entry.id)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+            onClick={() => onSelect(entry.id)}
+          >
+            {entry.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }

@@ -152,8 +152,30 @@ function removeCardFromTree(cards, cardId, doneSlug) {
 // `doneSlug` comes from useColumns (the caller owns both hooks) rather than
 // being fetched here: the two would otherwise race on mount and the board
 // would hold two answers to "which column means done".
-export function useCards(selectedProjectIds, doneSlug = null) {
+//
+// `options` are all off by default, which is exactly the V2 behaviour:
+//   onMutationError(message, error) - what to do when a mutation fails (the
+//     mutation still rethrows). The default shows the message with the global
+//     alert(), looked up at CALL time (useCards.test swaps it for a spy). The
+//     V3 board passes its own handler instead of a blocking dialog.
+//   pauseWhenHidden - skip the 5s ticks while the tab is hidden and read once
+//     when it becomes visible again.
+//   trackReadState - also return `loaded` (the first read of the current
+//     project filter answered) and `readError` (the last read of it failed).
+//     Both are per filter: a response that belongs to a previous filter is
+//     ignored, so the board never shows another project's cards as current.
+export function useCards(
+  selectedProjectIds,
+  doneSlug = null,
+  { onMutationError = (message) => alert(message), pauseWhenHidden = false, trackReadState = false } = {},
+) {
   const [cards, setCards] = useState([]);
+  const [readState, setReadState] = useState({ key: null, loaded: false, error: null });
+
+  // Kept in a ref so the mutations below keep their identity when the caller
+  // passes a new function on every render.
+  const onMutationErrorRef = useRef(onMutationError);
+  onMutationErrorRef.current = onMutationError;
 
   // Chave estável derivada de `selectedProjectIds` (ordenada + joinada) em
   // vez da referência do array — quem chama pode passar um array literal
@@ -204,6 +226,8 @@ export function useCards(selectedProjectIds, doneSlug = null) {
   //                      poll runs every 5s and a move takes milliseconds.
   //   cardDragActiveRef — a poll that starts and resolves entirely DURING a
   //                      drag, before any move exists to count or stamp.
+  const projectIdsKeyRef = useRef(projectIdsKey);
+  projectIdsKeyRef.current = projectIdsKey;
   const movesInFlightRef = useRef(0);
   const moveEpochRef = useRef(0);
   const cardDragActiveRef = useRef(false);
@@ -229,24 +253,47 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       // safe — the next tick is 5s away and re-reads everything from scratch.
       if (moveEpochRef.current !== epochAtRequest) return;
       if (movesInFlightRef.current > 0 || cardDragActiveRef.current) return;
+      // A response for a filter that is no longer the current one (only
+      // checked on request, so the default path is untouched).
+      if (trackReadState && projectIdsKeyRef.current !== projectIdsKey) return;
       setCards(list);
+      if (trackReadState) {
+        setReadState((previous) => (previous.key === projectIdsKey && previous.loaded && !previous.error
+          ? previous
+          : { key: projectIdsKey, loaded: true, error: null }));
+      }
     } catch (e) {
       // Leitura tolerante — mantém o último estado conhecido, sem alert()
       // a cada poll que falhar (mesmo padrão de fetchTasksFor, useTasks.js).
       console.warn('fetchCards error (keeping last known state)', e);
+      if (trackReadState && projectIdsKeyRef.current === projectIdsKey) {
+        setReadState((previous) => ({
+          key: projectIdsKey,
+          loaded: previous.key === projectIdsKey && previous.loaded,
+          error: e,
+        }));
+      }
     }
     // projectIdsKey (não selectedProjectIds) é a dependência real: ver
     // comentário acima sobre por que a referência do array não serve.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectIdsKey]);
+  }, [projectIdsKey, trackReadState]);
 
   useEffect(() => {
     let cancelled = false;
-    const tick = () => { if (!cancelled) fetchCards(); };
+    const hidden = () => pauseWhenHidden && document.visibilityState === 'hidden';
+    const tick = () => { if (!cancelled && !hidden()) fetchCards(); };
     tick();
     const interval = setInterval(tick, CARDS_POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [fetchCards]);
+    // One read right away when the tab comes back, instead of waiting for the next tick.
+    const handleVisibility = () => { if (document.visibilityState === 'visible') tick(); };
+    if (pauseWhenHidden) document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (pauseWhenHidden) document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchCards, pauseWhenHidden]);
 
   // Bug fixed here: any caller whose creation target can fall outside the
   // currently active filter — BoardV2, where CardFormModal's Cliente/Projeto
@@ -275,7 +322,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       }
       return created;
     } catch (e) {
-      alert('Falha ao criar card. Tente novamente.');
+      onMutationErrorRef.current('Falha ao criar card. Tente novamente.', e);
       throw e;
     }
   }, [activeProjectIdsSet]);
@@ -294,7 +341,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       }));
       return created;
     } catch (e) {
-      alert('Falha ao criar subtarefa. Tente novamente.');
+      onMutationErrorRef.current('Falha ao criar subtarefa. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -333,7 +380,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       });
       return updated;
     } catch (e) {
-      alert('Falha ao atualizar card. Tente novamente.');
+      onMutationErrorRef.current('Falha ao atualizar card. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug, activeProjectIdsSet]);
@@ -408,7 +455,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       setCards((prev) => removeCardFromTree(prev, cardId, doneSlug));
       return result;
     } catch (e) {
-      alert('Falha ao excluir card. Tente novamente.');
+      onMutationErrorRef.current('Falha ao excluir card. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -422,7 +469,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       }), doneSlug));
       return image;
     } catch (e) {
-      alert('Falha ao enviar imagem. Tente novamente.');
+      onMutationErrorRef.current('Falha ao enviar imagem. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -435,7 +482,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
         imagens: (card.imagens || []).filter((img) => img.id !== imageId),
       }), doneSlug));
     } catch (e) {
-      alert('Falha ao remover imagem. Tente novamente.');
+      onMutationErrorRef.current('Falha ao remover imagem. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -452,7 +499,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       }), doneSlug));
       return attachment;
     } catch (e) {
-      alert(`${e?.message || 'Falha ao enviar anexo'}. Tente novamente.`);
+      onMutationErrorRef.current(`${e?.message || 'Falha ao enviar anexo'}. Tente novamente.`, e);
       throw e;
     }
   }, [doneSlug]);
@@ -465,7 +512,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
         attachments: (card.attachments || []).filter((a) => a.id !== attachmentId),
       }), doneSlug));
     } catch (e) {
-      alert('Falha ao remover anexo. Tente novamente.');
+      onMutationErrorRef.current('Falha ao remover anexo. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -490,7 +537,7 @@ export function useCards(selectedProjectIds, doneSlug = null) {
         questions: (card.questions || []).filter((q) => q.id !== questionId),
       }), doneSlug));
     } catch (e) {
-      alert('Falha ao remover pergunta. Tente novamente.');
+      onMutationErrorRef.current('Falha ao remover pergunta. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
@@ -518,13 +565,23 @@ export function useCards(selectedProjectIds, doneSlug = null) {
       }
       return result;
     } catch (e) {
-      alert('Falha ao limpar concluídos. Tente novamente.');
+      onMutationErrorRef.current('Falha ao limpar concluídos. Tente novamente.', e);
       throw e;
     }
   }, [doneSlug]);
 
+  const readInfo = trackReadState
+    ? {
+      loaded: readState.key === projectIdsKey && readState.loaded,
+      readError: readState.key === projectIdsKey ? readState.error : null,
+      // Reads again right now (the "Tentar de novo" of a board that could not load).
+      refetch: fetchCards,
+    }
+    : null;
+
   return {
     cards,
+    ...readInfo,
     createCard,
     createSubcard,
     updateCard,

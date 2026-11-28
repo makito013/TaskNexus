@@ -1,0 +1,52 @@
+/*
+ * Styles of the drag leaves of the board (the sortable column, the sortable card and the overlay;
+ * only those three import this file). Only --v3-* tokens. The translation of a sort is an inline
+ * style of the two sortable components, never of a stylesheet: nothing here declares transform,
+ * filter, will-change or contain (fixedPositioningInvariantWorkspace.test.js).
+ */
+.v3-board-sortable {
+  /* a swipe scrolls the board or the column; only a still hold arms the drag */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.v3-board-sortable--column {
+  flex: none;
+  height: 100%;
+}
+.v3-board-sortable--card {
+  margin: 0;
+  list-style: none;
+}
+/* the source stays in the flow, faded: its gap is the placeholder of the drop */
+.v3-board-sortable--dragging {
+  opacity: 0.4;
+}
+
+/* the copy that follows the pointer (a DragOverlay child) */
+.v3-board-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  box-sizing: border-box;
+  /* as wide as a card in a column: the column minus its padding, the body padding and the borders */
+  width: calc(var(--v3-sidebar) + var(--v3-space-3) - 2 * var(--v3-space-3) - 2 * var(--v3-space-2) - 4px);
+  padding: var(--v3-space-3);
+  border: 1.5px solid var(--v3-kan);
+  border-radius: var(--v3-radius-lg);
+  background-color: var(--v3-surface);
+  box-shadow: var(--v3-shadow-float);
+  color: var(--v3-ink);
+  cursor: grabbing;
+}
+.v3-board-overlay--column {
+  flex-direction: row;
+  align-items: center;
+  width: calc(var(--v3-sidebar) + var(--v3-space-3));
+  border-radius: var(--v3-radius-xl);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-board-sortable { transition: none !important; }
+}

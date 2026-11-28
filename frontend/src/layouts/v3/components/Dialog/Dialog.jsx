@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { pushModal } from './modalStack.js'
 import './Dialog.css'
 
 const INITIAL_FOCUS = '[data-autofocus], .v3-dialog__body input:not([disabled]), .v3-dialog__body select:not([disabled])'
@@ -74,8 +75,10 @@ export default function Dialog({
     if (!open || !dialog) return undefined
     const previouslyFocused = document.activeElement
     if (!dialog.open) dialog.showModal()
+    const releaseModal = pushModal(dialog)
     dialog.querySelector(INITIAL_FOCUS)?.focus()
     return () => {
+      releaseModal()
       if (dialog.open) dialog.close()
       const target = resolveElement(returnFocusRef.current)
         || (previouslyFocused && previouslyFocused.isConnected ? previouslyFocused : null)

@@ -27,6 +27,12 @@ import { useFirstMessages } from './useFirstMessages.js'
 import { useProjectName } from './useProjectName.js'
 import { useStickToEnd } from './useStickToEnd.js'
 import TerminalView from './terminal/TerminalView.jsx'
+import ConversationsDialog from '../viewer/ConversationsDialog.jsx'
+import FileLinkScope from '../viewer/FileLinkScope.jsx'
+import FloatingFilesButton from '../viewer/FloatingFilesButton.jsx'
+import ViewerSurface, { useChatViewerLayout } from '../viewer/ViewerSurface.jsx'
+import { useViewerShell } from '../viewer/ViewerShell.jsx'
+import { sessionScope } from '../../../../services/viewerApi.js'
 import { PHONE_QUERY } from './viewport.js'
 import './ChatScreen.css'
 
@@ -209,6 +215,32 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
     return () => setFocusedKey(null)
   }, [sessionKey, setFocusedKey])
 
+  // The viewer opens a file by itself only while the conversation is on screen: on a phone the list is
+  // the other view of this screen.
+  const viewerShell = useViewerShell()
+  const viewerLayout = useChatViewerLayout(screenRef)
+  const [conversationsOpen, setConversationsOpen] = useState(false)
+  const listFolded = Boolean(viewerLayout?.collapseList)
+  useEffect(() => {
+    if (!listFolded) setConversationsOpen(false)
+  }, [listFolded])
+  const setChatContentVisible = viewerShell?.setChatContentVisible
+  useEffect(() => {
+    if (!setChatContentVisible) return undefined
+    setChatContentVisible(!phone || view === 'chat')
+    return () => setChatContentVisible(true)
+  }, [setChatContentVisible, phone, view])
+
+  // "Ver" of a toast (the viewer shell raises the number): a phone that was showing the list goes back to the
+  // conversation. The value at mount is not a request, only a later change is.
+  const chatViewRequest = viewerShell?.chatViewRequest ?? 0
+  const handledChatViewRef = useRef(chatViewRequest)
+  useEffect(() => {
+    if (handledChatViewRef.current === chatViewRequest) return
+    handledChatViewRef.current = chatViewRequest
+    if (phone) setView('chat')
+  }, [chatViewRequest, phone])
+
   // The view that disappears takes the focus with it: land on the heading of the one that appears.
   useEffect(() => {
     if (previousViewRef.current === view) return
@@ -369,9 +401,10 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
   const onSwitched = (result) => finishSwitch(sessionKey, result ?? { engine: 'chat' })
 
   // "Sair do terminal": the focus has to leave the terminal (xterm keeps Tab for itself). On a phone the list is
-  // the other view; elsewhere the list is beside it.
+  // the other view; elsewhere the list is beside it, or folded away by the viewer dock (then "Conversas" opens).
   const exitTerminal = () => {
     if (phone) setView('list')
+    else if (listFolded) setConversationsOpen(true)
     else screenRef.current?.querySelector('.v3-chat-list__title')?.focus()
   }
 
@@ -408,28 +441,41 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
   }
 
   const onOpenFromList = (key) => {
+    setConversationsOpen(false)
     if (phone && key === sessionKey) setView('chat')
     else openChat(key)
   }
 
+  const chatList = (
+    <ChatList
+      chats={projectChats}
+      activeKey={sessionKey}
+      overrides={overrides}
+      fallbackTitles={fallbackTitles}
+      loaded={loaded}
+      available={liveAvailable}
+      actions={actions}
+      onOpen={onOpenFromList}
+      onNewChat={openNewChat}
+      onEnd={(chat) => setEndTarget(chat)}
+      onRetry={refresh}
+      onLeave={phone ? () => goTo('/projects') : undefined}
+      onOpenTerminal={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'pty' })}
+      onOpenChat={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'chat' })}
+    />
+  )
+
   return (
-    <section ref={screenRef} className="v3-chat" aria-label="Chat" data-session-key={sessionKey} data-view={view}>
-      <ChatList
-        chats={projectChats}
-        activeKey={sessionKey}
-        overrides={overrides}
-        fallbackTitles={fallbackTitles}
-        loaded={loaded}
-        available={liveAvailable}
-        actions={actions}
-        onOpen={onOpenFromList}
-        onNewChat={openNewChat}
-        onEnd={(chat) => setEndTarget(chat)}
-        onRetry={refresh}
-        onLeave={phone ? () => goTo('/projects') : undefined}
-        onOpenTerminal={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'pty' })}
-        onOpenChat={(chat) => setSwitchDialog({ key: chat.session_key, direction: 'chat' })}
-      />
+    <section
+      ref={screenRef}
+      className="v3-chat"
+      aria-label="Chat"
+      data-session-key={sessionKey}
+      data-view={view}
+      style={viewerLayout?.sectionStyle}
+      {...viewerLayout?.sectionProps}
+    >
+      {listFolded ? null : chatList}
 
       <div className="v3-chat-panel" onKeyDown={onPanelKeyDown}>
         {visionPending && agentsStatus === 'failed' ? (
@@ -447,6 +493,8 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
               onEnd={() => setEndTarget(meta ?? { session_key: sessionKey, display_name: title })}
               onOpenChat={terminalKind === 'claude' ? () => setSwitchDialog({ key: sessionKey, direction: 'chat' }) : undefined}
               onBack={phone ? () => setView('list') : undefined}
+              sessionKey={sessionKey}
+              onOpenConversations={listFolded ? () => setConversationsOpen(true) : undefined}
             />
             <TerminalView
               sessionKey={sessionKey}
@@ -487,6 +535,8 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
               onOpenConnectors={() => setConnectors({ origin: 'menu' })}
               onOpenTerminal={failureBanner?.kind === 'spawn_failed' ? undefined : () => setSwitchDialog({ key: sessionKey, direction: 'pty' })}
               onBack={phone ? () => setView('list') : undefined}
+              sessionKey={sessionKey}
+              onOpenConversations={listFolded ? () => setConversationsOpen(true) : undefined}
             />
             <StatusBanner banner={state.banner} connection={connection} canOpenConnectors canOpenTerminal onAction={onBannerAction} />
             {session.actionError ? (
@@ -499,28 +549,30 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
             ) : emptyChat ? (
               <EmptyThread agentName={agentName} />
             ) : (
-              <MessageList
-                logRef={threadRef}
-                live={state.replayComplete}
-                messages={state.messages}
-                toolsById={state.toolsById}
-                cards={state.cards}
-                turn={state.turn}
-                lastTurn={state.lastTurn}
-                agentName={agentName}
-                onResend={canResend ? session.send : undefined}
-                renderCard={(card) => (
-                  <PermissionCard
-                    card={card}
-                    agentName={agentName}
-                    context={projectName}
-                    decision={session.decisions[card.id]}
-                    onDecide={session.decide}
-                    focusAfterDecision={focusComposer}
-                    phone={phone}
-                  />
-                )}
-              />
+              <FileLinkScope sessionKey={sessionKey}>
+                <MessageList
+                  logRef={threadRef}
+                  live={state.replayComplete}
+                  messages={state.messages}
+                  toolsById={state.toolsById}
+                  cards={state.cards}
+                  turn={state.turn}
+                  lastTurn={state.lastTurn}
+                  agentName={agentName}
+                  onResend={canResend ? session.send : undefined}
+                  renderCard={(card) => (
+                    <PermissionCard
+                      card={card}
+                      agentName={agentName}
+                      context={projectName}
+                      decision={session.decisions[card.id]}
+                      onDecide={session.decide}
+                      focusAfterDecision={focusComposer}
+                      phone={phone}
+                    />
+                  )}
+                />
+              </FileLinkScope>
             )}
             {modelOpen ? (
               <ModelCard
@@ -552,7 +604,22 @@ function ChatView({ sessionKey, session, engineOverrides, setEngineOverride }) {
             />
           </>
         )}
+        {viewerLayout?.phone ? <FloatingFilesButton sessionKey={sessionKey} /> : null}
       </div>
+
+      {/* Siblings of the panel (in the React tree too): a key pressed in the viewer never reaches "Esc interrupts". */}
+      <ViewerSurface
+        layout={viewerLayout}
+        scope={sessionScope(sessionKey)}
+        returnFocusTo={() => screenRef.current?.querySelector('[data-viewer-button]')}
+      />
+      <ConversationsDialog
+        open={listFolded && conversationsOpen}
+        onClose={() => setConversationsOpen(false)}
+        returnFocusTo={() => screenRef.current?.querySelector('.v3-chat-conversations-button')}
+      >
+        {chatList}
+      </ConversationsDialog>
 
       {newChatToken !== null ? (
         <NewChatDialog

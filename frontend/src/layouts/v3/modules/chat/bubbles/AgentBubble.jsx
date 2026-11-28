@@ -1,4 +1,5 @@
 import { agentInitials } from '../../projects/AgentCard.jsx'
+import { useFileLinks } from '../../viewer/FileLinkScope.jsx'
 import MarkdownBody from '../MarkdownBody.jsx'
 import ToolChip from './ToolChip.jsx'
 
@@ -25,6 +26,8 @@ function runsOf(message) {
 // The agent's message: avatar, markdown bubble(s) and the tool chips of the turn. While it streams
 // the bubble is aria-busy / aria-live="off" (no announcement per token) and ends with the cursor.
 export default function AgentBubble({ message, agentName, toolsById }) {
+  // The file links of the conversation (null without the viewer shell): only the agent's own text gets them.
+  const fileLinks = useFileLinks()
   const runs = runsOf(message)
   const streaming = Boolean(message.streaming)
   if (runs.length === 0 && !streaming) return null
@@ -50,7 +53,7 @@ export default function AgentBubble({ message, agentName, toolsById }) {
           }
           return (
             <div key={index} className="v3-chat-bubble v3-chat-bubble--agent">
-              <MarkdownBody text={run.texts.join('\n\n')} highlight={!streaming} />
+              <MarkdownBody text={run.texts.join('\n\n')} highlight={!streaming} fileLinks={fileLinks} />
               {streaming && run === lastTextRun ? <span className="v3-chat-cursor" aria-hidden="true" /> : null}
             </div>
           )

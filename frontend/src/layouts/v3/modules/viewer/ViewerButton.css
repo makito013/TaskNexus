@@ -1,0 +1,37 @@
+/*
+ * The "Visualizador" button of the chat header. Only --v3-* tokens; nothing here creates a containing
+ * block and nothing is fixed (fixedPositioningInvariantWorkspace.test.js scans this file).
+ */
+.v3-viewer-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+
+.v3-viewer-button .v3-viewer-button__seal {
+  font-family: var(--v3-font-mono);
+}
+
+.v3-viewer-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Tablet and phone: the label goes, the icon and the seal stay; the aria-label keeps the name, and the
+   button is 44x44 for the finger. */
+@media (max-width: 1279px) {
+  .v3-viewer-button .v3-viewer-button__label {
+    display: none;
+  }
+  .v3-viewer-button.v3-button {
+    min-width: var(--v3-control);
+    min-height: var(--v3-control);
+  }
+}
